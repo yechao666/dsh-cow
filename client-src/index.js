@@ -155,6 +155,77 @@ function CowActivityIcon({ size = 16 }) {
   );
 }
 
+
+function TopologyNode({ label, version, connected, encrypted, currentTask, self = false }) {
+  return h('div', {
+    style: {
+      minWidth: self ? 190 : 150,
+      maxWidth: 220,
+      border: `1px solid ${self ? 'var(--dsw-alias-brand-primary)' : 'var(--dsw-alias-border-l2)'}`,
+      borderRadius: 10,
+      padding: '8px 10px',
+      background: self ? 'color-mix(in srgb, var(--dsw-alias-brand-primary) 10%, transparent)' : 'var(--dsw-alias-bg-l1)',
+      boxShadow: self ? '0 0 0 1px var(--dsw-alias-brand-primary)' : 'none',
+      display: 'grid',
+      gap: 3,
+    },
+  },
+    h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' } },
+      h('span', { style: { fontSize: 12, fontWeight: 650 } }, label || '未命名节点'),
+      h('span', { style: connected ? S.badgeOn : S.badgeOff }, connected ? '在线' : '离线'),
+      self ? h('span', { style: S.badge }, '当前') : null,
+    ),
+    h('div', { style: { ...S.meta, display: 'flex', gap: 6, flexWrap: 'wrap' } },
+      version ? h('span', null, `v${version}`) : null,
+      encrypted ? h('span', null, 'E2E') : null,
+    ),
+    currentTask ? h('div', { style: { ...S.meta, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, `任务：${currentTask.title || currentTask.taskId}`) : null,
+  );
+}
+
+function CowTopology({ state }) {
+  if (!state) return null;
+  const instance = state.instance ?? {};
+  const peers = state.peers ?? [];
+  const parent = peers.find((peer) => peer.relation === 'parent') ?? null;
+  const children = peers.filter((peer) => peer.relation !== 'parent');
+  const line = (height, width = 1) => h('div', { style: { width, height, background: 'var(--dsw-alias-border-l2)', borderRadius: 1 } });
+  return h('div', { style: S.card },
+    h('div', { style: S.cardHead },
+      h('h3', { style: S.cardTitle }, '节点拓扑'),
+      h('span', { style: S.meta }, '以当前节点为中心，仅显示直接上级与直接下级'),
+    ),
+    h('div', { style: { display: 'grid', justifyItems: 'center', gap: 0 } },
+      parent
+        ? h(TopologyNode, { label: parent.label, version: parent.version, connected: parent.connected, encrypted: parent.encrypted, currentTask: parent.currentTask })
+        : h('div', { style: { ...S.hint, border: '1px dashed var(--dsw-alias-border-l2)', borderRadius: 10, padding: '8px 12px' } }, '无直接上级'),
+      line(18),
+      h(TopologyNode, {
+        label: instance.displayName || '本机',
+        version: instance.version,
+        connected: true,
+        encrypted: (state.stats?.encrypted ?? 0) > 0,
+        currentTask: state.currentInbound ?? null,
+        self: true,
+      }),
+      line(18),
+      children.length
+        ? h('div', { style: { position: 'relative', paddingTop: 18, display: 'flex', gap: 14, justifyContent: 'center', flexWrap: 'wrap', width: '100%' } },
+            children.length > 1
+              ? h('div', { style: { position: 'absolute', top: 0, left: 'calc(50% - ' + Math.min(45, (children.length - 1) * 20) + '%)', right: 'auto', width: Math.min(90, (children.length - 1) * 40) + '%', height: 1, background: 'var(--dsw-alias-border-l2)' } },
+                  h('div', { style: { position: 'absolute', left: '50%', top: -18, width: 1, height: 18, background: 'var(--dsw-alias-border-l2)' } }),
+                )
+              : null,
+            children.map((child) => h('div', { key: child.label, style: { display: 'grid', justifyItems: 'center' } },
+              h('div', { style: { width: 1, height: 18, background: 'var(--dsw-alias-border-l2)' } }),
+              h(TopologyNode, { label: child.label, version: child.version, connected: child.connected, encrypted: child.encrypted, currentTask: child.currentTask }),
+            )),
+          )
+        : h('div', { style: { ...S.hint, border: '1px dashed var(--dsw-alias-border-l2)', borderRadius: 10, padding: '8px 12px' } }, '无直接下级'),
+    ),
+  );
+}
+
 function CowActivityPanel() {
   const [data, setData] = React.useState(null);
   const [error, setError] = React.useState('');
@@ -248,6 +319,7 @@ function CowActivityPanel() {
       h('button', { type: 'button', style: { ...S.secondary, marginLeft: 'auto' }, onClick: () => { void load(); }, disabled: loading }, loading ? '刷新中…' : '刷新'),
     ),
     h('p', { style: { ...S.hint, margin: '2px 0 14px' } }, '本机节点信息、任务、提问、文件与节点事件；每 4 秒自动刷新。'),
+    h(CowTopology, { state: data?.state }),
     (() => {
       const info = data?.state?.instance ?? {};
       const cfg = data?.state?.config ?? {};
