@@ -97,7 +97,7 @@ function PeerRow({ peer, busy, onRemove, onUpgrade, currentVersion }) {
         h('span', { style: { fontSize: 12, fontWeight: 600 } }, peer.label),
         h('span', { style: peer.connected ? S.badgeOn : S.badgeOff }, peer.connected ? '已连接' : '离线'),
         peer.version ? h('span', { style: S.meta }, `v${peer.version}`) : null,
-        peer.encrypted ? h('span', { style: S.badgeOn }, 'E2E') : null,
+        peer.encrypted ? h(E2EChip, { compact: true }) : null,
         onUpgrade && peer.connected && peer.version && currentVersion && peer.version !== currentVersion
           ? h('button', {
               type: 'button',
@@ -251,7 +251,7 @@ function TopologyNode({ label, version, connected, encrypted, currentTask, self 
     ),
     h('div', { style: { display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' } },
       version ? h(PanelChip, null, `v${version}`) : null,
-      encrypted ? h(PanelChip, { tone: 'on' }, 'E2E') : null,
+      encrypted ? h(E2EChip, { compact: true }) : null,
       connected ? null : h(PanelChip, { tone: 'off' }, '离线'),
     ),
     currentTask
@@ -284,7 +284,7 @@ function CowTopology({ state }) {
       h('span', { style: { fontSize: 12, fontWeight: 600 } }, child.label),
       h(PanelChip, { tone: child.connected ? 'on' : 'off' }, child.connected ? '在线' : '离线'),
       child.version ? h('span', { style: { ...S.meta, fontSize: 10.5 } }, `v${child.version}`) : null,
-      child.encrypted ? h('span', { style: { ...S.meta, fontSize: 10.5 } }, 'E2E') : null,
+      child.encrypted ? h(E2EChip, { compact: true }) : null,
       child.currentTask ? h('span', { style: { ...S.meta, fontSize: 10.5, marginLeft: 'auto', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '55%' } }, `任务：${child.currentTask.title || child.currentTask.taskId}`) : null,
     ),
   );
@@ -374,6 +374,22 @@ function PanelIcon({ name, size = 15 }) {
   };
   return h('svg', { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': 'true' },
     (paths[name] ?? paths.cube).map((d) => h('path', { key: d, d })),
+  );
+}
+
+function E2EChip({ compact = false, enabled = true }) {
+  const color = enabled ? '#34c38f' : 'var(--dsw-alias-label-secondary)';
+  return h('span', {
+    title: enabled ? 'AES-256-GCM 端到端加密' : '未启用端到端加密',
+    style: {
+      ...PANEL.chip, display: 'inline-flex', alignItems: 'center', gap: 3,
+      color, borderColor: enabled ? 'rgba(52,195,143,0.35)' : 'var(--dsw-alias-border-l2)',
+      background: enabled ? 'rgba(52,195,143,0.10)' : 'var(--dsw-alias-bg-l2)',
+      whiteSpace: 'nowrap',
+    },
+  },
+    h(PanelIcon, { name: 'lock', size: 10 }),
+    h('span', null, enabled ? (compact ? 'E2E' : 'E2E 加密') : '未加密'),
   );
 }
 
@@ -602,7 +618,7 @@ function CowActivityPanel() {
         h('span', { style: { fontSize: 13, fontWeight: 650 } }, peer.label),
         h(PanelChip, { tone: peer.connected ? 'on' : 'off' }, peer.connected ? '在线' : '离线'),
         peer.version ? h(PanelChip, null, `v${peer.version}`) : null,
-        peer.encrypted ? h(PanelChip, { tone: 'on' }, 'E2E') : null,
+        peer.encrypted ? h(E2EChip, { compact: true }) : null,
         h('span', { style: { ...S.meta, fontSize: 10.5, marginLeft: 'auto' } }, isParent ? '直接上级' : '直接下级'),
       ),
       h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(175px, 1fr))', gap: '7px 14px' } },
@@ -737,7 +753,7 @@ function CowActivityPanel() {
           h(CowTopology, { state }),
           h('div', { style: PANEL.grid2 },
             h('div', { style: { ...PANEL.card, marginBottom: 0 } },
-              h('div', { style: PANEL.cardHead }, h('h3', { style: PANEL.cardTitle }, '本机节点'), h(PanelChip, { tone: stats.encrypted ? 'on' : 'neutral' }, stats.encrypted ? 'E2E 已启用' : 'E2E 未启用')),
+              h('div', { style: PANEL.cardHead }, h('h3', { style: PANEL.cardTitle }, '本机节点'), h(E2EChip, { enabled: Boolean(stats.encrypted) })),
               h(PanelKV, { rows: [
                 ['唯一标识', h('span', { style: S.mono }, instance.uuid || instance.instanceId || '-')],
                 ['WebSocket', endpoint],
@@ -760,7 +776,7 @@ function CowActivityPanel() {
                 ['上级地址', parent.url || '无'],
                 ['上级版本', parentVersion ? `v${parentVersion}` : '-'],
                 ['连接状态', parent.connected ? '已连接（WebSocket）' : '未连接'],
-                ['加密', parentPeer?.encrypted ? 'E2E 已启用' : '未启用'],
+                ['加密', h(E2EChip, { compact: true, enabled: Boolean(parentPeer?.encrypted) })],
                 ...(activeInbound.length ? [['执行/排队', `${activeInbound.length} 条`]] : []),
               ] }),
             ),
