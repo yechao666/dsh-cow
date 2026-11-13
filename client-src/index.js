@@ -1440,59 +1440,6 @@ function CoCowSettingsPage() {
               h(Row, { label: '' }, h('span', { style: S.hint }, '子 DSH 在「上级地址」中填上面的连接地址，密码就是上面的连接密码。每个节点各自设置密码：本节点的下级用这个密码，中间节点的下级用中间节点自己的密码。密码只保存摘要，不回显。')),
             ),
           ),
-          h('div', { style: S.card },
-            (() => {
-              const activeTasks = (data.tasks ?? []).filter((task) => ['queued', 'running'].includes(task.status) || task.pendingQuestion);
-              return h(React.Fragment, null,
-                h('div', { style: S.cardHead },
-                  h('h3', { style: S.cardTitle }, '任务队列与提问'),
-                  h('span', { style: S.badgeOff }, `${activeTasks.length} 个待处理`),
-                  h('button', { type: 'button', style: S.secondary, disabled: Boolean(busy), onClick: refreshTasks }, busy === 'refresh' ? '刷新中…' : '刷新'),
-                ),
-                activeTasks.length === 0
-                  ? h('div', { style: S.hint }, '当前没有排队/执行中的任务。')
-                  : activeTasks.map((task) => h('div', { key: task.taskId, style: S.listRow },
-                      h('div', { style: { display: 'grid', gap: 4, minWidth: 0, flex: '1 1 auto' } },
-                        h('div', { style: S.row },
-                          h('span', { style: { fontSize: 12, fontWeight: 600 } }, task.title || task.taskId),
-                          h('span', { style: ['queued', 'running'].includes(task.status) ? S.badgeOn : S.badgeOff }, task.status === 'queued' && task.queuePosition ? `排队第 ${task.queuePosition} 位` : taskStatusLabel(task.status)),
-                          h('span', { style: S.meta }, task.peer || ''),
-                          h('button', {
-                            type: 'button',
-                            style: { ...S.secondary, marginLeft: 'auto' },
-                            disabled: Boolean(busy),
-                            title: '取消这个任务（排队中的会直接出队）',
-                            onClick: () => cancelTask(task.taskId),
-                          }, busy === `cancel:${task.taskId}` ? '取消中…' : '取消'),
-                        ),
-                        task.pendingQuestion
-                          ? h('div', { style: { display: 'grid', gap: 6 } },
-                              h('div', { style: S.meta }, `远端提问：${task.pendingQuestion.question}`),
-                              Array.isArray(task.pendingQuestion.options) && task.pendingQuestion.options.length
-                                ? h('div', { style: S.row }, task.pendingQuestion.options.map((option) => h('button', {
-                                    key: option, type: 'button', style: S.secondary,
-                                    onClick: () => setAnswers((current) => ({ ...current, [task.taskId]: option })),
-                                  }, option)))
-                                : null,
-                              h('div', { style: S.row },
-                                h('input', {
-                                  style: { ...S.inputFlex, flex: '1 1 auto' },
-                                  placeholder: '回答这个远端问题',
-                                  value: answers[task.taskId] ?? '',
-                                  onChange: (e) => setAnswers((current) => ({ ...current, [task.taskId]: e.target.value })),
-                                }),
-                                h('button', { type: 'button', style: S.button, disabled: Boolean(busy), onClick: () => answerTask(task.taskId) }, busy === `answer:${task.taskId}` ? '发送中…' : '回答'),
-                              ),
-                            )
-                          : null,
-                        task.artifacts?.length
-                          ? h('div', { style: S.meta }, `产物 ${task.artifacts.length} 个：${task.artifacts.slice(0, 3).map((item) => item.localPath || item.name).join('，')}`)
-                          : null,
-                      ),
-                    ))
-              );
-            })(),
-          ),
         )
       : null,
 
