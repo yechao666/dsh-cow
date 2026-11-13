@@ -280,7 +280,7 @@ function CowTopology({ state }) {
     },
   },
     h('div', { style: { display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' } },
-      h('span', { style: { width: 6, height: 6, borderRadius: 99, background: child.connected ? '#38a169' : 'var(--dsw-alias-label-tertiary)' } }),
+      h('span', { style: { width: 18, height: 18, borderRadius: 6, display: 'grid', placeItems: 'center', color: '#fff', background: panelAccent(child.label).main, fontSize: 9.5, fontWeight: 700 } }, String(child.label || '?').slice(0, 1)),
       h('span', { style: { fontSize: 12, fontWeight: 600 } }, child.label),
       h(PanelChip, { tone: child.connected ? 'on' : 'off' }, child.connected ? '在线' : '离线'),
       child.version ? h('span', { style: { ...S.meta, fontSize: 10.5 } }, `v${child.version}`) : null,
@@ -338,6 +338,99 @@ function TaskLine({ task, extra }) {
       : task.prompt
         ? h('div', { style: PANEL.progress }, task.prompt)
         : null,
+  );
+}
+
+
+const PANEL_ACCENTS = [
+  { main: '#4f8df7', soft: 'rgba(79,141,247,0.14)', border: 'rgba(79,141,247,0.32)' },
+  { main: '#34c38f', soft: 'rgba(52,195,143,0.14)', border: 'rgba(52,195,143,0.30)' },
+  { main: '#a78bfa', soft: 'rgba(167,139,250,0.16)', border: 'rgba(167,139,250,0.34)' },
+  { main: '#f59e0b', soft: 'rgba(245,158,11,0.15)', border: 'rgba(245,158,11,0.32)' },
+  { main: '#f472b6', soft: 'rgba(244,114,182,0.14)', border: 'rgba(244,114,182,0.30)' },
+  { main: '#22d3ee', soft: 'rgba(34,211,238,0.14)', border: 'rgba(34,211,238,0.30)' },
+];
+
+function panelAccent(label = '') {
+  let sum = 0;
+  for (const char of String(label)) sum = (sum + char.codePointAt(0)) % 9973;
+  return PANEL_ACCENTS[sum % PANEL_ACCENTS.length];
+}
+
+function PanelIcon({ name, size = 15 }) {
+  const paths = {
+    cube: ['M12 3l7 4v10l-7 4-7-4V7l7-4z', 'M12 3v14', 'M5 7l7 4 7-4'],
+    network: ['M12 5v5', 'M7 19l5-5 5 5', 'M12 10a2 2 0 100-4 2 2 0 000 4z', 'M6 21a2 2 0 100-4 2 2 0 000 4z', 'M18 21a2 2 0 100-4 2 2 0 000 4z'],
+    users: ['M16 21v-2a4 4 0 00-4-4H7a4 4 0 00-4 4v2', 'M9 11a4 4 0 100-8 4 4 0 000 8z', 'M17 3a4 4 0 010 8', 'M21 21v-2a4 4 0 00-3-3.87'],
+    activity: ['M3 12h4l3-8 4 16 3-8h4'],
+    alert: ['M18 8a6 6 0 00-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9', 'M10 21h4'],
+    lock: ['M6 11V8a6 6 0 1112 0v3', 'M5 11h14v10H5z'],
+  };
+  return h('svg', { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': 'true' },
+    (paths[name] ?? paths.cube).map((d) => h('path', { key: d, d })),
+  );
+}
+
+function StatCard({ label, value, sub, accent, icon }) {
+  return h('div', {
+    style: {
+      position: 'relative', overflow: 'hidden', border: `1px solid ${accent.border}`, borderRadius: 12,
+      padding: '11px 13px 10px', background: `linear-gradient(145deg, ${accent.soft}, var(--dsw-alias-bg-l1) 72%)`,
+    },
+  },
+    h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 } },
+      h('span', { style: { ...S.meta, fontSize: 11, color: accent.main, fontWeight: 600 } }, label),
+      h('span', { style: { width: 26, height: 26, borderRadius: 8, display: 'grid', placeItems: 'center', color: accent.main, background: accent.soft } }, h(PanelIcon, { name: icon })),
+    ),
+    h('div', { style: { fontSize: 22, fontWeight: 700, lineHeight: 1.2, letterSpacing: '-0.4px', marginTop: 2 } }, value),
+    sub ? h('div', { style: { ...S.meta, fontSize: 10.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, sub) : null,
+  );
+}
+
+function PanelDonut({ segments, size = 120, thickness = 14, centerValue, centerLabel }) {
+  const radius = (size - thickness) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const total = segments.reduce((sum, item) => sum + (Number(item.value) || 0), 0);
+  let offset = 0;
+  return h('div', { style: { position: 'relative', width: size, height: size, flex: '0 0 auto' } },
+    h('svg', { width: size, height: size, viewBox: `0 0 ${size} ${size}`, style: { transform: 'rotate(-90deg)' } },
+      h('circle', { cx: size / 2, cy: size / 2, r: radius, fill: 'none', stroke: 'var(--dsw-alias-bg-l2)', strokeWidth: thickness }),
+      total > 0
+        ? segments.map((item) => {
+            const length = (Number(item.value) / total) * circumference;
+            const dash = `${Math.max(0, length - 2)} ${circumference}`;
+            const el = h('circle', {
+              key: item.label, cx: size / 2, cy: size / 2, r: radius, fill: 'none',
+              stroke: item.color, strokeWidth: thickness, strokeLinecap: 'round',
+              strokeDasharray: dash, strokeDashoffset: -offset,
+            });
+            offset += length;
+            return el;
+          })
+        : null,
+    ),
+    h('div', { style: { position: 'absolute', inset: 0, display: 'grid', placeContent: 'center', textAlign: 'center', gap: 1 } },
+      h('div', { style: { fontSize: 19, fontWeight: 700, lineHeight: 1.1 } }, centerValue),
+      h('div', { style: { ...S.meta, fontSize: 10 } }, centerLabel),
+    ),
+  );
+}
+
+function PanelTaskBars({ rows }) {
+  const max = Math.max(1, ...rows.map((row) => row.value));
+  return h('div', { style: { display: 'grid', gap: 8 } },
+    rows.map((row) => h('div', { key: row.label, style: { display: 'grid', gap: 3 } },
+      h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, fontSize: 11.5 } },
+        h('span', { style: { display: 'inline-flex', alignItems: 'center', gap: 6 } },
+          h('span', { style: { width: 7, height: 7, borderRadius: 99, background: row.color } }),
+          h('span', { style: { color: 'var(--dsw-alias-label-secondary)' } }, row.label),
+        ),
+        h('span', { style: { fontWeight: 650 } }, row.value),
+      ),
+      h('div', { style: { height: 5, borderRadius: 99, background: 'var(--dsw-alias-bg-l2)', overflow: 'hidden' } },
+        h('div', { style: { height: '100%', width: `${Math.round((row.value / max) * 100)}%`, background: row.color, borderRadius: 99, opacity: row.value ? 1 : 0 } }),
+      ),
+    )),
   );
 }
 
@@ -417,6 +510,12 @@ function CowActivityPanel() {
   const activeInbound = inbound.filter((task) => ['queued', 'running'].includes(task.status));
   const items = data?.activity?.items ?? [];
   const roleLabel = parent.connected || instance.role === 'member' ? '子 DSH' : '主 DSH';
+  const taskCounts = ['queued', 'running', 'succeeded', 'failed', 'canceled'].map((status) => ({
+    status,
+    value: [...tasks, ...inbound].filter((task) => task.status === status).length,
+  }));
+  const taskColors = { queued: '#f59e0b', running: '#4f8df7', succeeded: '#34c38f', failed: '#ef4444', canceled: '#94a3b8' };
+  const taskLabels = { queued: '排队', running: '执行中', succeeded: '成功', failed: '失败', canceled: '取消' };
   const endpoint = instance.endpoint ? `${String(instance.endpoint).replace(/^http/, 'ws')}/channel` : '未就绪';
   const parentVersion = parentPeer?.version || parent.node?.version || '';
   const timeOf = (iso) => {
@@ -480,8 +579,8 @@ function CowActivityPanel() {
       ['当前任务', peer.currentTask ? `${peer.currentTask.title || peer.currentTask.taskId}（${peer.currentTask.status}）` : '', false],
     ].filter(([, value]) => value);
     return h('div', { key: `${isParent ? 'parent' : 'child'}:${peer.label}`, style: { ...PANEL.card, padding: '12px 14px', marginBottom: 0 } },
-      h('div', { style: { display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginBottom: 9 } },
-        h('span', { style: { width: 7, height: 7, borderRadius: 99, background: peer.connected ? '#38a169' : 'var(--dsw-alias-label-tertiary)' } }),
+      h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 9 } },
+        h('span', { style: { width: 28, height: 28, borderRadius: 8, display: 'grid', placeItems: 'center', color: '#fff', background: panelAccent(peer.label).main, fontSize: 12, fontWeight: 700, boxShadow: `0 4px 12px ${panelAccent(peer.label).border}` } }, String(peer.label || '?').slice(0, 1)),
         h('span', { style: { fontSize: 13, fontWeight: 650 } }, peer.label),
         h(PanelChip, { tone: peer.connected ? 'on' : 'off' }, peer.connected ? '在线' : '离线'),
         peer.version ? h(PanelChip, null, `v${peer.version}`) : null,
@@ -557,14 +656,40 @@ function CowActivityPanel() {
       ),
     ),
     error ? h('div', { style: { ...S.err, marginBottom: 12, padding: '8px 10px', borderRadius: 8, background: 'rgba(197,48,48,0.08)' } }, `加载失败：${error}`) : null,
-    h('div', { style: PANEL.statGrid },
-      h('div', { style: PANEL.stat }, h('span', { style: { ...PANEL.statValue, color: 'var(--dsw-alias-brand-primary)' } }, instance.version ? `v${instance.version}` : '-'), h('span', { style: PANEL.statLabel }, '本机版本')),
-      h('div', { style: PANEL.stat }, h('span', { style: PANEL.statValue }, stats.connected ?? 0), h('span', { style: PANEL.statLabel }, '在线节点')),
-      h('div', { style: PANEL.stat }, h('span', { style: PANEL.statValue }, children.filter((child) => child.connected).length), h('span', { style: PANEL.statLabel }, '在线子 DSH')),
-      h('div', { style: PANEL.stat }, h('span', { style: { ...PANEL.statValue, color: activeOutbound.length + activeInbound.length ? '#b7791f' : undefined } }, activeOutbound.length + activeInbound.length), h('span', { style: PANEL.statLabel }, '执行/排队')),
-      h('div', { style: PANEL.stat }, h('span', { style: { ...PANEL.statValue, color: pendingTotal ? '#c05621' : undefined } }, pendingTotal), h('span', { style: PANEL.statLabel }, '待人工')),
+    h('div', { style: { ...PANEL.statGrid, gridTemplateColumns: 'repeat(auto-fit, minmax(158px, 1fr))' } },
+      h(StatCard, { label: '本机版本', value: instance.version ? `v${instance.version}` : '-', sub: 'dsh-cow', accent: PANEL_ACCENTS[0], icon: 'cube' }),
+      h(StatCard, { label: '在线节点', value: stats.connected ?? 0, sub: `共 ${peers.length} 个节点`, accent: PANEL_ACCENTS[1], icon: 'network' }),
+      h(StatCard, { label: '在线子 DSH', value: children.filter((child) => child.connected).length, sub: `${children.length} 个直接下级`, accent: PANEL_ACCENTS[2], icon: 'users' }),
+      h(StatCard, { label: '执行 / 排队', value: activeOutbound.length + activeInbound.length, sub: `父端 ${activeOutbound.length} · 子端 ${activeInbound.length}`, accent: PANEL_ACCENTS[3], icon: 'activity' }),
+      h(StatCard, { label: '待人工', value: pendingTotal, sub: `${pendingTasks.length} 审批 · ${questions.length} 提问`, accent: PANEL_ACCENTS[4], icon: 'alert' }),
+      h(StatCard, { label: '加密连接', value: stats.encrypted ?? 0, sub: 'AES-256-GCM', accent: PANEL_ACCENTS[5], icon: 'lock' }),
     ),
-    h('div', { style: { display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 } },
+    h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 12, marginBottom: 12 } },
+      h('div', { style: { ...PANEL.card, marginBottom: 0 } },
+        h('div', { style: PANEL.cardHead }, h('h3', { style: PANEL.cardTitle }, '节点连接'), h(PanelChip, null, `${peers.length} 个`)),
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap' } },
+          h(PanelDonut, {
+            segments: [
+              { label: '在线', value: stats.connected ?? 0, color: '#34c38f' },
+              { label: '离线', value: Math.max(0, peers.length - (stats.connected ?? 0)), color: '#64748b' },
+            ],
+            centerValue: `${stats.connected ?? 0}/${peers.length}`,
+            centerLabel: '在线',
+          }),
+          h('div', { style: { display: 'grid', gap: 7, flex: '1 1 130px' } },
+            h('div', { style: { display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 11.5 } }, h('span', { style: S.meta }, '在线'), h('b', { style: { color: '#34c38f' } }, stats.connected ?? 0)),
+            h('div', { style: { display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 11.5 } }, h('span', { style: S.meta }, '离线'), h('b', { style: { color: '#94a3b8' } }, Math.max(0, peers.length - (stats.connected ?? 0)))),
+            h('div', { style: { display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 11.5 } }, h('span', { style: S.meta }, '子节点'), h('b', null, children.length)),
+            h('div', { style: { display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 11.5 } }, h('span', { style: S.meta }, '上级'), h('b', { style: { color: parent.connected ? '#34c38f' : '#94a3b8' } }, parent.connected ? '已连接' : '未连接')),
+          ),
+        ),
+      ),
+      h('div', { style: { ...PANEL.card, marginBottom: 0 } },
+        h('div', { style: PANEL.cardHead }, h('h3', { style: PANEL.cardTitle }, '任务状态'), h(PanelChip, null, `${tasks.length + inbound.length} 条`)),
+        h(PanelTaskBars, { rows: taskCounts.map((row) => ({ label: taskLabels[row.status], value: row.value, color: taskColors[row.status] })) }),
+      ),
+    ),
+    h('div', { style: { display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 14, padding: 4, borderRadius: 11, background: 'var(--dsw-alias-bg-l2)', width: 'fit-content' } },
       tab('overview', '概览'),
       tab('nodes', '节点', peers.length),
       tab('tasks', '任务', activeOutbound.length + activeInbound.length),
