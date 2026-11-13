@@ -700,8 +700,8 @@ export class TaskManager {
         const candidates = this.roots()
           .filter((root) => cwd === root || cwd.startsWith(`${root.replace(/[\\/]$/, '')}/`))
           .sort((a, b) => b.length - a.length);
-        const workspacePath = candidates[0] ?? cwd;
-        const workspaceTitle = workspaceName || basename(workspacePath);
+        const workspacePath = cwd;
+        const workspaceTitle = workspaceName || basename(candidates[0] ?? cwd);
         let workspace = await registry.resolveByPath(workspacePath);
         if (!workspace && typeof registry.create === 'function') {
           workspace = await registry.create(workspacePath, workspaceTitle);
@@ -709,8 +709,7 @@ export class TaskManager {
         if (!workspace) return;
 
         // 合并同一路径的重复工作区：保留当前项，把其它项的会话迁过来后删除。
-        const duplicates = registry.list().filter((item) => item.id !== workspace.id
-          && (item.path === workspace.path || item.path.startsWith(`${workspace.path}/`)));
+        const duplicates = registry.list().filter((item) => item.id !== workspace.id && item.path === workspace.path);
         for (const duplicate of duplicates) {
           for (const duplicateSession of duplicate.sessionIds ?? []) {
             try {
