@@ -145,22 +145,24 @@ const ACTIVITY_KIND = {
 function CowActivityIcon({ size = 16 }) {
   return h('svg', {
     width: size, height: size, viewBox: '0 0 24 24', fill: 'none',
-    stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round',
+    stroke: 'currentColor', strokeWidth: 1.65, strokeLinecap: 'round', strokeLinejoin: 'round',
     'aria-hidden': 'true',
   },
     // 牛角
-    h('path', { d: 'M7.5 7.5 5 3.5l4 1.8' }),
-    h('path', { d: 'M16.5 7.5 19 3.5l-4 1.8' }),
-    // 牛头与耳朵
-    h('path', { d: 'M3.5 10.5c0-1.2 1-2.2 2.2-2.2h1.1L5.5 6.8' }),
-    h('path', { d: 'M20.5 10.5c0-1.2-1-2.2-2.2-2.2h-1.1l1.3-1.5' }),
-    h('path', { d: 'M6.5 11.5a5.5 5.5 0 0 1 11 0v2a5.5 5.5 0 0 1-11 0v-2z' }),
-    // 口鼻
-    h('path', { d: 'M9 14h6v2.2a3 3 0 0 1-6 0V14z' }),
-    h('path', { d: 'M11 16.2h2' }),
+    h('path', { d: 'M8.2 6.7C7.4 5.5 7.2 4.4 7.7 3.4c1.2.5 2.1 1.5 2.6 2.8' }),
+    h('path', { d: 'M15.8 6.7c.8-1.2 1-2.3.5-3.3-1.2.5-2.1 1.5-2.6 2.8' }),
+    // 耳朵
+    h('path', { d: 'M5.2 10.8C3.8 10.6 2.8 10 2.3 9.1c1.1-.5 2.3-.5 3.4 0' }),
+    h('path', { d: 'M18.8 10.8c1.4-.2 2.4-.8 2.9-1.7-1.1-.5-2.3-.5-3.4 0' }),
+    // 脸
+    h('path', { d: 'M6 11.2a6 6 0 0 1 12 0v2.4a6 6 0 0 1-12 0z' }),
     // 眼睛
-    h('circle', { cx: 9.3, cy: 11, r: 1, fill: 'currentColor', stroke: 'none' }),
-    h('circle', { cx: 14.7, cy: 11, r: 1, fill: 'currentColor', stroke: 'none' }),
+    h('circle', { cx: 9.7, cy: 10.8, r: 0.95, fill: 'currentColor', stroke: 'none' }),
+    h('circle', { cx: 14.3, cy: 10.8, r: 0.95, fill: 'currentColor', stroke: 'none' }),
+    // 口鼻
+    h('rect', { x: 9, y: 14.1, width: 6, height: 4.6, rx: 2.3 }),
+    h('circle', { cx: 10.9, cy: 16.3, r: 0.58, fill: 'currentColor', stroke: 'none' }),
+    h('circle', { cx: 13.1, cy: 16.3, r: 0.58, fill: 'currentColor', stroke: 'none' }),
   );
 }
 
