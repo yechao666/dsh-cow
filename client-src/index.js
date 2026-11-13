@@ -323,114 +323,27 @@ function CowTopology({ state }) {
 function TaskLine({ task, extra }) {
   const status = task.status === 'queued' && task.queuePosition ? `排队第 ${task.queuePosition} 位` : task.status;
   const tone = panelStatusStyle(task.status);
-  return h('div', { style: PANEL.taskRow },
-    h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 } },
-      h('span', { style: PANEL.taskTitle }, task.title || task.taskId),
-      h('span', { style: { ...PANEL.chip, color: tone.color, background: tone.background, borderColor: tone.border, flex: '0 0 auto' } }, status),
-    ),
-    h('div', { style: PANEL.taskMeta },
-      extra ? h('span', null, extra) : null,
-      task.createdAt ? h('span', null, new Date(task.createdAt).toLocaleTimeString('zh-CN', { hour12: false })) : null,
-      task.finishedAt ? h('span', null, `完成 ${new Date(task.finishedAt).toLocaleTimeString('zh-CN', { hour12: false })}`) : null,
-    ),
-    task.progress?.length
-      ? h('div', { style: PANEL.progress }, task.progress.slice(-1)[0]?.text || '')
-      : task.prompt
-        ? h('div', { style: PANEL.progress }, task.prompt)
-        : null,
-  );
-}
-
-
-const PANEL_ACCENTS = [
-  { main: '#4f8df7', soft: 'rgba(79,141,247,0.14)', border: 'rgba(79,141,247,0.32)' },
-  { main: '#34c38f', soft: 'rgba(52,195,143,0.14)', border: 'rgba(52,195,143,0.30)' },
-  { main: '#a78bfa', soft: 'rgba(167,139,250,0.16)', border: 'rgba(167,139,250,0.34)' },
-  { main: '#f59e0b', soft: 'rgba(245,158,11,0.15)', border: 'rgba(245,158,11,0.32)' },
-  { main: '#f472b6', soft: 'rgba(244,114,182,0.14)', border: 'rgba(244,114,182,0.30)' },
-  { main: '#22d3ee', soft: 'rgba(34,211,238,0.14)', border: 'rgba(34,211,238,0.30)' },
-];
-
-function panelAccent(label = '') {
-  let sum = 0;
-  for (const char of String(label)) sum = (sum + char.codePointAt(0)) % 9973;
-  return PANEL_ACCENTS[sum % PANEL_ACCENTS.length];
-}
-
-function PanelIcon({ name, size = 15 }) {
-  const paths = {
-    cube: ['M12 3l7 4v10l-7 4-7-4V7l7-4z', 'M12 3v14', 'M5 7l7 4 7-4'],
-    network: ['M12 5v5', 'M7 19l5-5 5 5', 'M12 10a2 2 0 100-4 2 2 0 000 4z', 'M6 21a2 2 0 100-4 2 2 0 000 4z', 'M18 21a2 2 0 100-4 2 2 0 000 4z'],
-    users: ['M16 21v-2a4 4 0 00-4-4H7a4 4 0 00-4 4v2', 'M9 11a4 4 0 100-8 4 4 0 000 8z', 'M17 3a4 4 0 010 8', 'M21 21v-2a4 4 0 00-3-3.87'],
-    activity: ['M3 12h4l3-8 4 16 3-8h4'],
-    alert: ['M18 8a6 6 0 00-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9', 'M10 21h4'],
-    lock: ['M6 11V8a6 6 0 1112 0v3', 'M5 11h14v10H5z'],
-  };
-  return h('svg', { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': 'true' },
-    (paths[name] ?? paths.cube).map((d) => h('path', { key: d, d })),
-  );
-}
-
-function StatCard({ label, value, sub, accent, icon }) {
+  const glyph = task.status === 'running' ? '▶' : task.status === 'queued' ? '⏳' : task.status === 'succeeded' ? '✓' : task.status === 'failed' || task.status === 'interrupted' ? '✕' : '–';
+  const last = task.progress?.slice(-1)[0]?.text || task.prompt || '';
   return h('div', {
     style: {
-      position: 'relative', overflow: 'hidden', border: `1px solid ${accent.border}`, borderRadius: 12,
-      padding: '11px 13px 10px', background: `linear-gradient(145deg, ${accent.soft}, var(--dsw-alias-bg-l1) 72%)`,
+      display: 'grid', gridTemplateColumns: '24px minmax(0, 1fr) auto', gap: 9, alignItems: 'start',
+      padding: '9px 10px', marginBottom: 7, borderRadius: 9,
+      border: `1px solid ${tone.border}`, borderLeft: `3px solid ${tone.color}`,
+      background: `linear-gradient(90deg, ${tone.background}, transparent 65%)`,
     },
   },
-    h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 } },
-      h('span', { style: { ...S.meta, fontSize: 11, color: accent.main, fontWeight: 600 } }, label),
-      h('span', { style: { width: 26, height: 26, borderRadius: 8, display: 'grid', placeItems: 'center', color: accent.main, background: accent.soft } }, h(PanelIcon, { name: icon })),
-    ),
-    h('div', { style: { fontSize: 22, fontWeight: 700, lineHeight: 1.2, letterSpacing: '-0.4px', marginTop: 2 } }, value),
-    sub ? h('div', { style: { ...S.meta, fontSize: 10.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, sub) : null,
-  );
-}
-
-function PanelDonut({ segments, size = 120, thickness = 14, centerValue, centerLabel }) {
-  const radius = (size - thickness) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const total = segments.reduce((sum, item) => sum + (Number(item.value) || 0), 0);
-  let offset = 0;
-  return h('div', { style: { position: 'relative', width: size, height: size, flex: '0 0 auto' } },
-    h('svg', { width: size, height: size, viewBox: `0 0 ${size} ${size}`, style: { transform: 'rotate(-90deg)' } },
-      h('circle', { cx: size / 2, cy: size / 2, r: radius, fill: 'none', stroke: 'var(--dsw-alias-bg-l2)', strokeWidth: thickness }),
-      total > 0
-        ? segments.map((item) => {
-            const length = (Number(item.value) / total) * circumference;
-            const dash = `${Math.max(0, length - 2)} ${circumference}`;
-            const el = h('circle', {
-              key: item.label, cx: size / 2, cy: size / 2, r: radius, fill: 'none',
-              stroke: item.color, strokeWidth: thickness, strokeLinecap: 'round',
-              strokeDasharray: dash, strokeDashoffset: -offset,
-            });
-            offset += length;
-            return el;
-          })
-        : null,
-    ),
-    h('div', { style: { position: 'absolute', inset: 0, display: 'grid', placeContent: 'center', textAlign: 'center', gap: 1 } },
-      h('div', { style: { fontSize: 19, fontWeight: 700, lineHeight: 1.1 } }, centerValue),
-      h('div', { style: { ...S.meta, fontSize: 10 } }, centerLabel),
-    ),
-  );
-}
-
-function PanelTaskBars({ rows }) {
-  const max = Math.max(1, ...rows.map((row) => row.value));
-  return h('div', { style: { display: 'grid', gap: 8 } },
-    rows.map((row) => h('div', { key: row.label, style: { display: 'grid', gap: 3 } },
-      h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, fontSize: 11.5 } },
-        h('span', { style: { display: 'inline-flex', alignItems: 'center', gap: 6 } },
-          h('span', { style: { width: 7, height: 7, borderRadius: 99, background: row.color } }),
-          h('span', { style: { color: 'var(--dsw-alias-label-secondary)' } }, row.label),
-        ),
-        h('span', { style: { fontWeight: 650 } }, row.value),
+    h('span', { style: { width: 22, height: 22, borderRadius: 7, display: 'grid', placeItems: 'center', fontSize: 10, fontWeight: 700, color: tone.color, background: tone.background, border: `1px solid ${tone.border}` } }, glyph),
+    h('div', { style: { display: 'grid', gap: 2, minWidth: 0 } },
+      h('div', { style: { fontSize: 12.5, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, task.title || task.taskId),
+      h('div', { style: { ...S.meta, display: 'flex', gap: 7, flexWrap: 'wrap', fontSize: 10.5 } },
+        extra ? h('span', { style: { color: 'var(--dsw-alias-label-secondary)' } }, extra) : null,
+        task.createdAt ? h('span', null, new Date(task.createdAt).toLocaleTimeString('zh-CN', { hour12: false })) : null,
+        task.finishedAt ? h('span', null, `完成 ${new Date(task.finishedAt).toLocaleTimeString('zh-CN', { hour12: false })}`) : null,
       ),
-      h('div', { style: { height: 5, borderRadius: 99, background: 'var(--dsw-alias-bg-l2)', overflow: 'hidden' } },
-        h('div', { style: { height: '100%', width: `${Math.round((row.value / max) * 100)}%`, background: row.color, borderRadius: 99, opacity: row.value ? 1 : 0 } }),
-      ),
-    )),
+      last ? h('div', { style: { ...S.meta, fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, last) : null,
+    ),
+    h('span', { style: { ...PANEL.chip, color: tone.color, background: tone.background, borderColor: tone.border, whiteSpace: 'nowrap' } }, status),
   );
 }
 
@@ -441,6 +354,8 @@ function CowActivityPanel() {
   const [answers, setAnswers] = React.useState({});
   const [answering, setAnswering] = React.useState('');
   const [section, setSection] = React.useState('overview');
+  const [taskFilter, setTaskFilter] = React.useState('all');
+  const [activityFilter, setActivityFilter] = React.useState('all');
 
   const postAnswer = async (body) => {
     const response = await fetch(api('answer'), {
@@ -567,6 +482,16 @@ function CowActivityPanel() {
     },
   }, count ? `${label} ${count}` : label);
 
+  const filterButton = (active, label, onClick) => h('button', {
+    type: 'button', onClick,
+    style: {
+      ...PANEL.chip, cursor: 'pointer', fontSize: 11,
+      color: active ? 'var(--dsw-alias-brand-primary)' : 'var(--dsw-alias-label-secondary)',
+      borderColor: active ? 'color-mix(in srgb, var(--dsw-alias-brand-primary) 40%, transparent)' : 'var(--dsw-alias-border-l2)',
+      background: active ? 'color-mix(in srgb, var(--dsw-alias-brand-primary) 10%, transparent)' : 'transparent',
+    },
+  }, label);
+
   const connectionOf = (label) => (state.connections ?? []).find((item) => item.peer === label) ?? null;
   const nodeDetail = (peer, isParent = false) => {
     const conn = connectionOf(peer.label);
@@ -606,25 +531,43 @@ function CowActivityPanel() {
     );
   };
 
-  const activityList = (limit) => items.length
-    ? h('div', null, items.slice(0, limit).map((item) => {
-        const kind = ACTIVITY_KIND[item.kind] ?? ACTIVITY_KIND.info;
-        return h('div', { key: item.id, style: PANEL.activityRow },
-          h('span', { style: { ...PANEL.activityDot, background: kind.color } }),
-          h('div', { style: { minWidth: 0 } },
-            h('div', { style: PANEL.activityText }, item.text || '（无描述）'),
-            h('div', { style: { ...S.meta, display: 'flex', gap: 8, flexWrap: 'wrap', fontSize: 10.5, marginTop: 1 } },
-              h('span', null, timeOf(item.at)),
-              item.peer ? h('span', null, item.peer) : null,
-              item.taskId ? h('span', { style: S.mono }, item.taskId.slice(-10)) : null,
-              item.status ? h('span', null, item.status) : null,
+  const activityList = (limit) => items.filter(activityMatch).length
+    ? h('div', { style: { position: 'relative', paddingLeft: 16 } },
+        h('div', { style: { position: 'absolute', left: 6, top: 6, bottom: 6, width: 1, background: 'var(--dsw-alias-border-l2)' } }),
+        items.filter(activityMatch).slice(0, limit).map((item) => {
+          const kind = ACTIVITY_KIND[item.kind] ?? ACTIVITY_KIND.info;
+          return h('div', { key: item.id, style: { display: 'grid', gridTemplateColumns: '24px minmax(0, 1fr)', gap: 10, padding: '7px 0', position: 'relative' } },
+            h('span', {
+              style: {
+                position: 'relative', zIndex: 1, width: 22, height: 22, borderRadius: 7, display: 'grid', placeItems: 'center',
+                color: kind.color, background: 'var(--dsw-alias-bg-l1)', border: `1px solid ${kind.color}55`,
+                fontSize: 9.5, fontWeight: 700, marginLeft: -5,
+              },
+            }, String(kind.label || '·').slice(0, 1)),
+            h('div', { style: { minWidth: 0, marginTop: 1 } },
+              h('div', { style: { fontSize: 12.5, lineHeight: 1.5, wordBreak: 'break-word' } }, item.text || '（无描述）'),
+              h('div', { style: { ...S.meta, display: 'flex', gap: 7, flexWrap: 'wrap', fontSize: 10.5, marginTop: 2 } },
+                h('span', { style: { color: kind.color, fontWeight: 600 } }, kind.label),
+                h('span', null, timeOf(item.at)),
+                item.peer ? h('span', null, item.peer) : null,
+                item.taskId ? h('span', { style: S.mono }, item.taskId.slice(-10)) : null,
+                item.status ? h('span', null, item.status) : null,
+              ),
             ),
-          ),
-        );
-      }))
-    : h('div', { style: PANEL.empty }, '还没有活动');
+          );
+        }),
+      )
+    : h('div', { style: PANEL.empty }, '没有符合筛选的活动');
 
   const incomingVisible = inbound.length > 0;
+  const taskMatch = (task) => taskFilter === 'all' || (taskFilter === 'active' ? ['queued', 'running'].includes(task.status) : ['succeeded', 'failed', 'canceled', 'interrupted'].includes(task.status));
+  const visibleTasks = tasks.filter(taskMatch);
+  const visibleInbound = inbound.filter(taskMatch);
+  const activityMatch = (item) => activityFilter === 'all'
+    || (activityFilter === 'task' && ['task', 'result', 'queue', 'inbound'].includes(item.kind))
+    || (activityFilter === 'question' && ['question', 'answer'].includes(item.kind))
+    || (activityFilter === 'file' && item.kind === 'file')
+    || (activityFilter === 'peer' && ['peer', 'info'].includes(item.kind));
   const approvalBlock = pendingTotal
     ? h('div', { style: { ...PANEL.card, marginBottom: 0, borderColor: 'rgba(183,121,31,0.35)' } },
         h('div', { style: PANEL.cardHead }, h('h3', { style: PANEL.cardTitle }, '需要你决定'), h(PanelChip, { tone: 'brand' }, `${pendingTotal} 条`)),
@@ -754,21 +697,40 @@ function CowActivityPanel() {
         )
       : null,
     section === 'tasks'
-      ? h('div', { style: { display: 'grid', gap: 12, gridTemplateColumns: incomingVisible ? 'repeat(auto-fit, minmax(320px, 1fr))' : '1fr' } },
-          h('div', { style: { ...PANEL.card, marginBottom: 0 } },
-            h('div', { style: PANEL.cardHead }, h('h3', { style: PANEL.cardTitle }, '我派出的任务'), h(PanelChip, null, `${tasks.length} 条`)),
-            tasks.length ? h('div', null, tasks.slice(0, 8).map((task) => h(TaskLine, { key: task.taskId, task, extra: task.peer }))) : h('div', { style: PANEL.empty }, '还没有派发任务'),
+      ? h(React.Fragment, null,
+          h('div', { style: { display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 } },
+            filterButton(taskFilter === 'all', `全部 ${tasks.length + inbound.length}`, () => setTaskFilter('all')),
+            filterButton(taskFilter === 'active', `进行中 ${activeOutbound.length + activeInbound.length}`, () => setTaskFilter('active')),
+            filterButton(taskFilter === 'done', `已完成 ${tasks.length + inbound.length - activeOutbound.length - activeInbound.length}`, () => setTaskFilter('done')),
           ),
-          incomingVisible
-            ? h('div', { style: { ...PANEL.card, marginBottom: 0 } },
-                h('div', { style: PANEL.cardHead }, h('h3', { style: PANEL.cardTitle }, '本机执行 / 排队'), h(PanelChip, null, `${inbound.length} 条`)),
-                inbound.slice(0, 8).map((task) => h(TaskLine, { key: task.taskId, task, extra: task.from })),
-              )
-            : null,
+          h('div', { style: { display: 'grid', gap: 12, gridTemplateColumns: incomingVisible ? 'repeat(auto-fit, minmax(320px, 1fr))' : '1fr' } },
+            h('div', { style: { ...PANEL.card, marginBottom: 0 } },
+              h('div', { style: PANEL.cardHead }, h('h3', { style: PANEL.cardTitle }, '我派出的任务'), h(PanelChip, null, `${visibleTasks.length} 条`)),
+              visibleTasks.length ? h('div', null, visibleTasks.slice(0, 10).map((task) => h(TaskLine, { key: task.taskId, task, extra: task.peer }))) : h('div', { style: PANEL.empty }, '没有符合筛选的任务'),
+            ),
+            incomingVisible
+              ? h('div', { style: { ...PANEL.card, marginBottom: 0 } },
+                  h('div', { style: PANEL.cardHead }, h('h3', { style: PANEL.cardTitle }, '本机执行 / 排队'), h(PanelChip, null, `${visibleInbound.length} 条`)),
+                  visibleInbound.length ? visibleInbound.slice(0, 10).map((task) => h(TaskLine, { key: task.taskId, task, extra: task.from })) : h('div', { style: PANEL.empty }, '没有符合筛选的任务'),
+                )
+              : null,
+          ),
         )
       : null,
     section === 'approvals' ? approvalBlock : null,
-    section === 'activity' ? h('div', { style: PANEL.card }, h('div', { style: PANEL.cardHead }, h('h3', { style: PANEL.cardTitle }, '全部活动'), h(PanelChip, null, `${items.length} 条`)), activityList(200)) : null,
+    section === 'activity'
+      ? h('div', { style: PANEL.card },
+          h('div', { style: PANEL.cardHead }, h('h3', { style: PANEL.cardTitle }, '活动时间线'), h(PanelChip, null, `${items.filter(activityMatch).length} 条`)),
+          h('div', { style: { display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 } },
+            filterButton(activityFilter === 'all', '全部', () => setActivityFilter('all')),
+            filterButton(activityFilter === 'task', '任务', () => setActivityFilter('task')),
+            filterButton(activityFilter === 'question', '提问/审批', () => setActivityFilter('question')),
+            filterButton(activityFilter === 'file', '文件', () => setActivityFilter('file')),
+            filterButton(activityFilter === 'peer', '节点', () => setActivityFilter('peer')),
+          ),
+          activityList(200),
+        )
+      : null,
   );
 }
 
