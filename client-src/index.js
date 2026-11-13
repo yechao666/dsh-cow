@@ -164,6 +164,52 @@ function CowActivityIcon({ size = 16 }) {
   );
 }
 
+
+const TASK_STATUS_LABELS = {
+  queued: '排队中',
+  running: '执行中',
+  succeeded: '已完成',
+  failed: '失败',
+  canceled: '已取消',
+  interrupted: '已中断',
+  waiting: '等待中',
+};
+
+function taskStatusLabel(status) {
+  return TASK_STATUS_LABELS[status] ?? String(status ?? '');
+}
+
+function panelStatusStyle(status) {
+  const map = {
+    queued: { color: '#b7791f', background: 'rgba(183, 121, 31, 0.12)', border: 'rgba(183, 121, 31, 0.35)' },
+    running: { color: 'var(--dsw-alias-brand-primary)', background: 'color-mix(in srgb, var(--dsw-alias-brand-primary) 12%, transparent)', border: 'color-mix(in srgb, var(--dsw-alias-brand-primary) 35%, transparent)' },
+    succeeded: { color: '#2f855a', background: 'rgba(47, 133, 90, 0.12)', border: 'rgba(47, 133, 90, 0.3)' },
+    failed: { color: '#c53030', background: 'rgba(197, 48, 48, 0.1)', border: 'rgba(197, 48, 48, 0.3)' },
+    interrupted: { color: '#c53030', background: 'rgba(197, 48, 48, 0.1)', border: 'rgba(197, 48, 48, 0.3)' },
+    canceled: { color: 'var(--dsw-alias-label-secondary)', background: 'var(--dsw-alias-bg-l2)', border: 'var(--dsw-alias-border-l2)' },
+  };
+  return map[status] ?? map.canceled;
+}
+
+function roleSurface(role) {
+  if (role === 'self') {
+    return { background: 'color-mix(in srgb, var(--dsw-alias-brand-primary) 9%, var(--dsw-alias-bg-l1))', border: 'color-mix(in srgb, var(--dsw-alias-brand-primary) 38%, var(--dsw-alias-border-l2))' };
+  }
+  if (role === 'parent') {
+    return { background: 'color-mix(in srgb, #6366f1 5%, var(--dsw-alias-bg-l1))', border: 'color-mix(in srgb, #6366f1 22%, var(--dsw-alias-border-l2))' };
+  }
+  return { background: 'color-mix(in srgb, #14b8a6 4%, var(--dsw-alias-bg-l1))', border: 'color-mix(in srgb, #14b8a6 20%, var(--dsw-alias-border-l2))' };
+}
+
+function versionLess(a, b) {
+  const pa = String(a ?? '').replace(/^v/, '').split('.').map((part) => Number.parseInt(part, 10) || 0);
+  const pb = String(b ?? '').replace(/^v/, '').split('.').map((part) => Number.parseInt(part, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i += 1) {
+    if ((pa[i] ?? 0) !== (pb[i] ?? 0)) return (pa[i] ?? 0) < (pb[i] ?? 0);
+  }
+  return false;
+}
+
 function TopologyNode({ label, version, connected, encrypted, currentTask, self = false }) {
   return h('div', {
     style: {
