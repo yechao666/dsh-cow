@@ -275,61 +275,169 @@ function TopologyNode({ label, version, connected, encrypted, currentTask, self 
 }
 
 function CowTopology({ state }) {
+  const STORAGE_KEY = 'dsh-cow:topology:v1';
+  const NODE_W = 236;
+  const [positions, setPositions] = React.useState(() => {
+    try {
+      if (typeof window === 'undefined') return {};
+      return JSON.parse(window.localStorage.getItem(STORAGE_KEY) || '{}') || {};
+    } catch {
+      return {};
+    }
+  });
+  const [view, setView] = React.useState({ x: 0, y: 0, zoom: 0.68 });
+  const drag = React.useRef(null);
+
+  React.useEffect(() => {
+    try { if (typeof window !== 'undefined') window.localStorage.setItem(STORAGE_KEY, JSON.stringify(positions)); } catch { /* 忽略 */ }
+  }, [positions]);
+
+  React.useEffect(() => {
+    const move = (event) => {
+      const current = drag.current;
+      if (!current) return;
+      const dx = event.clientX - current.startX;
+      const dy = event.clientY - current.startY;
+      if (current.kind === 'pan') {
+        setView((value) => ({ ...value, x: current.origin.x + dx, y: current.origin.y + dy }));
+        return;
+      }
+      setPositions((value) => ({
+        ...value,
+        [current.key]: {
+          x: Math.max(0, Math.min(current.bounds.width - NODE_W, current.origin.x + dx / current.zoom)),
+          y: Math.max(0, Math.min(current.bounds.height - 90, current.origin.y + dy / current.zoom)),
+        },
+      }));
+    };
+    const up = () => { drag.current = null; };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    return () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+  }, []);
+
   if (!state) return null;
   const instance = state.instance ?? {};
   const peers = state.peers ?? [];
   const parent = peers.find((peer) => peer.relation === 'parent') ?? null;
   const children = peers.filter((peer) => peer.relation !== 'parent');
-  const vline = (height) => h('div', { style: { width: 1, height, background: 'var(--dsw-alias-border-l2)', marginLeft: 20 } });
-  const sectionLabel = (text, extra) => h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 } },
-    h('span', { style: { ...S.meta, fontSize: 10.5, fontWeight: 650, letterSpacing: '0.4px' } }, text),
-    extra ? h('span', { style: { ...S.meta, fontSize: 10.5 } }, extra) : null,
-  );
-  const childRow = (child) => h('div', {
-    key: child.label,
-    style: {
-      display: 'grid', gap: 2, padding: '7px 10px 7px 12px',
-      borderLeft: '2px solid var(--dsw-alias-border-l2)',
-      marginLeft: 19, position: 'relative',
+  const canvasHeight = Math.max(420, 330 + children.length * 96);
+  const canvasWidth = 720;
+  const defaults = {
+    self: { x: (canvasWidth - NODE_W) / 2, y: 150 },
+    ...(parent ? { [`parent:${parent.label}`]: { x: (canvasWidth - NODE_W) / 2, y: 20 } } : {}),
+    ...Object.fromEntries(children.map((child, index) => [`child:${child.label}`, { x: (canvasWidth - NODE_W) / 2, y: 300 + index * 96 }])),
+  };
+  const positionOf = (key) => positions[key] ?? defaults[key] ?? { x: 20, y: 20 };
+  const centerX = (key) => positionOf(key).x + NODE_W / 2;
+  const startDrag = (event, key) => {
+    event.stopPropagation();
+    drag.current = {
+      kind: 'node', key, startX: event.clientX, startY: event.clientY,
+      origin: { ...positionOf(key) }, zoom: view.zoom,
+      bounds: { width: canvasWidth, height: canvasHeight },
+    };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+  const startPan = (event) => {
+    if (event.target?.closest?.('[data-node]')) return;
+    drag.current = { kind: 'pan', startX: event.clientX, startY: event.clientY, origin: { ...view } };
+  };
+  const resetLayout = () => {
+    try { window.localStorage.removeItem(STORAGE_KEY); } catch { /* 忽略 */ }
+    setPositions({});
+    setView({ x: 0, y: 0, zoom: 1 });
+  };
+
+  const nodeCard = (key, label, meta, options = {}) => {
+    const accent = panelAccent(label);
+    const position = positionOf(key);
+    return h('div', {
+      key,
+      'data-node': 'true',
+      onPointerDown: (event) => startDrag(event, key),
+      onDoubleClick: () => setPositions((value) => { const next = { ...value }; delete next[key]; return next; }),
+      title: '拖动调整位置；双击恢复默认位置',
+      style: {
+        position: 'absolute', left: position.x, top: position.y, width: NODE_W,
+        border: `1px solid ${options.self ? 'var(--dsw-alias-brand-primary)' : 'var(--dsw-alias-border-l2)'}`,
+        borderRadius: 12, padding: '10px 12px', cursor: 'grab', userSelect: 'none',
+        background: options.self
+          ? 'color-mix(in srgb, var(--dsw-alias-brand-primary) 9%, var(--dsw-alias-bg-l1))'
+          : 'var(--dsw-alias-bg-l1)',
+        boxShadow: options.self
+          ? '0 0 0 1px color-mix(in srgb, var(--dsw-alias-brand-primary) 35%, transparent), 0 10px 24px rgba(0,0,0,0.10)'
+          : '0 6px 18px rgba(0,0,0,0.06)',
+        display: 'grid', gap: 5,
+      },
     },
-  },
-    h('div', { style: { display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' } },
-      h('span', { style: { width: 18, height: 18, borderRadius: 6, display: 'grid', placeItems: 'center', color: '#fff', background: panelAccent(child.label).main, fontSize: 9.5, fontWeight: 700 } }, String(child.label || '?').slice(0, 1)),
-      h('span', { style: { fontSize: 12, fontWeight: 600 } }, child.label),
-      h(PanelChip, { tone: child.connected ? 'on' : 'off' }, child.connected ? '在线' : '离线'),
-      child.version ? h('span', { style: { ...S.meta, fontSize: 10.5 } }, `v${child.version}`) : null,
-      child.encrypted ? h(E2EChip, { compact: true }) : null,
-      child.currentTask ? h('span', { style: { ...S.meta, fontSize: 10.5, marginLeft: 'auto', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '55%' } }, `任务：${child.currentTask.title || child.currentTask.taskId}`) : null,
-    ),
-  );
+      h('div', { style: { display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 } },
+        h('span', { style: { width: 26, height: 26, borderRadius: 8, display: 'grid', placeItems: 'center', color: '#fff', background: accent.main, fontSize: 11, fontWeight: 700, flex: '0 0 auto' } }, String(label || '?').slice(0, 1)),
+        h('span', { style: { fontSize: 12.5, fontWeight: 650, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, label || '未命名节点'),
+        options.self ? h(PanelChip, { tone: 'brand' }, '当前') : null,
+      ),
+      h('div', { style: { display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' } },
+        h('span', { style: { width: 6, height: 6, borderRadius: 99, background: options.connected ? '#34c38f' : 'var(--dsw-alias-label-tertiary)' } }),
+        h(PanelChip, { tone: options.connected ? 'on' : 'off' }, options.connected ? '在线' : '离线'),
+        meta.version ? h(PanelChip, null, `v${meta.version}`) : null,
+        meta.encrypted ? h(E2EChip, { compact: true }) : null,
+      ),
+      meta.currentTask ? h('div', { style: { ...S.meta, fontSize: 10.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, `任务：${meta.currentTask.title || meta.currentTask.taskId}`) : null,
+    );
+  };
+
+  const edges = [];
+  if (parent) {
+    const from = positionOf(`parent:${parent.label}`);
+    const to = positionOf('self');
+    edges.push({ key: 'p', d: `M ${from.x + NODE_W / 2} ${from.y + 78} C ${from.x + NODE_W / 2} ${from.y + 110}, ${to.x + NODE_W / 2} ${to.y - 30}, ${to.x + NODE_W / 2} ${to.y}` });
+  }
+  for (const child of children) {
+    const from = positionOf('self');
+    const to = positionOf(`child:${child.label}`);
+    edges.push({ key: child.label, d: `M ${from.x + NODE_W / 2} ${from.y + 82} C ${from.x + NODE_W / 2} ${from.y + 120}, ${to.x + NODE_W / 2} ${to.y - 34}, ${to.x + NODE_W / 2} ${to.y}` });
+  }
+
   return h('div', { style: { ...PANEL.card, background: 'linear-gradient(180deg, color-mix(in srgb, var(--dsw-alias-brand-primary) 4%, var(--dsw-alias-bg-l1)), var(--dsw-alias-bg-l1))' } },
     h('div', { style: PANEL.cardHead },
       h('div', { style: { display: 'grid', gap: 1 } },
         h('h3', { style: PANEL.cardTitle }, '节点拓扑'),
-        h('span', { style: { ...S.meta, fontSize: 11 } }, '上级在上，当前节点与直接下级依次向下排列'),
+        h('span', { style: { ...S.meta, fontSize: 11 } }, '拖动节点调整位置；拖空白处平移；双击节点恢复默认'),
       ),
-      h(PanelChip, { tone: 'brand' }, `${children.filter((child) => child.connected).length}/${children.length} 子节点在线`),
+      h('div', { style: { display: 'flex', gap: 6, alignItems: 'center' } },
+        h(PanelChip, { tone: 'brand' }, `${children.filter((child) => child.connected).length}/${children.length} 在线`),
+        h('button', { type: 'button', style: { ...S.secondary, height: 26, padding: '0 8px', fontSize: 11 }, onClick: () => setView((value) => ({ ...value, zoom: Math.min(1.5, value.zoom + 0.1) })) }, '+'),
+        h('span', { style: { ...S.meta, minWidth: 34, textAlign: 'center' } }, `${Math.round(view.zoom * 100)}%`),
+        h('button', { type: 'button', style: { ...S.secondary, height: 26, padding: '0 8px', fontSize: 11 }, onClick: () => setView((value) => ({ ...value, zoom: Math.max(0.6, value.zoom - 0.1) })) }, '−'),
+        h('button', { type: 'button', style: { ...S.secondary, height: 26, padding: '0 8px', fontSize: 11 }, onClick: resetLayout }, '重置布局'),
+      ),
     ),
-    h('div', { style: { display: 'grid', gap: 0, padding: '2px 0' } },
-      sectionLabel('上级节点'),
-      parent
-        ? h('div', { style: { display: 'grid', gap: 6 } }, h(TopologyNode, { label: parent.label, version: parent.version, connected: parent.connected, encrypted: parent.encrypted, currentTask: parent.currentTask }))
-        : h('div', { style: { ...PANEL.chip, color: 'var(--dsw-alias-label-tertiary)', borderStyle: 'dashed', padding: '6px 12px', fontSize: 11, justifySelf: 'start' } }, '无直接上级'),
-      vline(18),
-      sectionLabel('当前节点'),
-      h(TopologyNode, {
-        label: instance.displayName || '本机',
-        version: instance.version,
-        connected: true,
-        encrypted: (state.stats?.encrypted ?? 0) > 0,
-        currentTask: state.currentInbound ?? null,
-        self: true,
-      }),
-      vline(18),
-      sectionLabel('下级节点', children.length ? `${children.length} 个` : ''),
-      children.length
-        ? h('div', { style: { display: 'grid', gap: 2 } }, children.map(childRow))
-        : h('div', { style: { ...PANEL.chip, color: 'var(--dsw-alias-label-tertiary)', borderStyle: 'dashed', padding: '6px 12px', fontSize: 11, justifySelf: 'start' } }, '无直接下级'),
+    h('div', {
+      onPointerDown: startPan,
+      style: {
+        position: 'relative', height: 540, overflow: 'hidden', borderRadius: 10,
+        border: '1px solid var(--dsw-alias-border-l2)',
+        backgroundImage: 'radial-gradient(circle, var(--dsw-alias-border-l2) 1px, transparent 1px)',
+        backgroundSize: '20px 20px',
+        cursor: 'grab',
+        touchAction: 'none',
+      },
+    },
+      h('div', { style: { position: 'absolute', left: 0, top: 0, transformOrigin: '0 0', transform: `translate(${view.x}px, ${view.y}px) scale(${view.zoom})`, width: canvasWidth, height: canvasHeight } },
+        h('svg', { width: canvasWidth, height: canvasHeight, style: { position: 'absolute', left: 0, top: 0, pointerEvents: 'none' } },
+          edges.map((edge) => h('path', { key: edge.key, d: edge.d, fill: 'none', stroke: 'var(--dsw-alias-brand-primary)', strokeWidth: 1.4, strokeOpacity: 0.35, strokeDasharray: '4 5' })),
+        ),
+        parent ? nodeCard(`parent:${parent.label}`, parent.label, { version: parent.version, encrypted: parent.encrypted, currentTask: parent.currentTask }, { connected: parent.connected }) : null,
+        nodeCard('self', instance.displayName || '本机', { version: instance.version, encrypted: (state.stats?.encrypted ?? 0) > 0, currentTask: state.currentInbound ?? null }, { self: true, connected: true }),
+        children.map((child) => nodeCard(`child:${child.label}`, child.label, { version: child.version, encrypted: child.encrypted, currentTask: child.currentTask }, { connected: child.connected })),
+        !parent ? h('div', { style: { position: 'absolute', left: (canvasWidth - 150) / 2, top: 18, ...PANEL.chip, color: 'var(--dsw-alias-label-tertiary)', borderStyle: 'dashed' } }, '无直接上级') : null,
+        children.length === 0
+          ? h('div', { style: { position: 'absolute', left: (canvasWidth - 150) / 2, top: 308, ...PANEL.chip, color: 'var(--dsw-alias-label-tertiary)', borderStyle: 'dashed' } }, '无直接下级')
+          : null,
+      ),
     ),
   );
 }
