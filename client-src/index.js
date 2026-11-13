@@ -275,7 +275,7 @@ function TopologyNode({ label, version, connected, encrypted, currentTask, self 
 }
 
 function CowTopology({ state }) {
-  const STORAGE_KEY = 'dsh-cow:topology:v1';
+  const STORAGE_KEY = 'dsh-cow:topology:v2';
   const NODE_W = 236;
   const [positions, setPositions] = React.useState(() => {
     try {
@@ -285,7 +285,7 @@ function CowTopology({ state }) {
       return {};
     }
   });
-  const [view, setView] = React.useState({ x: 0, y: 0, zoom: 0.68 });
+  const [view, setView] = React.useState({ x: 0, y: 0, zoom: 0.65 });
   const drag = React.useRef(null);
 
   React.useEffect(() => {
@@ -324,12 +324,15 @@ function CowTopology({ state }) {
   const peers = state.peers ?? [];
   const parent = peers.find((peer) => peer.relation === 'parent') ?? null;
   const children = peers.filter((peer) => peer.relation !== 'parent');
-  const canvasHeight = Math.max(420, 330 + children.length * 96);
-  const canvasWidth = 720;
+  const gap = 28;
+  const childTotalWidth = children.length ? children.length * NODE_W + (children.length - 1) * gap : NODE_W;
+  const canvasWidth = Math.max(760, childTotalWidth + 80);
+  const canvasHeight = 470;
+  const childStartX = (canvasWidth - childTotalWidth) / 2;
   const defaults = {
     self: { x: (canvasWidth - NODE_W) / 2, y: 150 },
     ...(parent ? { [`parent:${parent.label}`]: { x: (canvasWidth - NODE_W) / 2, y: 20 } } : {}),
-    ...Object.fromEntries(children.map((child, index) => [`child:${child.label}`, { x: (canvasWidth - NODE_W) / 2, y: 300 + index * 96 }])),
+    ...Object.fromEntries(children.map((child, index) => [`child:${child.label}`, { x: childStartX + index * (NODE_W + gap), y: 340 }])),
   };
   const positionOf = (key) => positions[key] ?? defaults[key] ?? { x: 20, y: 20 };
   const centerX = (key) => positionOf(key).x + NODE_W / 2;
@@ -398,14 +401,16 @@ function CowTopology({ state }) {
   for (const child of children) {
     const from = positionOf('self');
     const to = positionOf(`child:${child.label}`);
-    edges.push({ key: child.label, d: `M ${from.x + NODE_W / 2} ${from.y + 82} C ${from.x + NODE_W / 2} ${from.y + 120}, ${to.x + NODE_W / 2} ${to.y - 34}, ${to.x + NODE_W / 2} ${to.y}` });
+    const fromX = from.x + NODE_W / 2;
+    const toX = to.x + NODE_W / 2;
+    edges.push({ key: child.label, d: `M ${fromX} ${from.y + 82} C ${fromX} ${from.y + 128}, ${toX} ${to.y - 48}, ${toX} ${to.y}` });
   }
 
   return h('div', { style: { ...PANEL.card, background: 'linear-gradient(180deg, color-mix(in srgb, var(--dsw-alias-brand-primary) 4%, var(--dsw-alias-bg-l1)), var(--dsw-alias-bg-l1))' } },
     h('div', { style: PANEL.cardHead },
       h('div', { style: { display: 'grid', gap: 1 } },
         h('h3', { style: PANEL.cardTitle }, '节点拓扑'),
-        h('span', { style: { ...S.meta, fontSize: 11 } }, '拖动节点调整位置；拖空白处平移；双击节点恢复默认'),
+        h('span', { style: { ...S.meta, fontSize: 11 } }, '上层上级、中层当前、下层子节点水平铺开；拖动节点调整，拖空白平移'),
       ),
       h('div', { style: { display: 'flex', gap: 6, alignItems: 'center' } },
         h(PanelChip, { tone: 'brand' }, `${children.filter((child) => child.connected).length}/${children.length} 在线`),
@@ -418,7 +423,7 @@ function CowTopology({ state }) {
     h('div', {
       onPointerDown: startPan,
       style: {
-        position: 'relative', height: 540, overflow: 'hidden', borderRadius: 10,
+        position: 'relative', height: 430, overflow: 'hidden', borderRadius: 10,
         border: '1px solid var(--dsw-alias-border-l2)',
         backgroundImage: 'radial-gradient(circle, var(--dsw-alias-border-l2) 1px, transparent 1px)',
         backgroundSize: '20px 20px',
@@ -435,7 +440,7 @@ function CowTopology({ state }) {
         children.map((child) => nodeCard(`child:${child.label}`, child.label, { version: child.version, encrypted: child.encrypted, currentTask: child.currentTask }, { connected: child.connected })),
         !parent ? h('div', { style: { position: 'absolute', left: (canvasWidth - 150) / 2, top: 18, ...PANEL.chip, color: 'var(--dsw-alias-label-tertiary)', borderStyle: 'dashed' } }, '无直接上级') : null,
         children.length === 0
-          ? h('div', { style: { position: 'absolute', left: (canvasWidth - 150) / 2, top: 308, ...PANEL.chip, color: 'var(--dsw-alias-label-tertiary)', borderStyle: 'dashed' } }, '无直接下级')
+          ? h('div', { style: { position: 'absolute', left: (canvasWidth - 150) / 2, top: 332, ...PANEL.chip, color: 'var(--dsw-alias-label-tertiary)', borderStyle: 'dashed' } }, '无直接下级')
           : null,
       ),
     ),
