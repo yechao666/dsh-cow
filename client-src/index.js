@@ -599,6 +599,7 @@ function CowActivityPanel() {
   const [loading, setLoading] = React.useState(false);
   const [answers, setAnswers] = React.useState({});
   const [answering, setAnswering] = React.useState('');
+  const [upgrading, setUpgrading] = React.useState('');
   const [section, setSection] = React.useState('overview');
   const [taskFilter, setTaskFilter] = React.useState('all');
   const [activityFilter, setActivityFilter] = React.useState('all');
@@ -613,6 +614,26 @@ function CowActivityPanel() {
     const payload = await response.json();
     if (!response.ok) throw new Error(payload?.error?.message || `HTTP ${response.status}`);
     return payload;
+  };
+
+  const upgradePeer = async (peer) => {
+    setUpgrading(peer);
+    setError('');
+    try {
+      const response = await fetch(api('upgrade'), {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ peer }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload?.error?.message || `HTTP ${response.status}`);
+      await load();
+    } catch (upgradeError) {
+      setError(upgradeError.message);
+    } finally {
+      setUpgrading('');
+    }
   };
 
   const load = React.useCallback(async () => {
@@ -773,6 +794,15 @@ function CowActivityPanel() {
         peer.version ? h(PanelChip, null, `v${peer.version}`) : null,
         peer.encrypted ? h(E2EChip, { compact: true }) : null,
         h('span', { style: { ...S.meta, fontSize: 10.5, marginLeft: 'auto' } }, roleLabel),
+        role === 'child' && peer.connected && peer.version && data?.pluginVersion && peer.version !== data.pluginVersion
+          ? h('button', {
+              type: 'button',
+              style: { ...S.secondary, height: 24, padding: '0 8px', fontSize: 10.5, marginLeft: 4 },
+              disabled: Boolean(upgrading),
+              title: `把 ${peer.label} 升级到 ${data.pluginVersion}`,
+              onClick: () => upgradePeer(peer.label),
+            }, upgrading === peer.label ? '升级中…' : `升级到 ${data.pluginVersion}`)
+          : null,
       ),
       h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(175px, 1fr))', gap: '7px 14px' } },
         facts.map(([label, value, mono]) => h('div', { key: label, style: { display: 'grid', gap: 1, minWidth: 0 } },
