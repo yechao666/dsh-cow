@@ -331,6 +331,7 @@ function CowActivityPanel() {
   const [loading, setLoading] = React.useState(false);
   const [answers, setAnswers] = React.useState({});
   const [answering, setAnswering] = React.useState('');
+  const [section, setSection] = React.useState('overview');
 
   const postAnswer = async (body) => {
     const response = await fetch(api('answer'), {
@@ -435,6 +436,87 @@ function CowActivityPanel() {
     ),
   );
 
+  const tab = (key, label, count) => h('button', {
+    key,
+    type: 'button',
+    onClick: () => setSection(key),
+    style: {
+      border: '1px solid ' + (section === key ? 'var(--dsw-alias-brand-primary)' : 'var(--dsw-alias-border-l2)'),
+      background: section === key ? 'color-mix(in srgb, var(--dsw-alias-brand-primary) 10%, transparent)' : 'transparent',
+      color: section === key ? 'var(--dsw-alias-brand-primary)' : 'var(--dsw-alias-label-secondary)',
+      borderRadius: 999,
+      padding: '5px 12px',
+      fontSize: 12,
+      fontWeight: section === key ? 650 : 500,
+      cursor: 'pointer',
+    },
+  }, count ? `${label} ${count}` : label);
+
+  const connectionOf = (label) => (state.connections ?? []).find((item) => item.peer === label) ?? null;
+  const nodeDetail = (peer, isParent = false) => {
+    const conn = connectionOf(peer.label);
+    return h('div', { key: `${isParent ? 'parent' : 'child'}:${peer.label}`, style: { ...PANEL.card, marginBottom: 0 } },
+      h('div', { style: PANEL.cardHead },
+        h('div', { style: { display: 'grid', gap: 2 } },
+          h('div', { style: S.row },
+            h('span', { style: { width: 7, height: 7, borderRadius: 99, background: peer.connected ? '#38a169' : 'var(--dsw-alias-label-tertiary)' } }),
+            h('span', { style: { fontSize: 13, fontWeight: 650 } }, peer.label),
+            h(PanelChip, { tone: peer.connected ? 'on' : 'off' }, peer.connected ? '在线' : '离线'),
+            peer.version ? h(PanelChip, null, `v${peer.version}`) : null,
+            peer.encrypted ? h(PanelChip, { tone: 'on' }, 'E2E') : null,
+          ),
+          h('div', { style: { ...S.meta, fontSize: 11 } }, isParent ? '直接上级' : '直接下级'),
+        ),
+      ),
+      h(PanelKV, { rows: [
+        ['唯一标识', h('span', { style: S.mono }, peer.uuid || peer.instanceId || '-')],
+        ['实例 ID', peer.instanceId || '-'],
+        ['连接方向', peer.direction === 'out' ? '本机 → 对端（出站）' : peer.direction === 'in' ? '对端 → 本机（入站）' : '-'],
+        ['连接时间', conn?.since ? new Date(conn.since).toLocaleString('zh-CN', { hour12: false }) : '-'],
+        ['最近心跳', conn?.lastSeenAt ? new Date(conn.lastSeenAt).toLocaleString('zh-CN', { hour12: false }) : '-'],
+        ['当前任务', peer.currentTask ? `${peer.currentTask.title || peer.currentTask.taskId}（${peer.currentTask.status}）` : '空闲'],
+      ] }),
+      peer.description
+        ? h('div', { style: { ...S.meta, marginTop: 9, paddingTop: 9, borderTop: '1px solid var(--dsw-alias-border-l2)', whiteSpace: 'pre-wrap', lineHeight: 1.65, fontSize: 11.5 } }, peer.description)
+        : null,
+    );
+  };
+
+  const activityList = (limit) => items.length
+    ? h('div', null, items.slice(0, limit).map((item) => {
+        const kind = ACTIVITY_KIND[item.kind] ?? ACTIVITY_KIND.info;
+        return h('div', { key: item.id, style: PANEL.activityRow },
+          h('span', { style: { ...PANEL.activityDot, background: kind.color } }),
+          h('div', { style: { minWidth: 0 } },
+            h('div', { style: PANEL.activityText }, item.text || '（无描述）'),
+            h('div', { style: { ...S.meta, display: 'flex', gap: 8, flexWrap: 'wrap', fontSize: 10.5, marginTop: 1 } },
+              h('span', null, timeOf(item.at)),
+              item.peer ? h('span', null, item.peer) : null,
+              item.taskId ? h('span', { style: S.mono }, item.taskId.slice(-10)) : null,
+              item.status ? h('span', null, item.status) : null,
+            ),
+          ),
+        );
+      }))
+    : h('div', { style: PANEL.empty }, '还没有活动');
+
+  const incomingVisible = inbound.length > 0;
+  const approvalBlock = pendingTotal
+    ? h('div', { style: { ...PANEL.card, marginBottom: 0, borderColor: 'rgba(183,121,31,0.35)' } },
+        h('div', { style: PANEL.cardHead }, h('h3', { style: PANEL.cardTitle }, '需要你决定'), h(PanelChip, { tone: 'brand' }, `${pendingTotal} 条`)),
+        pendingTasks.map((task) => renderPending(
+          { text: `${task.title || task.taskId}：${task.pendingQuestion?.question || ''}`, options: task.pendingQuestion?.options },
+          task.taskId,
+          { taskId: task.taskId, answer: answers[task.taskId] ?? '' },
+        )),
+        questions.map((question) => renderPending(
+          { text: `${question.from || '子 DSH'}：${question.question || ''}`, options: question.options },
+          question.questionId,
+          { questionId: question.questionId, answer: answers[question.questionId] ?? '' },
+        )),
+      )
+    : h('div', { style: PANEL.card }, h('div', { style: PANEL.empty }, '当前没有需要人工处理的审批或提问'));
+
   return h('div', { style: PANEL.page },
     h('div', { style: PANEL.header },
       h('div', { style: PANEL.logo }, h(CowActivityIcon, { size: 18 })),
@@ -457,93 +539,72 @@ function CowActivityPanel() {
       h('div', { style: PANEL.stat }, h('span', { style: { ...PANEL.statValue, color: activeOutbound.length + activeInbound.length ? '#b7791f' : undefined } }, activeOutbound.length + activeInbound.length), h('span', { style: PANEL.statLabel }, '执行/排队')),
       h('div', { style: PANEL.stat }, h('span', { style: { ...PANEL.statValue, color: pendingTotal ? '#c05621' : undefined } }, pendingTotal), h('span', { style: PANEL.statLabel }, '待人工')),
     ),
-    h(CowTopology, { state }),
-    h('div', { style: PANEL.grid2 },
-      h('div', { style: { ...PANEL.card, marginBottom: 0 } },
-        h('div', { style: PANEL.cardHead },
-          h('h3', { style: PANEL.cardTitle }, '本机节点'),
-          h(PanelChip, { tone: stats.encrypted ? 'on' : 'neutral' }, stats.encrypted ? 'E2E 已启用' : 'E2E 未启用'),
-        ),
-        h(PanelKV, { rows: [
-          ['唯一标识', h('span', { style: S.mono }, instance.uuid || instance.instanceId || '-')],
-          ['WebSocket', endpoint],
-          ['工作区根目录', config.allowedRoots || '-'],
-          ['当前任务', state.currentInbound ? `${state.currentInbound.remoteTaskId}（${state.currentInbound.from}）` : '空闲'],
-          ['最近任务', tasks.slice(0, 2).map((task) => `${task.title || task.taskId.slice(-6)} · ${task.status}`).join('；') || '无'],
-        ] }),
-        instance.description ? h('div', { style: { ...S.meta, marginTop: 8, fontSize: 11, lineHeight: 1.6, maxHeight: 54, overflow: 'hidden' } }, instance.description) : null,
-      ),
-      h('div', { style: { ...PANEL.card, marginBottom: 0 } },
-        h('div', { style: PANEL.cardHead }, h('h3', { style: PANEL.cardTitle }, '作为主 DSH'), h(PanelChip, { tone: children.some((child) => child.connected) ? 'on' : 'neutral' }, `${children.filter((child) => child.connected).length}/${children.length} 在线`)),
-        h(PanelKV, { rows: [
-          ['监听地址', `${config.listenHost || '127.0.0.1'}:${config.listenPort || '复用宿主'}`],
-          ['连接地址', endpoint],
-          ['连接密码', state.passwordConfigured ? '已设置' : '未设置'],
-          ['子节点', children.length ? children.map((child) => `${child.label}（${child.connected ? '在线' : '离线'}${child.version ? ` v${child.version}` : ''}）`).join('；') : '无'],
-        ] }),
-      ),
-      h('div', { style: { ...PANEL.card, marginBottom: 0 } },
-        h('div', { style: PANEL.cardHead }, h('h3', { style: PANEL.cardTitle }, '作为子 DSH'), h(PanelChip, { tone: parent.connected ? 'on' : 'neutral' }, parent.connected ? '已连接上级' : '未连接上级')),
-        h(PanelKV, { rows: [
-          ['上级地址', parent.url || '无'],
-          ['上级版本', parentVersion ? `v${parentVersion}` : '-'],
-          ['连接状态', parent.connected ? '已连接（WebSocket）' : '未连接'],
-          ['加密', parentPeer?.encrypted ? 'E2E 已启用' : '未启用'],
-          ['执行/排队', `${activeInbound.length} 条`],
-        ] }),
-      ),
+    h('div', { style: { display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 } },
+      tab('overview', '概览'),
+      tab('nodes', '节点', peers.length),
+      tab('tasks', '任务', activeOutbound.length + activeInbound.length),
+      tab('approvals', '审批/提问', pendingTotal),
+      tab('activity', '活动', items.length),
     ),
-    h('div', { style: PANEL.grid2 },
-      h('div', { style: { ...PANEL.card, marginBottom: 0 } },
-        h('div', { style: PANEL.cardHead }, h('h3', { style: PANEL.cardTitle }, '我派出的任务'), h(PanelChip, null, `${tasks.length} 条`)),
-        tasks.length ? h('div', null, tasks.slice(0, 6).map((task) => h(TaskLine, { key: task.taskId, task, extra: task.peer }))) : h('div', { style: PANEL.empty }, '还没有派发任务'),
-      ),
-      h('div', { style: { ...PANEL.card, marginBottom: 0 } },
-        h('div', { style: PANEL.cardHead }, h('h3', { style: PANEL.cardTitle }, '本机执行 / 排队'), h(PanelChip, null, `${inbound.length} 条`)),
-        inbound.length ? h('div', null, inbound.slice(0, 6).map((task) => h(TaskLine, { key: task.taskId, task, extra: task.from }))) : h('div', { style: PANEL.empty }, '当前没有入站任务'),
-      ),
-    ),
-    pendingTotal
-      ? h('div', { style: { ...PANEL.card, marginBottom: 12, borderColor: 'rgba(183,121,31,0.35)' } },
-          h('div', { style: PANEL.cardHead },
-            h('h3', { style: PANEL.cardTitle }, '需要你决定'),
-            h(PanelChip, { tone: 'brand' }, `${pendingTotal} 条·来自子 DSH`),
+    section === 'overview'
+      ? h(React.Fragment, null,
+          h(CowTopology, { state }),
+          h('div', { style: PANEL.grid2 },
+            h('div', { style: { ...PANEL.card, marginBottom: 0 } },
+              h('div', { style: PANEL.cardHead }, h('h3', { style: PANEL.cardTitle }, '本机节点'), h(PanelChip, { tone: stats.encrypted ? 'on' : 'neutral' }, stats.encrypted ? 'E2E 已启用' : 'E2E 未启用')),
+              h(PanelKV, { rows: [
+                ['唯一标识', h('span', { style: S.mono }, instance.uuid || instance.instanceId || '-')],
+                ['WebSocket', endpoint],
+                ['工作区根目录', config.allowedRoots || '-'],
+                ['当前任务', state.currentInbound ? `${state.currentInbound.remoteTaskId}（${state.currentInbound.from}）` : '空闲'],
+              ] }),
+            ),
+            h('div', { style: { ...PANEL.card, marginBottom: 0 } },
+              h('div', { style: PANEL.cardHead }, h('h3', { style: PANEL.cardTitle }, '作为主 DSH'), h(PanelChip, { tone: children.some((child) => child.connected) ? 'on' : 'neutral' }, `${children.filter((child) => child.connected).length}/${children.length} 在线`)),
+              h(PanelKV, { rows: [
+                ['监听地址', `${config.listenHost || '127.0.0.1'}:${config.listenPort || '复用宿主'}`],
+                ['连接地址', endpoint],
+                ['连接密码', state.passwordConfigured ? '已设置' : '未设置'],
+                ['子节点', children.length ? children.map((child) => `${child.label}（${child.connected ? '在线' : '离线'}${child.version ? ` v${child.version}` : ''}）`).join('；') : '无'],
+              ] }),
+            ),
+            h('div', { style: { ...PANEL.card, marginBottom: 0 } },
+              h('div', { style: PANEL.cardHead }, h('h3', { style: PANEL.cardTitle }, '作为子 DSH'), h(PanelChip, { tone: parent.connected ? 'on' : 'neutral' }, parent.connected ? '已连接上级' : '未连接上级')),
+              h(PanelKV, { rows: [
+                ['上级地址', parent.url || '无'],
+                ['上级版本', parentVersion ? `v${parentVersion}` : '-'],
+                ['连接状态', parent.connected ? '已连接（WebSocket）' : '未连接'],
+                ['加密', parentPeer?.encrypted ? 'E2E 已启用' : '未启用'],
+                ...(activeInbound.length ? [['执行/排队', `${activeInbound.length} 条`]] : []),
+              ] }),
+            ),
           ),
-          pendingTasks.map((task) => renderPending(
-            { text: `${task.title || task.taskId}：${task.pendingQuestion?.question || ''}`, options: task.pendingQuestion?.options },
-            task.taskId,
-            { taskId: task.taskId, answer: answers[task.taskId] ?? '' },
-          )),
-          questions.map((question) => renderPending(
-            { text: `${question.from || '子 DSH'}：${question.question || ''}`, options: question.options },
-            question.questionId,
-            { questionId: question.questionId, answer: answers[question.questionId] ?? '' },
-          )),
         )
       : null,
-    h('div', { style: PANEL.card },
-      h('div', { style: PANEL.cardHead },
-        h('h3', { style: PANEL.cardTitle }, '最近活动'),
-        h(PanelChip, null, `${items.length} 条`),
-      ),
-      items.length
-        ? h('div', null, items.slice(0, 80).map((item) => {
-            const kind = ACTIVITY_KIND[item.kind] ?? ACTIVITY_KIND.info;
-            return h('div', { key: item.id, style: PANEL.activityRow },
-              h('span', { style: { ...PANEL.activityDot, background: kind.color } }),
-              h('div', { style: { minWidth: 0 } },
-                h('div', { style: PANEL.activityText }, item.text || '（无描述）'),
-                h('div', { style: { ...S.meta, display: 'flex', gap: 8, flexWrap: 'wrap', fontSize: 10.5, marginTop: 1 } },
-                  h('span', null, timeOf(item.at)),
-                  item.peer ? h('span', null, item.peer) : null,
-                  item.taskId ? h('span', { style: S.mono }, item.taskId.slice(-10)) : null,
-                  item.status ? h('span', null, item.status) : null,
-                ),
-              ),
-            );
-          }))
-        : h('div', { style: PANEL.empty }, '还没有活动'),
-    ),
+    section === 'nodes'
+      ? h('div', { style: { display: 'grid', gap: 12 } },
+          children.length
+            ? h('div', { style: { display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))' } }, children.map((child) => nodeDetail(child)))
+            : h('div', { style: PANEL.card }, h('div', { style: PANEL.empty }, '当前没有子 DSH')),
+          parentPeer ? nodeDetail(parentPeer, true) : null,
+        )
+      : null,
+    section === 'tasks'
+      ? h('div', { style: { display: 'grid', gap: 12, gridTemplateColumns: incomingVisible ? 'repeat(auto-fit, minmax(320px, 1fr))' : '1fr' } },
+          h('div', { style: { ...PANEL.card, marginBottom: 0 } },
+            h('div', { style: PANEL.cardHead }, h('h3', { style: PANEL.cardTitle }, '我派出的任务'), h(PanelChip, null, `${tasks.length} 条`)),
+            tasks.length ? h('div', null, tasks.slice(0, 8).map((task) => h(TaskLine, { key: task.taskId, task, extra: task.peer }))) : h('div', { style: PANEL.empty }, '还没有派发任务'),
+          ),
+          incomingVisible
+            ? h('div', { style: { ...PANEL.card, marginBottom: 0 } },
+                h('div', { style: PANEL.cardHead }, h('h3', { style: PANEL.cardTitle }, '本机执行 / 排队'), h(PanelChip, null, `${inbound.length} 条`)),
+                inbound.slice(0, 8).map((task) => h(TaskLine, { key: task.taskId, task, extra: task.from })),
+              )
+            : null,
+        )
+      : null,
+    section === 'approvals' ? approvalBlock : null,
+    section === 'activity' ? h('div', { style: PANEL.card }, h('div', { style: PANEL.cardHead }, h('h3', { style: PANEL.cardTitle }, '全部活动'), h(PanelChip, null, `${items.length} 条`)), activityList(200)) : null,
   );
 }
 
