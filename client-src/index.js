@@ -498,6 +498,7 @@ function PanelIcon({ name, size = 15 }) {
     activity: ['M3 12h4l3-8 4 16 3-8h4'],
     alert: ['M18 8a6 6 0 00-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9', 'M10 21h4'],
     lock: ['M6 11V8a6 6 0 1112 0v3', 'M5 11h14v10H5z'],
+    clock: ['M12 8v4l3 2', 'M21 12a9 9 0 11-18 0 9 9 0 0118 0z'],
   };
   return h('svg', { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': 'true' },
     (paths[name] ?? paths.cube).map((d) => h('path', { key: d, d })),
@@ -702,21 +703,38 @@ function CowActivityPanel() {
     ),
   );
 
-  const tab = (key, label, count) => h('button', {
-    key,
-    type: 'button',
-    onClick: () => setSection(key),
-    style: {
-      border: '1px solid ' + (section === key ? 'var(--dsw-alias-brand-primary)' : 'var(--dsw-alias-border-l2)'),
-      background: section === key ? 'color-mix(in srgb, var(--dsw-alias-brand-primary) 10%, transparent)' : 'transparent',
-      color: section === key ? 'var(--dsw-alias-brand-primary)' : 'var(--dsw-alias-label-secondary)',
-      borderRadius: 999,
-      padding: '5px 12px',
-      fontSize: 12,
-      fontWeight: section === key ? 650 : 500,
-      cursor: 'pointer',
+  const tab = (key, label, count, icon) => {
+    const active = section === key;
+    return h('button', {
+      key,
+      type: 'button',
+      onClick: () => setSection(key),
+      style: {
+        display: 'inline-flex', alignItems: 'center', gap: 6, flex: '0 0 auto',
+        border: 'none', borderRadius: 8, padding: '7px 11px',
+        background: active
+          ? 'linear-gradient(135deg, var(--dsw-alias-brand-primary), color-mix(in srgb, var(--dsw-alias-brand-primary) 65%, #7c5cff))'
+          : 'transparent',
+        color: active ? '#fff' : 'var(--dsw-alias-label-secondary)',
+        boxShadow: active ? '0 4px 14px color-mix(in srgb, var(--dsw-alias-brand-primary) 28%, transparent)' : 'none',
+        cursor: 'pointer', fontSize: 12, fontWeight: active ? 650 : 500,
+        transition: 'background 120ms ease, color 120ms ease',
+      },
     },
-  }, count ? `${label} ${count}` : label);
+      h(PanelIcon, { name: icon, size: 13 }),
+      h('span', null, label),
+      count
+        ? h('span', {
+            style: {
+              minWidth: 17, padding: '0 5px', height: 16, borderRadius: 999, display: 'inline-grid', placeItems: 'center',
+              fontSize: 9.5, fontWeight: 700,
+              color: active ? '#fff' : 'var(--dsw-alias-label-secondary)',
+              background: active ? 'rgba(255,255,255,0.22)' : 'var(--dsw-alias-bg-l1)',
+            },
+          }, count)
+        : null,
+    );
+  };
 
   const filterButton = (active, label, onClick) => h('button', {
     type: 'button', onClick,
@@ -868,12 +886,12 @@ function CowActivityPanel() {
         h(PanelTaskBars, { rows: taskCounts.map((row) => ({ label: taskLabels[row.status], value: row.value, color: taskColors[row.status] })) }),
       ),
     ),
-    h('div', { style: { display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 14, padding: 4, borderRadius: 11, background: 'var(--dsw-alias-bg-l2)', width: 'fit-content' } },
-      tab('overview', '概览'),
-      tab('nodes', '节点', peers.length),
-      tab('tasks', '任务', activeOutbound.length + activeInbound.length),
-      tab('approvals', '审批/提问', pendingTotal),
-      tab('activity', '活动', items.length),
+    h('div', { style: { display: 'flex', gap: 4, marginBottom: 14, padding: 4, borderRadius: 11, background: 'var(--dsw-alias-bg-l2)', width: 'fit-content', maxWidth: '100%', overflowX: 'auto', boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.04)' } },
+      tab('overview', '概览', null, 'network'),
+      tab('nodes', '节点', peers.length, 'users'),
+      tab('tasks', '任务', activeOutbound.length + activeInbound.length, 'activity'),
+      tab('approvals', '审批/提问', pendingTotal, 'alert'),
+      tab('activity', '活动', items.length, 'clock'),
     ),
     section === 'overview'
       ? h(React.Fragment, null,
