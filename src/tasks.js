@@ -701,7 +701,10 @@ export class TaskManager {
           .filter((root) => cwd === root || cwd.startsWith(`${root.replace(/[\\/]$/, '')}/`))
           .sort((a, b) => b.length - a.length);
         const workspacePath = cwd;
-        const workspaceTitle = workspaceName || basename(candidates[0] ?? cwd);
+        const root = candidates[0] ?? cwd;
+        const workspaceTitle = workspaceName || (cwd === root
+          ? basename(root)
+          : `${basename(root)} / ${relative(root, cwd)}`);
         let workspace = await registry.resolveByPath(workspacePath);
         if (!workspace && typeof registry.create === 'function') {
           workspace = await registry.create(workspacePath, workspaceTitle);
@@ -728,8 +731,21 @@ export class TaskManager {
         }
 
         // 主子工作区名称对齐：主 DSH 下达任务时带过来的工作区名优先。
-        if (workspaceName && workspace.title !== workspaceName && typeof workspace.setTitle === 'function') {
-          await workspace.setTitle(workspaceName);
+        if (workspace.title !== workspaceTitle && typeof workspace.setTitle === 'function') {
+          await workspace.setTitle(workspaceTitle);
+        }
+
+        // 清理同名但没有任何会话的空工作区，避免界面出现两个「C」。
+        if (typeof registry.delete === 'function') {
+          for (const empty of registry.list()) {
+            if (empty.id === workspace.id || empty.title !== workspace.title) continue;
+            if ((empty.sessionIds?.length ?? 0) > 0) continue;
+            try {
+              await registry.delete(empty.id);
+            } catch (error) {
+              this.logger.warn?.(`[dsh-cow] 删除空工作区 ${empty.id} 失败：${error?.message ?? error}`);
+            }
+          }
         }
         if (!workspace.sessionIds.includes(sessionId)) await workspace.attachSession(sessionId);
       } catch (error) {
