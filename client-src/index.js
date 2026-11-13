@@ -156,30 +156,107 @@ function CowActivityIcon({ size = 16 }) {
 }
 
 
+const PANEL = {
+  page: {
+    ...S.wrap,
+    padding: '22px 24px 44px',
+    height: '100%',
+    overflowY: 'auto',
+    boxSizing: 'border-box',
+    background: 'radial-gradient(900px 260px at 20% -80px, color-mix(in srgb, var(--dsw-alias-brand-primary) 9%, transparent), transparent 70%)',
+  },
+  header: { display: 'flex', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: 16 },
+  logo: {
+    width: 38, height: 38, borderRadius: 11, display: 'grid', placeItems: 'center',
+    background: 'linear-gradient(135deg, var(--dsw-alias-brand-primary), color-mix(in srgb, var(--dsw-alias-brand-primary) 55%, #7c5cff))',
+    color: '#fff', boxShadow: '0 6px 18px color-mix(in srgb, var(--dsw-alias-brand-primary) 30%, transparent)',
+  },
+  title: { margin: 0, fontSize: 19, fontWeight: 700, letterSpacing: '-0.25px' },
+  subtitle: { ...S.hint, margin: '3px 0 0', fontSize: 12 },
+  statGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(118px, 1fr))', gap: 10, marginBottom: 14 },
+  stat: {
+    border: '1px solid var(--dsw-alias-border-l2)', borderRadius: 11, padding: '10px 12px',
+    background: 'var(--dsw-alias-bg-l1)', display: 'grid', gap: 2,
+  },
+  statValue: { fontSize: 20, fontWeight: 700, lineHeight: 1.15, letterSpacing: '-0.3px' },
+  statLabel: { ...S.meta, fontSize: 11 },
+  card: {
+    border: '1px solid var(--dsw-alias-border-l2)', borderRadius: 12, padding: '14px 16px',
+    background: 'var(--dsw-alias-bg-l1)', boxShadow: '0 1px 2px rgba(0, 0, 0, 0.035)', marginBottom: 12,
+  },
+  cardHead: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 10 },
+  cardTitle: { margin: 0, fontSize: 13, fontWeight: 650, letterSpacing: '-0.1px' },
+  grid2: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 12, marginBottom: 12 },
+  kvRow: { display: 'grid', gridTemplateColumns: '96px minmax(0, 1fr)', gap: 10, fontSize: 12, lineHeight: 1.65, padding: '2px 0' },
+  kvKey: { ...S.meta, fontSize: 11.5 },
+  kvVal: { wordBreak: 'break-all' },
+  taskRow: { display: 'grid', gap: 4, padding: '9px 0', borderTop: '1px solid var(--dsw-alias-border-l2)' },
+  taskTitle: { fontSize: 12.5, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  taskMeta: { ...S.meta, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', fontSize: 11 },
+  progress: { ...S.meta, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11.5 },
+  empty: { ...S.hint, padding: '18px 0', textAlign: 'center', fontSize: 12 },
+  chip: { display: 'inline-flex', alignItems: 'center', gap: 4, padding: '1px 7px', borderRadius: 999, border: '1px solid var(--dsw-alias-border-l2)', fontSize: 10.5, fontWeight: 600 },
+  activityRow: { display: 'grid', gridTemplateColumns: '9px minmax(0, 1fr)', gap: 10, padding: '6px 0' },
+  activityDot: { width: 8, height: 8, borderRadius: 999, marginTop: 5 },
+  activityText: { fontSize: 12.5, lineHeight: 1.5, wordBreak: 'break-word' },
+};
+
+function panelStatusStyle(status) {
+  const map = {
+    queued: { color: '#b7791f', background: 'rgba(183, 121, 31, 0.12)', border: 'rgba(183, 121, 31, 0.35)' },
+    running: { color: 'var(--dsw-alias-brand-primary)', background: 'color-mix(in srgb, var(--dsw-alias-brand-primary) 12%, transparent)', border: 'color-mix(in srgb, var(--dsw-alias-brand-primary) 35%, transparent)' },
+    succeeded: { color: '#2f855a', background: 'rgba(47, 133, 90, 0.12)', border: 'rgba(47, 133, 90, 0.3)' },
+    failed: { color: '#c53030', background: 'rgba(197, 48, 48, 0.1)', border: 'rgba(197, 48, 48, 0.3)' },
+    canceled: { color: 'var(--dsw-alias-label-secondary)', background: 'var(--dsw-alias-bg-l2)', border: 'var(--dsw-alias-border-l2)' },
+    interrupted: { color: '#c53030', background: 'rgba(197, 48, 48, 0.1)', border: 'rgba(197, 48, 48, 0.3)' },
+  };
+  return map[status] ?? map.canceled;
+}
+
+function PanelChip({ children, tone = 'neutral' }) {
+  const tones = {
+    neutral: { ...PANEL.chip, color: 'var(--dsw-alias-label-secondary)', background: 'var(--dsw-alias-bg-l2)' },
+    on: { ...PANEL.chip, color: '#2f855a', borderColor: 'rgba(47, 133, 90, 0.3)', background: 'rgba(47, 133, 90, 0.1)' },
+    off: { ...PANEL.chip, color: 'var(--dsw-alias-label-secondary)' },
+    brand: { ...PANEL.chip, color: 'var(--dsw-alias-brand-primary)', borderColor: 'color-mix(in srgb, var(--dsw-alias-brand-primary) 35%, transparent)', background: 'color-mix(in srgb, var(--dsw-alias-brand-primary) 10%, transparent)' },
+  };
+  return h('span', { style: tones[tone] ?? tones.neutral }, children);
+}
+
+function PanelKV({ rows }) {
+  return h('div', { style: { display: 'grid', gap: 1 } }, rows.map(([key, value]) => h('div', { key, style: PANEL.kvRow },
+    h('span', { style: PANEL.kvKey }, key),
+    h('span', { style: PANEL.kvVal }, value ?? '-'),
+  )));
+}
+
 function TopologyNode({ label, version, connected, encrypted, currentTask, self = false }) {
   return h('div', {
     style: {
-      minWidth: self ? 190 : 150,
-      maxWidth: 220,
+      minWidth: self ? 210 : 168,
+      maxWidth: 238,
       border: `1px solid ${self ? 'var(--dsw-alias-brand-primary)' : 'var(--dsw-alias-border-l2)'}`,
-      borderRadius: 10,
-      padding: '8px 10px',
-      background: self ? 'color-mix(in srgb, var(--dsw-alias-brand-primary) 10%, transparent)' : 'var(--dsw-alias-bg-l1)',
-      boxShadow: self ? '0 0 0 1px var(--dsw-alias-brand-primary)' : 'none',
+      borderRadius: 12,
+      padding: '10px 12px',
+      background: self ? 'color-mix(in srgb, var(--dsw-alias-brand-primary) 9%, var(--dsw-alias-bg-l1))' : 'var(--dsw-alias-bg-l1)',
+      boxShadow: self ? '0 0 0 1px color-mix(in srgb, var(--dsw-alias-brand-primary) 45%, transparent), 0 6px 18px rgba(0,0,0,0.06)' : '0 1px 2px rgba(0,0,0,0.04)',
       display: 'grid',
-      gap: 3,
+      gap: 4,
     },
   },
     h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' } },
-      h('span', { style: { fontSize: 12, fontWeight: 650 } }, label || '未命名节点'),
-      h('span', { style: connected ? S.badgeOn : S.badgeOff }, connected ? '在线' : '离线'),
-      self ? h('span', { style: S.badge }, '当前') : null,
+      h('span', { style: { width: 7, height: 7, borderRadius: 99, background: connected ? '#38a169' : 'var(--dsw-alias-label-tertiary)' } }),
+      h('span', { style: { fontSize: 12.5, fontWeight: 650, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 150 } }, label || '未命名节点'),
+      self ? h(PanelChip, { tone: 'brand' }, '当前') : null,
     ),
-    h('div', { style: { ...S.meta, display: 'flex', gap: 6, flexWrap: 'wrap' } },
-      version ? h('span', null, `v${version}`) : null,
-      encrypted ? h('span', null, 'E2E') : null,
+    h('div', { style: { display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' } },
+      version ? h(PanelChip, null, `v${version}`) : null,
+      encrypted ? h(PanelChip, { tone: 'on' }, 'E2E') : null,
+      connected ? null : h(PanelChip, { tone: 'off' }, '离线'),
     ),
-    currentTask ? h('div', { style: { ...S.meta, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, `任务：${currentTask.title || currentTask.taskId}`) : null,
+    currentTask
+      ? h('div', { style: { ...S.meta, fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, `任务：${currentTask.title || currentTask.taskId}`)
+      : null,
   );
 }
 
@@ -189,17 +266,20 @@ function CowTopology({ state }) {
   const peers = state.peers ?? [];
   const parent = peers.find((peer) => peer.relation === 'parent') ?? null;
   const children = peers.filter((peer) => peer.relation !== 'parent');
-  const line = (height, width = 1) => h('div', { style: { width, height, background: 'var(--dsw-alias-border-l2)', borderRadius: 1 } });
-  return h('div', { style: S.card },
-    h('div', { style: S.cardHead },
-      h('h3', { style: S.cardTitle }, '节点拓扑'),
-      h('span', { style: S.meta }, '以当前节点为中心，仅显示直接上级与直接下级'),
+  const vline = (height) => h('div', { style: { width: 1, height, background: 'var(--dsw-alias-border-l2)' } });
+  return h('div', { style: { ...PANEL.card, background: 'linear-gradient(180deg, color-mix(in srgb, var(--dsw-alias-brand-primary) 4%, var(--dsw-alias-bg-l1)), var(--dsw-alias-bg-l1))' } },
+    h('div', { style: PANEL.cardHead },
+      h('div', { style: { display: 'grid', gap: 1 } },
+        h('h3', { style: PANEL.cardTitle }, '节点拓扑'),
+        h('span', { style: { ...S.meta, fontSize: 11 } }, '当前节点居中；上方直接上级，下方直接下级'),
+      ),
+      h(PanelChip, { tone: 'brand' }, `${children.filter((child) => child.connected).length}/${children.length} 子节点在线`),
     ),
-    h('div', { style: { display: 'grid', justifyItems: 'center', gap: 0 } },
+    h('div', { style: { display: 'grid', justifyItems: 'center', gap: 0, padding: '4px 0 2px', overflowX: 'auto' } },
       parent
         ? h(TopologyNode, { label: parent.label, version: parent.version, connected: parent.connected, encrypted: parent.encrypted, currentTask: parent.currentTask })
-        : h('div', { style: { ...S.hint, border: '1px dashed var(--dsw-alias-border-l2)', borderRadius: 10, padding: '8px 12px' } }, '无直接上级'),
-      line(18),
+        : h('div', { style: { ...PANEL.chip, color: 'var(--dsw-alias-label-tertiary)', borderStyle: 'dashed', padding: '6px 12px', fontSize: 11 } }, '无直接上级'),
+      vline(16),
       h(TopologyNode, {
         label: instance.displayName || '本机',
         version: instance.version,
@@ -208,21 +288,40 @@ function CowTopology({ state }) {
         currentTask: state.currentInbound ?? null,
         self: true,
       }),
-      line(18),
+      vline(16),
       children.length
-        ? h('div', { style: { position: 'relative', paddingTop: 18, display: 'flex', gap: 14, justifyContent: 'center', flexWrap: 'wrap', width: '100%' } },
+        ? h('div', { style: { position: 'relative', paddingTop: 16, display: 'flex', gap: 16, justifyContent: 'center', flexWrap: 'wrap', width: '100%' } },
             children.length > 1
-              ? h('div', { style: { position: 'absolute', top: 0, left: 'calc(50% - ' + Math.min(45, (children.length - 1) * 20) + '%)', right: 'auto', width: Math.min(90, (children.length - 1) * 40) + '%', height: 1, background: 'var(--dsw-alias-border-l2)' } },
-                  h('div', { style: { position: 'absolute', left: '50%', top: -18, width: 1, height: 18, background: 'var(--dsw-alias-border-l2)' } }),
-                )
+              ? h('div', { style: { position: 'absolute', top: 0, left: '12%', right: '12%', height: 1, background: 'var(--dsw-alias-border-l2)' } })
               : null,
             children.map((child) => h('div', { key: child.label, style: { display: 'grid', justifyItems: 'center' } },
-              h('div', { style: { width: 1, height: 18, background: 'var(--dsw-alias-border-l2)' } }),
+              h('div', { style: { width: 1, height: 16, background: 'var(--dsw-alias-border-l2)' } }),
               h(TopologyNode, { label: child.label, version: child.version, connected: child.connected, encrypted: child.encrypted, currentTask: child.currentTask }),
             )),
           )
-        : h('div', { style: { ...S.hint, border: '1px dashed var(--dsw-alias-border-l2)', borderRadius: 10, padding: '8px 12px' } }, '无直接下级'),
+        : h('div', { style: { ...PANEL.chip, color: 'var(--dsw-alias-label-tertiary)', borderStyle: 'dashed', padding: '6px 12px', fontSize: 11 } }, '无直接下级'),
     ),
+  );
+}
+
+function TaskLine({ task, extra }) {
+  const status = task.status === 'queued' && task.queuePosition ? `排队第 ${task.queuePosition} 位` : task.status;
+  const tone = panelStatusStyle(task.status);
+  return h('div', { style: PANEL.taskRow },
+    h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 } },
+      h('span', { style: PANEL.taskTitle }, task.title || task.taskId),
+      h('span', { style: { ...PANEL.chip, color: tone.color, background: tone.background, borderColor: tone.border, flex: '0 0 auto' } }, status),
+    ),
+    h('div', { style: PANEL.taskMeta },
+      extra ? h('span', null, extra) : null,
+      task.createdAt ? h('span', null, new Date(task.createdAt).toLocaleTimeString('zh-CN', { hour12: false })) : null,
+      task.finishedAt ? h('span', null, `完成 ${new Date(task.finishedAt).toLocaleTimeString('zh-CN', { hour12: false })}`) : null,
+    ),
+    task.progress?.length
+      ? h('div', { style: PANEL.progress }, task.progress.slice(-1)[0]?.text || '')
+      : task.prompt
+        ? h('div', { style: PANEL.progress }, task.prompt)
+        : null,
   );
 }
 
@@ -233,46 +332,16 @@ function CowActivityPanel() {
   const [answers, setAnswers] = React.useState({});
   const [answering, setAnswering] = React.useState('');
 
-  const answerQuestion = async (questionId) => {
-    setAnswering(questionId);
-    setError('');
-    try {
-      const response = await fetch(api('answer'), {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ questionId, answer: answers[questionId] ?? '' }),
-      });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload?.error?.message || `HTTP ${response.status}`);
-      setAnswers((current) => ({ ...current, [questionId]: '' }));
-      await load();
-    } catch (answerError) {
-      setError(answerError.message);
-    } finally {
-      setAnswering('');
-    }
-  };
-
-  const answerTask = async (taskId) => {
-    setAnswering(taskId);
-    setError('');
-    try {
-      const response = await fetch(api('answer'), {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ taskId, answer: answers[taskId] ?? '' }),
-      });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload?.error?.message || `HTTP ${response.status}`);
-      setAnswers((current) => ({ ...current, [taskId]: '' }));
-      await load();
-    } catch (answerError) {
-      setError(answerError.message);
-    } finally {
-      setAnswering('');
-    }
+  const postAnswer = async (body) => {
+    const response = await fetch(api('answer'), {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload?.error?.message || `HTTP ${response.status}`);
+    return payload;
   };
 
   const load = React.useCallback(async () => {
@@ -300,227 +369,181 @@ function CowActivityPanel() {
     return () => clearInterval(timer);
   }, [load]);
 
+  const answer = async (key, body) => {
+    setAnswering(key);
+    setError('');
+    try {
+      await postAnswer(body);
+      setAnswers((current) => ({ ...current, [key]: '' }));
+      await load();
+    } catch (answerError) {
+      setError(answerError.message);
+    } finally {
+      setAnswering('');
+    }
+  };
+
+  const state = data?.state ?? {};
+  const instance = state.instance ?? {};
+  const config = state.config ?? {};
+  const peers = state.peers ?? [];
+  const children = peers.filter((peer) => peer.relation !== 'parent');
+  const parent = state.parent ?? {};
+  const parentPeer = peers.find((peer) => peer.relation === 'parent');
+  const stats = state.stats ?? {};
+  const tasks = state.tasks ?? [];
+  const inbound = state.inboundTasks ?? [];
+  const questions = state.questions ?? [];
+  const pendingTasks = tasks.filter((task) => task.pendingQuestion);
+  const pendingTotal = questions.length + pendingTasks.length;
+  const activeOutbound = tasks.filter((task) => ['queued', 'running'].includes(task.status));
+  const activeInbound = inbound.filter((task) => ['queued', 'running'].includes(task.status));
   const items = data?.activity?.items ?? [];
-  const stats = data?.activity?.stats ?? {};
-  const version = data?.state?.pluginVersion ?? '';
+  const roleLabel = parent.connected || instance.role === 'member' ? '子 DSH' : '主 DSH';
+  const endpoint = instance.endpoint ? `${String(instance.endpoint).replace(/^http/, 'ws')}/channel` : '未就绪';
+  const parentVersion = parentPeer?.version || parent.node?.version || '';
   const timeOf = (iso) => {
     const date = new Date(iso);
     return Number.isNaN(date.getTime()) ? '' : date.toLocaleTimeString('zh-CN', { hour12: false });
   };
 
-  return h('div', { style: { ...S.wrap, padding: '18px 20px 28px', height: '100%', overflowY: 'auto', boxSizing: 'border-box' } },
-    h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 4 } },
-      h('div', { style: { width: 28, height: 28, borderRadius: 8, display: 'grid', placeItems: 'center', background: 'var(--dsw-alias-brand-primary)', color: '#fff' } }, h(CowActivityIcon, { size: 16 })),
-      h('h2', { style: { margin: 0, fontSize: 16, fontWeight: 650 } }, 'COW状态'),
-      version ? h('span', { style: S.badgeOff }, `v${version}`) : null,
-      h('span', { style: S.badgeOn }, `连接 ${stats.connected ?? 0}`),
-      h('span', { style: stats.encrypted ? S.badgeOn : S.badgeOff }, `加密 ${stats.encrypted ?? 0}`),
-      stats.queued ? h('span', { style: S.badgeOff }, `排队 ${stats.queued}`) : null,
-      h('button', { type: 'button', style: { ...S.secondary, marginLeft: 'auto' }, onClick: () => { void load(); }, disabled: loading }, loading ? '刷新中…' : '刷新'),
+  const renderPending = (question, key, body) => h('div', { key, style: { display: 'grid', gap: 7, padding: '10px 0', borderTop: '1px solid var(--dsw-alias-border-l2)' } },
+    h('div', { style: { display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' } },
+      h('span', { style: { ...PANEL.chip, color: '#b7791f', background: 'rgba(183,121,31,0.12)', borderColor: 'rgba(183,121,31,0.35)' } }, '待处理'),
+      h('span', { style: { fontSize: 12.5, lineHeight: 1.55, minWidth: 0 } }, question.text),
     ),
-    h('p', { style: { ...S.hint, margin: '2px 0 14px' } }, '本机节点信息、任务、提问、文件与节点事件；每 4 秒自动刷新。'),
-    h(CowTopology, { state: data?.state }),
-    (() => {
-      const info = data?.state?.instance ?? {};
-      const cfg = data?.state?.config ?? {};
-      const peerRows = data?.state?.peers ?? [];
-      const parent = data?.state?.parent ?? {};
-      const stats = data?.state?.stats ?? {};
-      const tasks = data?.state?.tasks ?? [];
-      const roleLabel = parent.connected || info.role === 'member' ? '子 DSH' : '主 DSH';
-      const endpoint = info.endpoint ? `${String(info.endpoint).replace(/^http/, 'ws')}/channel` : '未就绪';
-      const rows = [
-        ['节点名称', info.displayName || '-'],
-        ['版本', info.version ? `v${info.version}` : '-'],
-        ['角色', `${roleLabel}（已连接 ${stats.connected ?? 0} / ${stats.peers ?? 0} 个节点）`],
-        ['唯一标识', info.uuid || info.instanceId || '-'],
-        ['WebSocket', endpoint],
-        ['上级', parent.url ? `${parent.url}（${parent.connected ? '已连接' : '未连接'}）` : '无'],
-        ['工作区根目录', cfg.allowedRoots || '-'],
-        ['当前任务', data?.state?.currentInbound ? `${data.state.currentInbound.remoteTaskId}（${data.state.currentInbound.from}）` : '空闲'],
-        ['最近任务', tasks.slice(0, 3).map((t) => `${t.taskId.slice(-6)} ${t.status}`).join('，') || '无'],
-      ];
-      return h('div', { style: S.card },
-        h('div', { style: S.cardHead },
-          h('h3', { style: S.cardTitle }, '本机节点'),
-          h('span', { style: stats.encrypted ? S.badgeOn : S.badgeOff }, stats.encrypted ? `加密连接 ${stats.encrypted}` : '未加密连接'),
-        ),
-        h('div', { style: { display: 'grid', gap: 4 } }, rows.map(([label, value]) => h('div', { key: label, style: { display: 'grid', gridTemplateColumns: '110px minmax(0, 1fr)', gap: 8, fontSize: 12, lineHeight: 1.6 } },
-          h('span', { style: S.meta }, label),
-          h('span', { style: { wordBreak: 'break-all' } }, value),
-        ))),
-        info.description ? h('div', { style: { ...S.meta, marginTop: 8, whiteSpace: 'pre-wrap', lineHeight: 1.6 } }, info.description) : null,
-      );
-    })(),
-    (() => {
-      const state = data?.state ?? {};
-      const info = state.instance ?? {};
-      const cfg = state.config ?? {};
-      const parent = state.parent ?? {};
-      const peers = state.peers ?? [];
-      const children = peers.filter((peer) => peer.relation !== 'parent');
-      const stats = state.stats ?? {};
-      const endpoint = info.endpoint ? `${String(info.endpoint).replace(/^http/, 'ws')}/channel` : '未就绪';
-      const parentPeer = peers.find((peer) => peer.relation === 'parent');
-      const parentNode = parent.node ?? parentPeer ?? {};
-      const parentVersion = parentNode.version || '';
-      const childRows = children.map((child) => h('div', { key: child.label, style: { ...S.listRow, alignItems: 'flex-start' } },
-        h('div', { style: { display: 'grid', gap: 2, minWidth: 0 } },
-          h('div', { style: S.row },
-            h('span', { style: { fontSize: 12, fontWeight: 600 } }, child.label),
-            h('span', { style: child.connected ? S.badgeOn : S.badgeOff }, child.connected ? '已连接' : '离线'),
-            child.version ? h('span', { style: S.meta }, `v${child.version}`) : null,
-            child.encrypted ? h('span', { style: S.badgeOn }, 'E2E') : null,
-          ),
-          child.currentTask ? h('div', { style: S.meta }, `执行中：${child.currentTask.title || child.currentTask.taskId}（${child.currentTask.status}）`) : null,
-        ),
-      ));
-      return h(React.Fragment, null,
-        h('div', { style: S.card },
-          h('div', { style: S.cardHead },
-            h('h3', { style: S.cardTitle }, '作为主 DSH'),
-            h('span', { style: stats.connected ? S.badgeOn : S.badgeOff }, `${children.filter((child) => child.connected).length} / ${children.length} 个子节点在线`),
-          ),
-          h('div', { style: { display: 'grid', gap: 4 } }, [
-            ['监听地址', `${cfg.listenHost || '127.0.0.1'}:${cfg.listenPort || '（复用宿主端口）'}`],
-            ['连接地址', endpoint],
-            ['连接密码', state.passwordConfigured ? '已设置' : '未设置'],
-            ['待处理提问', `${(state.questions ?? []).length} 条`],
-          ].map(([label, value]) => h('div', { key: label, style: { display: 'grid', gridTemplateColumns: '110px minmax(0, 1fr)', gap: 8, fontSize: 12, lineHeight: 1.6 } },
-            h('span', { style: S.meta }, label),
-            h('span', { style: { wordBreak: 'break-all' } }, value),
-          ))),
-          h('div', { style: { ...S.meta, margin: '10px 0 2px' } }, '已连接的子 DSH'),
-          children.length ? h('div', null, childRows) : h('div', { style: S.hint }, '还没有子 DSH 连上来。'),
-        ),
-        h('div', { style: S.card },
-          h('div', { style: S.cardHead },
-            h('h3', { style: S.cardTitle }, '作为子 DSH'),
-            h('span', { style: parent.connected ? S.badgeOn : S.badgeOff }, parent.connected ? '上级已连接' : '上级未连接'),
-          ),
-          h('div', { style: { display: 'grid', gap: 4 } }, [
-            ['上级地址', parent.url || '无'],
-            ['上级版本', parentVersion ? `v${parentVersion}` : '-'],
-            ['连接状态', parent.connected ? '已连接（WebSocket）' : '未连接'],
-            ['加密', parentPeer?.encrypted ? 'E2E 已启用' : '未启用'],
-            ['本机执行/排队', `${(state.inboundTasks ?? []).filter((task) => ['queued', 'running'].includes(task.status)).length} 条`],
-          ].map(([label, value]) => h('div', { key: label, style: { display: 'grid', gridTemplateColumns: '110px minmax(0, 1fr)', gap: 8, fontSize: 12, lineHeight: 1.6 } },
-            h('span', { style: S.meta }, label),
-            h('span', { style: { wordBreak: 'break-all' } }, value),
-          ))),
-        ),
-      );
-    })(),
-    (() => {
-      const outbound = (data?.state?.tasks ?? []).slice(0, 8);
-      const inbound = (data?.state?.inboundTasks ?? []).slice(0, 8);
-      const pending = (data?.state?.tasks ?? []).filter((task) => task.pendingQuestion);
-      const row = (task, extra) => h('div', { key: `${extra || ''}${task.taskId}`, style: S.listRow },
-        h('div', { style: { display: 'grid', gap: 2, minWidth: 0, flex: '1 1 auto' } },
-          h('div', { style: S.row },
-            h('span', { style: { fontSize: 12, fontWeight: 600 } }, task.title || task.taskId),
-            h('span', { style: ['queued', 'running'].includes(task.status) ? S.badgeOn : S.badgeOff },
-              task.status === 'queued' && task.queuePosition ? `排队第 ${task.queuePosition} 位` : task.status),
-            h('span', { style: S.meta }, extra || ''),
-            task.finishedAt ? h('span', { style: S.meta }, new Date(task.finishedAt).toLocaleTimeString('zh-CN', { hour12: false })) : null,
-          ),
-          h('div', { style: { ...S.meta, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, task.prompt || task.summary || ''),
-        ),
-      );
-      return h(React.Fragment, null,
-        h('div', { style: S.card },
-          h('div', { style: S.cardHead },
-            h('h3', { style: S.cardTitle }, '我派出的任务'),
-            h('span', { style: S.badgeOff }, `${outbound.length} 条`),
-          ),
-          outbound.length === 0 ? h('div', { style: S.hint }, '还没有派发任务。') : h('div', null, outbound.map((task) => row(task, task.peer))),
-        ),
-        h('div', { style: S.card },
-          h('div', { style: S.cardHead },
-            h('h3', { style: S.cardTitle }, '本机执行 / 排队'),
-            h('span', { style: S.badgeOff }, `${inbound.length} 条`),
-          ),
-          inbound.length === 0 ? h('div', { style: S.hint }, '当前没有本机执行的入站任务。') : h('div', null, inbound.map((task) => row(task, task.from))),
-        ),
-        pending.length
-          ? h('div', { style: S.card },
-              h('div', { style: S.cardHead },
-                h('h3', { style: S.cardTitle }, '待人工处理的审批 / 提问'),
-                h('span', { style: S.badgeOn }, `${pending.length} 条`),
-              ),
-              h('div', { style: { display: 'grid', gap: 8 } }, pending.map((task) => h('div', { key: task.taskId, style: { borderTop: '1px solid var(--dsw-alias-border-l2)', paddingTop: 8 } },
-                h('div', { style: { fontSize: 12.5, lineHeight: 1.5 } }, `${task.title || task.taskId}：${task.pendingQuestion?.question || ''}`),
-                task.pendingQuestion?.options?.length
-                  ? h('div', { style: { ...S.row, marginTop: 6 } }, task.pendingQuestion.options.map((option) => h('button', {
-                      key: option, type: 'button', style: S.secondary,
-                      onClick: () => setAnswers((current) => ({ ...current, [task.taskId]: option })),
-                    }, option)))
-                  : null,
-                h('div', { style: { ...S.row, marginTop: 6 } },
-                  h('input', {
-                    style: { ...S.inputFlex, flex: '1 1 auto' },
-                    placeholder: '回答子 DSH 的提问 / 审批',
-                    value: answers[task.taskId] ?? '',
-                    onChange: (e) => setAnswers((current) => ({ ...current, [task.taskId]: e.target.value })),
-                  }),
-                  h('button', { type: 'button', style: S.button, disabled: Boolean(answering), onClick: () => answerTask(task.taskId) }, answering === task.taskId ? '发送中…' : '回答'),
-                ),
-              ))),
-            )
-          : null,
-        (data?.state?.questions ?? []).length
-          ? h('div', { style: S.card },
-              h('div', { style: S.cardHead },
-                h('h3', { style: S.cardTitle }, '子 DSH 待处理提问 / 审批'),
-                h('span', { style: S.badgeOn }, `${data.state.questions.length} 条`),
-              ),
-              h('div', { style: { display: 'grid', gap: 8 } }, data.state.questions.map((question) => h('div', { key: question.questionId, style: { borderTop: '1px solid var(--dsw-alias-border-l2)', paddingTop: 8 } },
-                h('div', { style: { fontSize: 12.5, lineHeight: 1.5 } }, `${question.from || '子 DSH'}：${question.question || ''}`),
-                question.options?.length
-                  ? h('div', { style: { ...S.row, marginTop: 6 } }, question.options.map((option) => h('button', {
-                      key: option, type: 'button', style: S.secondary,
-                      onClick: () => setAnswers((current) => ({ ...current, [question.questionId]: option })),
-                    }, option)))
-                  : null,
-                h('div', { style: { ...S.row, marginTop: 6 } },
-                  h('input', {
-                    style: { ...S.inputFlex, flex: '1 1 auto' },
-                    placeholder: '回答子 DSH 的提问 / 审批',
-                    value: answers[question.questionId] ?? '',
-                    onChange: (e) => setAnswers((current) => ({ ...current, [question.questionId]: e.target.value })),
-                  }),
-                  h('button', { type: 'button', style: S.button, disabled: Boolean(answering), onClick: () => answerQuestion(question.questionId) }, answering === question.questionId ? '发送中…' : '回答'),
-                ),
-              ))),
-            )
-          : null,
-      );
-    })(),
-    h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, margin: '16px 0 8px' } },
-      h('h3', { style: S.cardTitle }, '最近活动'),
-      h('span', { style: S.meta }, `${items.length} 条`),
-    ),
-    error ? h('div', { style: { ...S.hint, color: 'var(--dsw-alias-label-danger, #d95e4b)' } }, `加载失败：${error}`) : null,
-    items.length === 0
-      ? h('div', { style: { ...S.hint, padding: '32px 0', textAlign: 'center' } }, '还没有活动。派发任务或连接节点后会出现在这里。')
-      : h('div', { style: { display: 'grid', gap: 6 } }, items.map((item) => {
-          const kind = ACTIVITY_KIND[item.kind] ?? ACTIVITY_KIND.info;
-          return h('div', {
-            key: item.id,
-            style: { display: 'flex', gap: 10, alignItems: 'flex-start', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--dsw-alias-border-l2)', background: 'var(--dsw-alias-bg-l1)' },
+    question.options?.length
+      ? h('div', { style: { display: 'flex', gap: 6, flexWrap: 'wrap' } }, question.options.map((option) => h('button', {
+          key: option, type: 'button',
+          style: {
+            ...S.secondary, padding: '4px 10px', borderRadius: 999, fontSize: 11.5,
+            borderColor: answers[key] === option ? 'var(--dsw-alias-brand-primary)' : undefined,
+            color: answers[key] === option ? 'var(--dsw-alias-brand-primary)' : undefined,
+            background: answers[key] === option ? 'color-mix(in srgb, var(--dsw-alias-brand-primary) 10%, transparent)' : undefined,
           },
-            h('span', { style: { flex: '0 0 auto', marginTop: 1, fontSize: 10, fontWeight: 600, color: kind.color, border: `1px solid ${kind.color}`, borderRadius: 999, padding: '1px 6px' } }, kind.label),
-            h('div', { style: { minWidth: 0, flex: '1 1 auto' } },
-              h('div', { style: { fontSize: 12.5, lineHeight: 1.5, wordBreak: 'break-word' } }, item.text || '（无描述）'),
-              h('div', { style: { ...S.meta, display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 2 } },
-                h('span', null, timeOf(item.at)),
-                item.peer ? h('span', null, item.peer) : null,
-                item.taskId ? h('span', { style: S.mono }, item.taskId.slice(-10)) : null,
-                item.status ? h('span', null, item.status) : null,
+          onClick: () => setAnswers((current) => ({ ...current, [key]: option })),
+        }, option)))
+      : null,
+    h('div', { style: { display: 'flex', gap: 8, alignItems: 'center' } },
+      h('input', {
+        style: { ...S.inputFlex, flex: '1 1 auto', height: 30, borderRadius: 7 },
+        placeholder: '输入回答或选择上面的选项',
+        value: answers[key] ?? '',
+        onChange: (e) => setAnswers((current) => ({ ...current, [key]: e.target.value })),
+      }),
+      h('button', { type: 'button', style: { ...S.button, height: 30, padding: '0 14px' }, disabled: Boolean(answering), onClick: () => answer(key, body) }, answering === key ? '发送中…' : '回答'),
+    ),
+  );
+
+  return h('div', { style: PANEL.page },
+    h('div', { style: PANEL.header },
+      h('div', { style: PANEL.logo }, h(CowActivityIcon, { size: 18 })),
+      h('div', { style: { display: 'grid', gap: 1, minWidth: 0 } },
+        h('h1', { style: PANEL.title }, 'COW状态'),
+        h('p', { style: PANEL.subtitle }, `${instance.displayName || '本机'} · ${roleLabel} · 每 4 秒自动刷新`),
+      ),
+      h('div', { style: { marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' } },
+        h(PanelChip, { tone: 'on' }, `${stats.connected ?? 0} 连接`),
+        h(PanelChip, { tone: 'brand' }, `${stats.encrypted ?? 0} 加密`),
+        pendingTotal ? h(PanelChip, { tone: 'brand' }, `${pendingTotal} 待处理`) : null,
+        h('button', { type: 'button', style: { ...S.secondary, height: 28, padding: '0 10px', fontSize: 11.5 }, onClick: () => { void load(); }, disabled: loading }, loading ? '刷新中…' : '刷新'),
+      ),
+    ),
+    error ? h('div', { style: { ...S.err, marginBottom: 12, padding: '8px 10px', borderRadius: 8, background: 'rgba(197,48,48,0.08)' } }, `加载失败：${error}`) : null,
+    h('div', { style: PANEL.statGrid },
+      h('div', { style: PANEL.stat }, h('span', { style: { ...PANEL.statValue, color: 'var(--dsw-alias-brand-primary)' } }, instance.version ? `v${instance.version}` : '-'), h('span', { style: PANEL.statLabel }, '本机版本')),
+      h('div', { style: PANEL.stat }, h('span', { style: PANEL.statValue }, stats.connected ?? 0), h('span', { style: PANEL.statLabel }, '在线节点')),
+      h('div', { style: PANEL.stat }, h('span', { style: PANEL.statValue }, children.filter((child) => child.connected).length), h('span', { style: PANEL.statLabel }, '在线子 DSH')),
+      h('div', { style: PANEL.stat }, h('span', { style: { ...PANEL.statValue, color: activeOutbound.length + activeInbound.length ? '#b7791f' : undefined } }, activeOutbound.length + activeInbound.length), h('span', { style: PANEL.statLabel }, '执行/排队')),
+      h('div', { style: PANEL.stat }, h('span', { style: { ...PANEL.statValue, color: pendingTotal ? '#c05621' : undefined } }, pendingTotal), h('span', { style: PANEL.statLabel }, '待人工')),
+    ),
+    h(CowTopology, { state }),
+    h('div', { style: PANEL.grid2 },
+      h('div', { style: { ...PANEL.card, marginBottom: 0 } },
+        h('div', { style: PANEL.cardHead },
+          h('h3', { style: PANEL.cardTitle }, '本机节点'),
+          h(PanelChip, { tone: stats.encrypted ? 'on' : 'neutral' }, stats.encrypted ? 'E2E 已启用' : 'E2E 未启用'),
+        ),
+        h(PanelKV, { rows: [
+          ['唯一标识', h('span', { style: S.mono }, instance.uuid || instance.instanceId || '-')],
+          ['WebSocket', endpoint],
+          ['工作区根目录', config.allowedRoots || '-'],
+          ['当前任务', state.currentInbound ? `${state.currentInbound.remoteTaskId}（${state.currentInbound.from}）` : '空闲'],
+          ['最近任务', tasks.slice(0, 2).map((task) => `${task.title || task.taskId.slice(-6)} · ${task.status}`).join('；') || '无'],
+        ] }),
+        instance.description ? h('div', { style: { ...S.meta, marginTop: 8, fontSize: 11, lineHeight: 1.6, maxHeight: 54, overflow: 'hidden' } }, instance.description) : null,
+      ),
+      h('div', { style: { ...PANEL.card, marginBottom: 0 } },
+        h('div', { style: PANEL.cardHead }, h('h3', { style: PANEL.cardTitle }, '作为主 DSH'), h(PanelChip, { tone: children.some((child) => child.connected) ? 'on' : 'neutral' }, `${children.filter((child) => child.connected).length}/${children.length} 在线`)),
+        h(PanelKV, { rows: [
+          ['监听地址', `${config.listenHost || '127.0.0.1'}:${config.listenPort || '复用宿主'}`],
+          ['连接地址', endpoint],
+          ['连接密码', state.passwordConfigured ? '已设置' : '未设置'],
+          ['子节点', children.length ? children.map((child) => `${child.label}（${child.connected ? '在线' : '离线'}${child.version ? ` v${child.version}` : ''}）`).join('；') : '无'],
+        ] }),
+      ),
+      h('div', { style: { ...PANEL.card, marginBottom: 0 } },
+        h('div', { style: PANEL.cardHead }, h('h3', { style: PANEL.cardTitle }, '作为子 DSH'), h(PanelChip, { tone: parent.connected ? 'on' : 'neutral' }, parent.connected ? '已连接上级' : '未连接上级')),
+        h(PanelKV, { rows: [
+          ['上级地址', parent.url || '无'],
+          ['上级版本', parentVersion ? `v${parentVersion}` : '-'],
+          ['连接状态', parent.connected ? '已连接（WebSocket）' : '未连接'],
+          ['加密', parentPeer?.encrypted ? 'E2E 已启用' : '未启用'],
+          ['执行/排队', `${activeInbound.length} 条`],
+        ] }),
+      ),
+    ),
+    h('div', { style: PANEL.grid2 },
+      h('div', { style: { ...PANEL.card, marginBottom: 0 } },
+        h('div', { style: PANEL.cardHead }, h('h3', { style: PANEL.cardTitle }, '我派出的任务'), h(PanelChip, null, `${tasks.length} 条`)),
+        tasks.length ? h('div', null, tasks.slice(0, 6).map((task) => h(TaskLine, { key: task.taskId, task, extra: task.peer }))) : h('div', { style: PANEL.empty }, '还没有派发任务'),
+      ),
+      h('div', { style: { ...PANEL.card, marginBottom: 0 } },
+        h('div', { style: PANEL.cardHead }, h('h3', { style: PANEL.cardTitle }, '本机执行 / 排队'), h(PanelChip, null, `${inbound.length} 条`)),
+        inbound.length ? h('div', null, inbound.slice(0, 6).map((task) => h(TaskLine, { key: task.taskId, task, extra: task.from }))) : h('div', { style: PANEL.empty }, '当前没有入站任务'),
+      ),
+    ),
+    pendingTotal
+      ? h('div', { style: { ...PANEL.card, marginBottom: 12, borderColor: 'rgba(183,121,31,0.35)' } },
+          h('div', { style: PANEL.cardHead },
+            h('h3', { style: PANEL.cardTitle }, '需要你决定'),
+            h(PanelChip, { tone: 'brand' }, `${pendingTotal} 条·来自子 DSH`),
+          ),
+          pendingTasks.map((task) => renderPending(
+            { text: `${task.title || task.taskId}：${task.pendingQuestion?.question || ''}`, options: task.pendingQuestion?.options },
+            task.taskId,
+            { taskId: task.taskId, answer: answers[task.taskId] ?? '' },
+          )),
+          questions.map((question) => renderPending(
+            { text: `${question.from || '子 DSH'}：${question.question || ''}`, options: question.options },
+            question.questionId,
+            { questionId: question.questionId, answer: answers[question.questionId] ?? '' },
+          )),
+        )
+      : null,
+    h('div', { style: PANEL.card },
+      h('div', { style: PANEL.cardHead },
+        h('h3', { style: PANEL.cardTitle }, '最近活动'),
+        h(PanelChip, null, `${items.length} 条`),
+      ),
+      items.length
+        ? h('div', null, items.slice(0, 80).map((item) => {
+            const kind = ACTIVITY_KIND[item.kind] ?? ACTIVITY_KIND.info;
+            return h('div', { key: item.id, style: PANEL.activityRow },
+              h('span', { style: { ...PANEL.activityDot, background: kind.color } }),
+              h('div', { style: { minWidth: 0 } },
+                h('div', { style: PANEL.activityText }, item.text || '（无描述）'),
+                h('div', { style: { ...S.meta, display: 'flex', gap: 8, flexWrap: 'wrap', fontSize: 10.5, marginTop: 1 } },
+                  h('span', null, timeOf(item.at)),
+                  item.peer ? h('span', null, item.peer) : null,
+                  item.taskId ? h('span', { style: S.mono }, item.taskId.slice(-10)) : null,
+                  item.status ? h('span', null, item.status) : null,
+                ),
               ),
-            ),
-          );
-        })),
+            );
+          }))
+        : h('div', { style: PANEL.empty }, '还没有活动'),
+    ),
   );
 }
 
