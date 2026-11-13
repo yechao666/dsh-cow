@@ -281,6 +281,65 @@ function CowActivityPanel() {
       );
     })(),
     (() => {
+      const state = data?.state ?? {};
+      const info = state.instance ?? {};
+      const cfg = state.config ?? {};
+      const parent = state.parent ?? {};
+      const peers = state.peers ?? [];
+      const children = peers.filter((peer) => peer.relation !== 'parent');
+      const stats = state.stats ?? {};
+      const endpoint = info.endpoint ? `${String(info.endpoint).replace(/^http/, 'ws')}/channel` : '未就绪';
+      const parentPeer = peers.find((peer) => peer.relation === 'parent');
+      const parentNode = parent.node ?? parentPeer ?? {};
+      const parentVersion = parentNode.version || '';
+      const childRows = children.map((child) => h('div', { key: child.label, style: { ...S.listRow, alignItems: 'flex-start' } },
+        h('div', { style: { display: 'grid', gap: 2, minWidth: 0 } },
+          h('div', { style: S.row },
+            h('span', { style: { fontSize: 12, fontWeight: 600 } }, child.label),
+            h('span', { style: child.connected ? S.badgeOn : S.badgeOff }, child.connected ? '已连接' : '离线'),
+            child.version ? h('span', { style: S.meta }, `v${child.version}`) : null,
+            child.encrypted ? h('span', { style: S.badgeOn }, 'E2E') : null,
+          ),
+          child.currentTask ? h('div', { style: S.meta }, `执行中：${child.currentTask.title || child.currentTask.taskId}（${child.currentTask.status}）`) : null,
+        ),
+      ));
+      return h(React.Fragment, null,
+        h('div', { style: S.card },
+          h('div', { style: S.cardHead },
+            h('h3', { style: S.cardTitle }, '作为主 DSH'),
+            h('span', { style: stats.connected ? S.badgeOn : S.badgeOff }, `${children.filter((child) => child.connected).length} / ${children.length} 个子节点在线`),
+          ),
+          h('div', { style: { display: 'grid', gap: 4 } }, [
+            ['监听地址', `${cfg.listenHost || '127.0.0.1'}:${cfg.listenPort || '（复用宿主端口）'}`],
+            ['连接地址', endpoint],
+            ['连接密码', state.passwordConfigured ? '已设置' : '未设置'],
+            ['待处理提问', `${(state.questions ?? []).length} 条`],
+          ].map(([label, value]) => h('div', { key: label, style: { display: 'grid', gridTemplateColumns: '110px minmax(0, 1fr)', gap: 8, fontSize: 12, lineHeight: 1.6 } },
+            h('span', { style: S.meta }, label),
+            h('span', { style: { wordBreak: 'break-all' } }, value),
+          ))),
+          h('div', { style: { ...S.meta, margin: '10px 0 2px' } }, '已连接的子 DSH'),
+          children.length ? h('div', null, childRows) : h('div', { style: S.hint }, '还没有子 DSH 连上来。'),
+        ),
+        h('div', { style: S.card },
+          h('div', { style: S.cardHead },
+            h('h3', { style: S.cardTitle }, '作为子 DSH'),
+            h('span', { style: parent.connected ? S.badgeOn : S.badgeOff }, parent.connected ? '上级已连接' : '上级未连接'),
+          ),
+          h('div', { style: { display: 'grid', gap: 4 } }, [
+            ['上级地址', parent.url || '无'],
+            ['上级版本', parentVersion ? `v${parentVersion}` : '-'],
+            ['连接状态', parent.connected ? '已连接（WebSocket）' : '未连接'],
+            ['加密', parentPeer?.encrypted ? 'E2E 已启用' : '未启用'],
+            ['本机执行/排队', `${(state.inboundTasks ?? []).filter((task) => ['queued', 'running'].includes(task.status)).length} 条`],
+          ].map(([label, value]) => h('div', { key: label, style: { display: 'grid', gridTemplateColumns: '110px minmax(0, 1fr)', gap: 8, fontSize: 12, lineHeight: 1.6 } },
+            h('span', { style: S.meta }, label),
+            h('span', { style: { wordBreak: 'break-all' } }, value),
+          ))),
+        ),
+      );
+    })(),
+    (() => {
       const outbound = (data?.state?.tasks ?? []).slice(0, 8);
       const inbound = (data?.state?.inboundTasks ?? []).slice(0, 8);
       const pending = (data?.state?.tasks ?? []).filter((task) => task.pendingQuestion);
