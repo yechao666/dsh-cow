@@ -894,7 +894,7 @@ function CowActivityPanel() {
                 ['监听地址', `${config.listenHost || '127.0.0.1'}:${config.listenPort || '复用宿主'}`],
                 ['连接地址', endpoint],
                 ['连接密码', state.passwordConfigured ? '已设置' : '未设置'],
-                ['子节点', children.length ? children.map((child) => `${child.label}（${child.connected ? '在线' : '离线'}${child.version ? ` v${child.version}` : ''}）`).join('；') : '无'],
+                ['子节点', `历史 ${children.length} 个 · 在线 ${children.filter((child) => child.connected).length} 个`],
               ] }),
             ),
             h('div', { style: { ...PANEL.card, marginBottom: 0 } },
