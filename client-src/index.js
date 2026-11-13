@@ -201,6 +201,16 @@ const PANEL = {
   activityText: { fontSize: 12.5, lineHeight: 1.5, wordBreak: 'break-word' },
 };
 
+function roleSurface(role) {
+  if (role === 'self') {
+    return { background: 'color-mix(in srgb, var(--dsw-alias-brand-primary) 9%, var(--dsw-alias-bg-l1))', border: 'color-mix(in srgb, var(--dsw-alias-brand-primary) 38%, var(--dsw-alias-border-l2))' };
+  }
+  if (role === 'parent') {
+    return { background: 'color-mix(in srgb, #6366f1 5%, var(--dsw-alias-bg-l1))', border: 'color-mix(in srgb, #6366f1 22%, var(--dsw-alias-border-l2))' };
+  }
+  return { background: 'color-mix(in srgb, #14b8a6 4%, var(--dsw-alias-bg-l1))', border: 'color-mix(in srgb, #14b8a6 20%, var(--dsw-alias-border-l2))' };
+}
+
 const TASK_STATUS_LABELS = {
   queued: '排队中',
   running: '执行中',
@@ -358,6 +368,7 @@ function CowTopology({ state }) {
   const nodeCard = (key, label, meta, options = {}) => {
     const accent = panelAccent(label);
     const position = positionOf(key);
+    const tone = roleSurface(options.self ? 'self' : options.role ?? 'child');
     return h('div', {
       key,
       'data-node': 'true',
@@ -366,11 +377,9 @@ function CowTopology({ state }) {
       title: '拖动调整位置；双击恢复默认位置',
       style: {
         position: 'absolute', left: position.x, top: position.y, width: NODE_W,
-        border: `1px solid ${options.self ? 'var(--dsw-alias-brand-primary)' : 'var(--dsw-alias-border-l2)'}`,
+        border: `1px solid ${tone.border}`,
         borderRadius: 12, padding: '10px 12px', cursor: 'grab', userSelect: 'none',
-        background: options.self
-          ? 'color-mix(in srgb, var(--dsw-alias-brand-primary) 9%, var(--dsw-alias-bg-l1))'
-          : 'var(--dsw-alias-bg-l1)',
+        background: tone.background,
         boxShadow: options.self
           ? '0 0 0 1px color-mix(in srgb, var(--dsw-alias-brand-primary) 35%, transparent), 0 10px 24px rgba(0,0,0,0.10)'
           : '0 6px 18px rgba(0,0,0,0.06)',
@@ -435,9 +444,9 @@ function CowTopology({ state }) {
         h('svg', { width: canvasWidth, height: canvasHeight, style: { position: 'absolute', left: 0, top: 0, pointerEvents: 'none' } },
           edges.map((edge) => h('path', { key: edge.key, d: edge.d, fill: 'none', stroke: 'var(--dsw-alias-brand-primary)', strokeWidth: 1.4, strokeOpacity: 0.35, strokeDasharray: '4 5' })),
         ),
-        parent ? nodeCard(`parent:${parent.label}`, parent.label, { version: parent.version, encrypted: parent.encrypted, currentTask: parent.currentTask }, { connected: parent.connected }) : null,
+        parent ? nodeCard(`parent:${parent.label}`, parent.label, { version: parent.version, encrypted: parent.encrypted, currentTask: parent.currentTask }, { connected: parent.connected, role: 'parent' }) : null,
         nodeCard('self', instance.displayName || '本机', { version: instance.version, encrypted: (state.stats?.encrypted ?? 0) > 0, currentTask: state.currentInbound ?? null }, { self: true, connected: true }),
-        children.map((child) => nodeCard(`child:${child.label}`, child.label, { version: child.version, encrypted: child.encrypted, currentTask: child.currentTask }, { connected: child.connected })),
+        children.map((child) => nodeCard(`child:${child.label}`, child.label, { version: child.version, encrypted: child.encrypted, currentTask: child.currentTask }, { connected: child.connected, role: 'child' })),
         !parent ? h('div', { style: { position: 'absolute', left: (canvasWidth - 150) / 2, top: 18, ...PANEL.chip, color: 'var(--dsw-alias-label-tertiary)', borderStyle: 'dashed' } }, '无直接上级') : null,
         children.length === 0
           ? h('div', { style: { position: 'absolute', left: (canvasWidth - 150) / 2, top: 332, ...PANEL.chip, color: 'var(--dsw-alias-label-tertiary)', borderStyle: 'dashed' } }, '无直接下级')
@@ -744,7 +753,9 @@ function CowActivityPanel() {
   }, label);
 
   const connectionOf = (label) => (state.connections ?? []).find((item) => item.peer === label) ?? null;
-  const nodeDetail = (peer, isParent = false) => {
+  const nodeDetail = (peer, role = 'child') => {
+    const tone = roleSurface(role);
+    const roleLabel = role === 'parent' ? '上级节点' : role === 'self' ? '本机节点' : '下级节点';
     const conn = connectionOf(peer.label);
     const facts = [
       ['唯一标识', peer.uuid || peer.instanceId || '', true],
@@ -754,14 +765,14 @@ function CowActivityPanel() {
       ['最近心跳', conn?.lastSeenAt ? new Date(conn.lastSeenAt).toLocaleString('zh-CN', { hour12: false }) : '', false],
       ['当前任务', peer.currentTask ? `${peer.currentTask.title || peer.currentTask.taskId}（${taskStatusLabel(peer.currentTask.status)}）` : '', false],
     ].filter(([, value]) => value);
-    return h('div', { key: `${isParent ? 'parent' : 'child'}:${peer.label}`, style: { ...PANEL.card, padding: '12px 14px', marginBottom: 0 } },
+    return h('div', { key: `${role}:${peer.label}`, style: { ...PANEL.card, padding: '12px 14px', marginBottom: 0, background: tone.background, borderColor: tone.border } },
       h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 9 } },
         h('span', { style: { width: 28, height: 28, borderRadius: 8, display: 'grid', placeItems: 'center', color: '#fff', background: panelAccent(peer.label).main, fontSize: 12, fontWeight: 700, boxShadow: `0 4px 12px ${panelAccent(peer.label).border}` } }, String(peer.label || '?').slice(0, 1)),
         h('span', { style: { fontSize: 13, fontWeight: 650 } }, peer.label),
         h(PanelChip, { tone: peer.connected ? 'on' : 'off' }, peer.connected ? '在线' : '离线'),
         peer.version ? h(PanelChip, null, `v${peer.version}`) : null,
         peer.encrypted ? h(E2EChip, { compact: true }) : null,
-        h('span', { style: { ...S.meta, fontSize: 10.5, marginLeft: 'auto' } }, isParent ? '直接上级' : '直接下级'),
+        h('span', { style: { ...S.meta, fontSize: 10.5, marginLeft: 'auto' } }, roleLabel),
       ),
       h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(175px, 1fr))', gap: '7px 14px' } },
         facts.map(([label, value, mono]) => h('div', { key: label, style: { display: 'grid', gap: 1, minWidth: 0 } },
@@ -928,7 +939,7 @@ function CowActivityPanel() {
     section === 'nodes'
       ? h('div', { style: { display: 'grid', gap: 12 } },
           h('div', { style: { ...S.meta, fontSize: 10.5, fontWeight: 650, letterSpacing: '0.4px' } }, '上级节点'),
-          parentPeer ? nodeDetail(parentPeer, true) : h('div', { style: PANEL.card }, h('div', { style: PANEL.empty }, '无直接上级')),
+          parentPeer ? nodeDetail(parentPeer, 'parent') : h('div', { style: PANEL.card }, h('div', { style: PANEL.empty }, '无直接上级')),
           h('div', { style: { ...S.meta, fontSize: 10.5, fontWeight: 650, letterSpacing: '0.4px', marginTop: 4 } }, '本机节点'),
           nodeDetail({
             label: instance.displayName || '本机',
@@ -940,10 +951,10 @@ function CowActivityPanel() {
             direction: '',
             currentTask: state.currentInbound ?? null,
             description: instance.description || '',
-          }),
+          }, 'self'),
           h('div', { style: { ...S.meta, fontSize: 10.5, fontWeight: 650, letterSpacing: '0.4px', marginTop: 4 } }, '子节点（垂直排列）'),
           children.length
-            ? h('div', { style: { display: 'grid', gap: 10 } }, children.map((child) => nodeDetail(child)))
+            ? h('div', { style: { display: 'grid', gap: 10 } }, children.map((child) => nodeDetail(child, 'child')))
             : h('div', { style: PANEL.card }, h('div', { style: PANEL.empty }, '当前没有子 DSH')),
         )
       : null,
