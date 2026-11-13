@@ -471,29 +471,38 @@ function CowActivityPanel() {
   const connectionOf = (label) => (state.connections ?? []).find((item) => item.peer === label) ?? null;
   const nodeDetail = (peer, isParent = false) => {
     const conn = connectionOf(peer.label);
-    return h('div', { key: `${isParent ? 'parent' : 'child'}:${peer.label}`, style: { ...PANEL.card, marginBottom: 0 } },
-      h('div', { style: PANEL.cardHead },
-        h('div', { style: { display: 'grid', gap: 2 } },
-          h('div', { style: S.row },
-            h('span', { style: { width: 7, height: 7, borderRadius: 99, background: peer.connected ? '#38a169' : 'var(--dsw-alias-label-tertiary)' } }),
-            h('span', { style: { fontSize: 13, fontWeight: 650 } }, peer.label),
-            h(PanelChip, { tone: peer.connected ? 'on' : 'off' }, peer.connected ? '在线' : '离线'),
-            peer.version ? h(PanelChip, null, `v${peer.version}`) : null,
-            peer.encrypted ? h(PanelChip, { tone: 'on' }, 'E2E') : null,
-          ),
-          h('div', { style: { ...S.meta, fontSize: 11 } }, isParent ? '直接上级' : '直接下级'),
-        ),
+    const facts = [
+      ['唯一标识', peer.uuid || peer.instanceId || '', true],
+      ['实例 ID', peer.instanceId || '', true],
+      ['连接方向', peer.direction === 'out' ? '本机 → 对端' : peer.direction === 'in' ? '对端 → 本机' : '', false],
+      ['连接时间', conn?.since ? new Date(conn.since).toLocaleString('zh-CN', { hour12: false }) : '', false],
+      ['最近心跳', conn?.lastSeenAt ? new Date(conn.lastSeenAt).toLocaleString('zh-CN', { hour12: false }) : '', false],
+      ['当前任务', peer.currentTask ? `${peer.currentTask.title || peer.currentTask.taskId}（${peer.currentTask.status}）` : '', false],
+    ].filter(([, value]) => value);
+    return h('div', { key: `${isParent ? 'parent' : 'child'}:${peer.label}`, style: { ...PANEL.card, padding: '12px 14px', marginBottom: 0 } },
+      h('div', { style: { display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginBottom: 9 } },
+        h('span', { style: { width: 7, height: 7, borderRadius: 99, background: peer.connected ? '#38a169' : 'var(--dsw-alias-label-tertiary)' } }),
+        h('span', { style: { fontSize: 13, fontWeight: 650 } }, peer.label),
+        h(PanelChip, { tone: peer.connected ? 'on' : 'off' }, peer.connected ? '在线' : '离线'),
+        peer.version ? h(PanelChip, null, `v${peer.version}`) : null,
+        peer.encrypted ? h(PanelChip, { tone: 'on' }, 'E2E') : null,
+        h('span', { style: { ...S.meta, fontSize: 10.5, marginLeft: 'auto' } }, isParent ? '直接上级' : '直接下级'),
       ),
-      h(PanelKV, { rows: [
-        ['唯一标识', h('span', { style: S.mono }, peer.uuid || peer.instanceId || '-')],
-        ['实例 ID', peer.instanceId || '-'],
-        ['连接方向', peer.direction === 'out' ? '本机 → 对端（出站）' : peer.direction === 'in' ? '对端 → 本机（入站）' : '-'],
-        ['连接时间', conn?.since ? new Date(conn.since).toLocaleString('zh-CN', { hour12: false }) : '-'],
-        ['最近心跳', conn?.lastSeenAt ? new Date(conn.lastSeenAt).toLocaleString('zh-CN', { hour12: false }) : '-'],
-        ['当前任务', peer.currentTask ? `${peer.currentTask.title || peer.currentTask.taskId}（${peer.currentTask.status}）` : '空闲'],
-      ] }),
+      h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(175px, 1fr))', gap: '7px 14px' } },
+        facts.map(([label, value, mono]) => h('div', { key: label, style: { display: 'grid', gap: 1, minWidth: 0 } },
+          h('span', { style: { ...S.meta, fontSize: 10, letterSpacing: '0.2px' } }, label),
+          h('span', { style: { fontSize: 11.5, lineHeight: 1.45, wordBreak: 'break-all', ...(mono ? { fontFamily: 'var(--dsw-font-mono, ui-monospace, monospace)' } : {}) } }, value),
+        )),
+      ),
       peer.description
-        ? h('div', { style: { ...S.meta, marginTop: 9, paddingTop: 9, borderTop: '1px solid var(--dsw-alias-border-l2)', whiteSpace: 'pre-wrap', lineHeight: 1.65, fontSize: 11.5 } }, peer.description)
+        ? h('div', {
+            style: {
+              ...S.meta, marginTop: 9, paddingTop: 8, borderTop: '1px solid var(--dsw-alias-border-l2)',
+              fontSize: 11, lineHeight: 1.55, display: '-webkit-box', WebkitLineClamp: 2,
+              WebkitBoxOrient: 'vertical', overflow: 'hidden',
+            },
+            title: peer.description,
+          }, peer.description)
         : null,
     );
   };
