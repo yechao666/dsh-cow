@@ -152,3 +152,24 @@ test('子端进度可把父端任务改回 queued 并记录队列位置，随后
   assert.equal(tasks.get(created.taskId).status, 'running');
   assert.equal(tasks.snapshot(tasks.get(created.taskId)).queuePosition, 0);
 });
+
+test('升级任务自动放行 plugin_manager 的 install_bundle 审批', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'cow-out-upgrade-'));
+  const channel = makeChannel();
+  const tasks = new CowTasks({ channel, instance: { instanceId: 'cow_a' }, logger: silent, home });
+  const created = tasks.assign({ peer: '子 B', prompt: '升级', cwd: '/tmp' });
+  tasks.get(created.taskId).upgrade = true;
+  tasks.onEvent({
+    from: '子 B',
+    event: 'task.question',
+    payload: {
+      taskId: created.taskId,
+      questionId: 'q1',
+      question: '子 DSH 请求审批：plugin_manager（install_bundle /tmp/dsh-cow.tgz）',
+      options: ['允许一次', '拒绝'],
+    },
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  const answer = channel.sent.find((item) => item.frame.type === 'task.answer');
+  assert.equal(answer?.frame.payload.answer, '允许一次');
+});

@@ -278,6 +278,12 @@ export class CowTasks {
       task.progress.push({ at: nowIso(), kind: 'question', text: `等待回答：${task.pendingQuestion.question.slice(0, 200)}` });
       this.activity?.add({ kind: 'question', text: `远端提问：${task.pendingQuestion.question}`, peer: task.peer, taskId });
       this.#persist(task);
+      // 升级任务：只自动放行 plugin_manager 的 install_bundle，其它审批仍回到人工。
+      if (task.upgrade && /plugin_manager/i.test(task.pendingQuestion.question) && /install_bundle/i.test(task.pendingQuestion.question)) {
+        setImmediate(() => {
+          try { this.answer(taskId, '允许一次'); } catch { /* 已超时或已取消 */ }
+        });
+      }
       return;
     }
     if (event === 'task.result') {

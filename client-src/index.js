@@ -90,7 +90,7 @@ class SettingsBoundary extends React.Component {
   }
 }
 
-function PeerRow({ peer, busy, onRemove }) {
+function PeerRow({ peer, busy, onRemove, onUpgrade, currentVersion }) {
   return h('div', { style: S.listRow },
     h('div', { style: { display: 'grid', gap: 2, minWidth: 0 } },
       h('div', { style: S.row },
@@ -98,6 +98,15 @@ function PeerRow({ peer, busy, onRemove }) {
         h('span', { style: peer.connected ? S.badgeOn : S.badgeOff }, peer.connected ? '已连接' : '离线'),
         peer.version ? h('span', { style: S.meta }, `v${peer.version}`) : null,
         peer.encrypted ? h('span', { style: S.badgeOn }, 'E2E') : null,
+        onUpgrade && peer.connected && peer.version && currentVersion && peer.version !== currentVersion
+          ? h('button', {
+              type: 'button',
+              style: { ...S.secondary, marginLeft: 'auto', padding: '2px 8px', fontSize: 11 },
+              disabled: Boolean(busy),
+              title: `升级到 ${currentVersion}`,
+              onClick: () => onUpgrade(peer.label),
+            }, busy === `upgrade:${peer.label}` ? '升级中…' : `升级到 ${currentVersion}`)
+          : null,
       ),
       peer.description ? h('div', { style: { ...S.meta, whiteSpace: 'pre-wrap' } }, peer.description.slice(0, 200)) : null,
       peer.currentTask ? h('div', { style: S.meta }, `正在执行：${peer.currentTask.title || peer.currentTask.taskId}（${peer.currentTask.status}）`) : null,
@@ -463,6 +472,33 @@ function CoCowSettingsPage() {
     }
   };
 
+  const upgradePeer = async (peer) => {
+    setBusy(`upgrade:${peer}`);
+    setError('');
+    setMessage('');
+    try {
+      const response = await fetch(api('upgrade'), {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ peer }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload?.error?.message || `HTTP ${response.status}`);
+      if (payload.status === 'succeeded' || payload.status === 'current') {
+        setMessage(`${peer}：${payload.message || '升级完成'}`);
+      } else {
+        setMessage(`${peer}：${payload.message || '安装完成，等待子端重连'}${payload.version ? `（当前 ${payload.version}）` : ''}`);
+      }
+      const state = await fetch(stateUrl(), { credentials: 'same-origin' });
+      if (state.ok) apply(await state.json());
+    } catch (upgradeError) {
+      setError(upgradeError.message);
+    } finally {
+      setBusy('');
+    }
+  };
+
   const cancelTask = async (taskId) => {
     setBusy(`cancel:${taskId}`);
     setError('');
@@ -603,7 +639,7 @@ function CoCowSettingsPage() {
               h('span', { style: S.badgeOff }, `${children.length} 个`),
             ),
             children.length > 0
-              ? h('div', null, children.map((peer) => h(PeerRow, { key: peer.label, peer, busy, onRemove: removePeer })))
+              ? h('div', null, children.map((peer) => h(PeerRow, { key: peer.label, peer, busy, onRemove: removePeer, onUpgrade: upgradePeer, currentVersion: data?.pluginVersion })))
               : h('div', { style: S.hint }, '还没有子 DSH 连上来。'),
           ),
           h('div', { style: S.card },

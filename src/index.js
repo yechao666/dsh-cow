@@ -22,6 +22,7 @@ import { createHandler, mountCarrier } from './server.js';
 import { readSettings, writeSettings } from './settings-store.js';
 import { createToolDefinitions, registerTools } from './tools.js';
 import { createDoctor } from './doctor.js';
+import { createUpgradeService } from './upgrade.js';
 import { registerApprovalTakeover } from './approval-takeover.js';
 import { ActivityLog } from './activity.js';
 import { FileExchange } from './files.js';
@@ -336,6 +337,16 @@ export function apply(ctx, rawConfig = {}) {
   });
   tasks.channel = channel;
   const files = new FileExchange({ instance, channel, peers, resolveConfig: resolve, logger, activity });
+  const upgrade = createUpgradeService({
+    root: fileURLToPath(new URL('..', import.meta.url)),
+    pkg: PACKAGE,
+    files,
+    tasks,
+    peers,
+    channel,
+    home,
+    logger,
+  });
   const disposeApproval = registerApprovalTakeover({
     ctx,
     askQuestion,
@@ -411,6 +422,7 @@ export function apply(ctx, rawConfig = {}) {
     tasks,
     currentInbound,
     doctor,
+    upgrade,
     activity,
     passwordConfigured,
     setPassword,
@@ -432,6 +444,7 @@ export function apply(ctx, rawConfig = {}) {
       tasks,
       currentInbound,
       files,
+      upgrade,
       askQuestion,
       taskIdForSession,
       doctor,

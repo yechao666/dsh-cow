@@ -199,6 +199,19 @@ export function createAdminHandlers(deps) {
       });
     }),
 
+    '/api/cow/upgrade': wrap(async (req, res) => {
+      if (req.method !== 'POST') return sendJson(res, 405, { error: { code: 'method_not_allowed', message: '只支持 POST' } });
+      const body = await readBody(req);
+      const peer = String(body?.peer ?? '').trim();
+      if (!peer) return sendJson(res, 400, { error: { code: 'invalid_request', message: '缺少 peer' } });
+      try {
+        if (!deps.upgrade) throw new Error('升级服务未启用');
+        sendJson(res, 200, await deps.upgrade.upgradePeer(peer, { targetVersion: String(body?.targetVersion ?? '') }));
+      } catch (error) {
+        sendJson(res, 400, { error: { code: 'upgrade_failed', message: String(error?.message ?? error) } });
+      }
+    }),
+
     '/api/cow/cancel': wrap(async (req, res) => {
       if (req.method !== 'POST') return sendJson(res, 405, { error: { code: 'method_not_allowed', message: '只支持 POST' } });
       const body = await readBody(req);

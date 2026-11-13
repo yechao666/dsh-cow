@@ -24,7 +24,7 @@ function call(handler, { method = 'GET', body = null } = {}) {
   });
 }
 
-function makeRig({ password = '', answer = () => {}, cancel = () => {}, doctor = null, saveSettings = () => {} } = {}) {
+function makeRig({ password = '', answer = () => {}, cancel = () => {}, upgrade = null, doctor = null, saveSettings = () => {} } = {}) {
   const home = mkdtempSync(join(tmpdir(), 'cow-admin-'));
   const peers = new PeerRegistry({ file: join(home, 'peers.json') });
   const saved = { password: '', parent: null };
@@ -42,6 +42,7 @@ function makeRig({ password = '', answer = () => {}, cancel = () => {}, doctor =
     peers,
     channel,
     tasks: { list: () => [], answer, cancel },
+    upgrade,
     doctor,
     currentInbound: () => null,
     passwordConfigured: () => Boolean(password),
@@ -129,4 +130,14 @@ test('设置连接密码要求至少 12 个字符', async () => {
   const short = await call(handlers['/api/cow/password'], { method: 'POST', body: { password: '123456' } });
   assert.equal(short.status, 400);
   assert.match(short.json.error.message, /至少 12/);
+});
+
+
+test('POST /upgrade 调用升级服务', async () => {
+  const calls = [];
+  const { handlers } = makeRig({ upgrade: { upgradePeer: async (peer) => { calls.push(peer); return { status: 'succeeded', peer, version: '9.9.9' }; } } });
+  const result = await call(handlers['/api/cow/upgrade'], { method: 'POST', body: { peer: '子 B' } });
+  assert.equal(result.status, 200);
+  assert.deepEqual(calls, ['子 B']);
+  assert.equal(result.json.status, 'succeeded');
 });

@@ -63,7 +63,7 @@ function sessionIdOf(exec) {
   return String(exec?.agent?.session?.id ?? exec?.agent?.session?.sessionId ?? '') || '';
 }
 
-export function createToolDefinitions({ instance, channel, peers, tasks, currentInbound, files, workspaceTitleForSession, askQuestion, taskIdForSession, doctor }) {
+export function createToolDefinitions({ instance, channel, peers, tasks, currentInbound, files, upgrade, workspaceTitleForSession, askQuestion, taskIdForSession, doctor }) {
   return [
     ...(files ? [
       {
@@ -405,6 +405,24 @@ export function createToolDefinitions({ instance, channel, peers, tasks, current
         return { peer, delivered: Boolean(sent.delivered), queued: Boolean(sent.queued) };
       },
     },
+    ...(upgrade ? [{
+      name: 'cow_upgrade',
+      description: '把本机当前 dsh-cow 版本推送给一个直接下级并让它用 plugin_manager 安装升级；等待子端重连并上报目标版本。',
+      parameters: {
+        type: 'object',
+        properties: {
+          peer: { type: 'string', description: '目标子 DSH（cow_peers 里的名称）' },
+          targetVersion: { type: 'string', description: '目标版本，默认本机当前版本' },
+        },
+        required: ['peer'],
+        additionalProperties: false,
+      },
+      output: output(),
+      timeoutMs: 180_000,
+      async execute(args) {
+        return upgrade.upgradePeer(String(args?.peer ?? '').trim(), { targetVersion: String(args?.targetVersion ?? '') });
+      },
+    }] : []),
     {
       name: 'cow_retry',
       description: '重试一个失败/取消/重启中断的出站任务（沿用原 taskId，不换 ID）。',

@@ -22,7 +22,7 @@ WebSocket 长连接做全双工 JSON 通讯。
 设置 → dsh-cow：
 
 - **基本信息**：版本、角色、节点名称、节点说明、附加说明、工作区根目录（数据目录，默认是用户主目录下的 `dsh-cow-root`，由代码按平台解析；留空保存也回落到它）、连接概况；
-- **作为主 DSH**：监听地址/端口、连接密码（至少 12 位，可一键生成随机密钥）、已连接子节点列表（在线状态、版本、说明、当前任务）、任务队列与远端提问；
+- **作为主 DSH**：监听地址/端口、连接密码（至少 12 位，可一键生成随机密钥）、已连接子节点列表（在线状态、版本、说明、当前任务、版本落后时显示「升级到 x.y.z」）、任务队列与远端提问；
 - **作为子 DSH**：上级地址（`ws://host:port/cow/v1/channel` 或 `http://host:port/cow/v1`）、密码；保存后自动建立长连接并断线重连。
 
 ## 协议（cow/v1，JSON over WebSocket）
@@ -71,6 +71,7 @@ node scripts/join-child.mjs --home ~/.dsh-childA --name "子DSH-A" \
 - `cow_ask`：子端任务内向上级提问（阻塞等待回答，默认 300s）；
 - `cow_cancel`：取消任务（排队任务立即出队）；
 - `cow_retry`：重试失败/中断/过期的出站任务；
+- `cow_upgrade`：把本机当前 dsh-cow 版本推给直接下级，子端 agent 用 `plugin_manager` 安装，等待重连上报新版本；
 - `cow_notify`：发协作消息；
 - `cow_doctor`：生成本机诊断包（版本/配置/加密状态/队列/文件统计），返回 JSON 路径；
 - `cow_send_file` / `cow_receive_file`：发/取文件（单个或目录、断点续传、sha256）；
@@ -78,6 +79,8 @@ node scripts/join-child.mjs --home ~/.dsh-childA --name "子DSH-A" \
 - `cow_cancel_file` / `cow_set_file_policy`：取消传输 / 调整对端文件策略。
 
 ## 已知限制
+
+- 子节点升级走子端 agent 的 `plugin_manager`：安装动作会卸载当前插件，升级任务可能中断；若子端未自动重连并上报新版本，需要重启子端进程或重新启用插件。
 
 - 事件至少一次投递，接收方去重窗口为内存 512 条；进程重启后窗口清空。
 - 通道业务帧已用 AES-256-GCM 加密；握手帧仍是明文，密码强度决定抗离线猜测能力，跨公网建议随机密钥 + 隧道。
