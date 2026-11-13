@@ -677,6 +677,7 @@ function CowActivityPanel() {
 
   const state = data?.state ?? {};
   const instance = state.instance ?? {};
+  const currentVersion = String(state.pluginVersion || instance.version || '');
   const config = state.config ?? {};
   const peers = state.peers ?? [];
   const children = peers.filter((peer) => peer.relation !== 'parent');
@@ -793,14 +794,14 @@ function CowActivityPanel() {
         h(PanelChip, { tone: peer.connected ? 'on' : 'off' }, peer.connected ? '在线' : '离线'),
         peer.version ? h(PanelChip, null, `v${peer.version}`) : null,
         peer.encrypted ? h(E2EChip, { compact: true }) : null,
-        (peer.upgradeAvailable ?? Boolean(peer.connected && peer.version && data?.pluginVersion && peer.version !== data.pluginVersion))
+        (peer.upgradeAvailable ?? Boolean(peer.connected && peer.version && currentVersion && peer.version !== currentVersion))
           ? h('button', {
               type: 'button',
               style: { ...S.secondary, height: 24, padding: '0 8px', fontSize: 10.5 },
               disabled: Boolean(upgrading),
-              title: `把 ${peer.label} 升级到 ${data.pluginVersion}`,
+              title: `把 ${peer.label} 升级到 ${currentVersion}`,
               onClick: () => upgradePeer(peer.label),
-            }, upgrading === peer.label ? '升级中…' : `升级到 ${data.pluginVersion}`)
+            }, upgrading === peer.label ? '升级中…' : `升级到 ${currentVersion}`)
           : null,
         h('span', { style: { ...S.meta, fontSize: 10.5, marginLeft: 'auto' } }, roleLabel),
       ),
