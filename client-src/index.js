@@ -211,6 +211,15 @@ function roleSurface(role) {
   return { background: 'color-mix(in srgb, #14b8a6 4%, var(--dsw-alias-bg-l1))', border: 'color-mix(in srgb, #14b8a6 20%, var(--dsw-alias-border-l2))' };
 }
 
+function versionLess(a, b) {
+  const pa = String(a ?? '').replace(/^v/, '').split('.').map((part) => Number.parseInt(part, 10) || 0);
+  const pb = String(b ?? '').replace(/^v/, '').split('.').map((part) => Number.parseInt(part, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i += 1) {
+    if ((pa[i] ?? 0) !== (pb[i] ?? 0)) return (pa[i] ?? 0) < (pb[i] ?? 0);
+  }
+  return false;
+}
+
 const TASK_STATUS_LABELS = {
   queued: '排队中',
   running: '执行中',
@@ -794,7 +803,7 @@ function CowActivityPanel() {
         h(PanelChip, { tone: peer.connected ? 'on' : 'off' }, peer.connected ? '在线' : '离线'),
         peer.version ? h(PanelChip, null, `v${peer.version}`) : null,
         peer.encrypted ? h(E2EChip, { compact: true }) : null,
-        (peer.upgradeAvailable ?? Boolean(peer.connected && peer.version && currentVersion && peer.version !== currentVersion))
+        (peer.upgradeAvailable ?? Boolean(peer.connected && peer.version && currentVersion && versionLess(peer.version, currentVersion)))
           ? h('button', {
               type: 'button',
               style: { ...S.secondary, height: 24, padding: '0 8px', fontSize: 10.5 },

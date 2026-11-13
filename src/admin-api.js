@@ -6,6 +6,16 @@ import { DEFAULT_ALLOWED_ROOT } from './config.js';
 
 const MAX_BODY = 64 * 1024;
 
+/** 仅当 a 严格低于 b 时返回 true（x.y.z 数字比较）。 */
+function versionLess(a, b) {
+  const pa = String(a ?? '').replace(/^v/, '').split('.').map((part) => Number.parseInt(part, 10) || 0);
+  const pb = String(b ?? '').replace(/^v/, '').split('.').map((part) => Number.parseInt(part, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i += 1) {
+    if ((pa[i] ?? 0) !== (pb[i] ?? 0)) return (pa[i] ?? 0) < (pb[i] ?? 0);
+  }
+  return false;
+}
+
 function sendJson(res, status, body) {
   const text = JSON.stringify(body);
   res.writeHead(status, {
@@ -72,7 +82,7 @@ export function createAdminHandlers(deps) {
         upgradeAvailable: peer.relation === 'child'
           && status.state === 'connected'
           && Boolean(status.node?.version)
-          && status.node.version !== currentVersion,
+          && versionLess(status.node.version, currentVersion),
         encrypted: status.e2e === true,
         description: status.node?.description ?? peer.capabilitySummary ?? '',
         currentTask: deps.currentTaskFor?.(peer.label) ?? null,
