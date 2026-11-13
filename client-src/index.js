@@ -1,5 +1,5 @@
 /**
- * dsh-cow 设置页：基本信息 / 作为主 DSH / 作为子 DSH。
+ * dsh-cow 设置页：节点配置 / 作为主 DSH / 作为子 DSH。
  * 连接与任务全部走 WebSocket；这里只做配置与状态观察。
  */
 import * as React from 'react';
@@ -196,14 +196,50 @@ function CowActivityPanel() {
   return h('div', { style: { ...S.wrap, padding: '18px 20px 28px', height: '100%', overflowY: 'auto', boxSizing: 'border-box' } },
     h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 4 } },
       h('div', { style: { width: 28, height: 28, borderRadius: 8, display: 'grid', placeItems: 'center', background: 'var(--dsw-alias-brand-primary)', color: '#fff' } }, h(CowActivityIcon, { size: 16 })),
-      h('h2', { style: { margin: 0, fontSize: 16, fontWeight: 650 } }, 'Cow 活动'),
+      h('h2', { style: { margin: 0, fontSize: 16, fontWeight: 650 } }, 'COW状态'),
       version ? h('span', { style: S.badgeOff }, `v${version}`) : null,
       h('span', { style: S.badgeOn }, `连接 ${stats.connected ?? 0}`),
       h('span', { style: stats.encrypted ? S.badgeOn : S.badgeOff }, `加密 ${stats.encrypted ?? 0}`),
       stats.queued ? h('span', { style: S.badgeOff }, `排队 ${stats.queued}`) : null,
       h('button', { type: 'button', style: { ...S.secondary, marginLeft: 'auto' }, onClick: () => { void load(); }, disabled: loading }, loading ? '刷新中…' : '刷新'),
     ),
-    h('p', { style: { ...S.hint, margin: '2px 0 14px' } }, '本机 dsh-cow 的任务、提问、文件与节点事件；每 4 秒自动刷新。'),
+    h('p', { style: { ...S.hint, margin: '2px 0 14px' } }, '本机节点信息、任务、提问、文件与节点事件；每 4 秒自动刷新。'),
+    (() => {
+      const info = data?.state?.instance ?? {};
+      const cfg = data?.state?.config ?? {};
+      const peerRows = data?.state?.peers ?? [];
+      const parent = data?.state?.parent ?? {};
+      const stats = data?.state?.stats ?? {};
+      const tasks = data?.state?.tasks ?? [];
+      const roleLabel = parent.connected || info.role === 'member' ? '子 DSH' : '主 DSH';
+      const endpoint = info.endpoint ? `${String(info.endpoint).replace(/^http/, 'ws')}/channel` : '未就绪';
+      const rows = [
+        ['节点名称', info.displayName || '-'],
+        ['版本', info.version ? `v${info.version}` : '-'],
+        ['角色', `${roleLabel}（已连接 ${stats.connected ?? 0} / ${stats.peers ?? 0} 个节点）`],
+        ['唯一标识', info.uuid || info.instanceId || '-'],
+        ['WebSocket', endpoint],
+        ['上级', parent.url ? `${parent.url}（${parent.connected ? '已连接' : '未连接'}）` : '无'],
+        ['工作区根目录', cfg.allowedRoots || '-'],
+        ['当前任务', data?.state?.currentInbound ? `${data.state.currentInbound.remoteTaskId}（${data.state.currentInbound.from}）` : '空闲'],
+        ['最近任务', tasks.slice(0, 3).map((t) => `${t.taskId.slice(-6)} ${t.status}`).join('，') || '无'],
+      ];
+      return h('div', { style: S.card },
+        h('div', { style: S.cardHead },
+          h('h3', { style: S.cardTitle }, '本机节点'),
+          h('span', { style: stats.encrypted ? S.badgeOn : S.badgeOff }, stats.encrypted ? `加密连接 ${stats.encrypted}` : '未加密连接'),
+        ),
+        h('div', { style: { display: 'grid', gap: 4 } }, rows.map(([label, value]) => h('div', { key: label, style: { display: 'grid', gridTemplateColumns: '110px minmax(0, 1fr)', gap: 8, fontSize: 12, lineHeight: 1.6 } },
+          h('span', { style: S.meta }, label),
+          h('span', { style: { wordBreak: 'break-all' } }, value),
+        ))),
+        info.description ? h('div', { style: { ...S.meta, marginTop: 8, whiteSpace: 'pre-wrap', lineHeight: 1.6 } }, info.description) : null,
+      );
+    })(),
+    h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, margin: '16px 0 8px' } },
+      h('h3', { style: S.cardTitle }, '最近活动'),
+      h('span', { style: S.meta }, `${items.length} 条`),
+    ),
     error ? h('div', { style: { ...S.hint, color: 'var(--dsw-alias-label-danger, #d95e4b)' } }, `加载失败：${error}`) : null,
     items.length === 0
       ? h('div', { style: { ...S.hint, padding: '32px 0', textAlign: 'center' } }, '还没有活动。派发任务或连接节点后会出现在这里。')
@@ -550,41 +586,19 @@ function CoCowSettingsPage() {
   }, label);
 
   return h('div', { style: S.wrap },
-    h('div', { style: S.tabs }, tabButton('basic', '基本信息'), tabButton('main', '作为主 DSH'), tabButton('child', '作为子 DSH')),
+    h('div', { style: S.tabs }, tabButton('basic', '节点配置'), tabButton('main', '作为主 DSH'), tabButton('child', '作为子 DSH')),
 
     tab === 'basic'
       ? h('div', { style: S.card },
           h('div', { style: S.formGrid },
-            h(Row, { label: '版本' }, h('span', { style: { ...S.meta, paddingTop: 7 } }, `v${data.pluginVersion || '?'}`)),
-            h(Row, { label: '角色' },
-              h('div', { style: S.row },
-                h('span', { style: S.badge }, role),
-                parent.connected ? h('span', { style: S.badgeOn }, '已连上级') : null,
-                h('span', { style: S.meta }, `已连接 ${stats.connected ?? 0} / ${stats.peers ?? 0} 个节点`),
-              ),
-            ),
-            h(Row, { label: '唯一标识' },
-              h('span', { style: { ...S.mono, paddingTop: 7, wordBreak: 'break-all' } }, instance.uuid || instance.instanceId || '-'),
-            ),
             h(Row, { label: '节点名称' },
               h('input', { style: S.inputFlex, value: form.displayName, placeholder: '留空则使用计算机名', onChange: (e) => update('displayName', e.target.value) }),
-            ),
-            h(Row, { label: '节点说明' },
-              h('div', { style: { ...S.meta, flex: '1 1 auto', whiteSpace: 'pre-wrap', lineHeight: 1.7, paddingTop: 6 } }, instance.description || '正在检测…'),
             ),
             h(Row, { label: '附加说明' },
               h('textarea', { style: { ...S.inputFlex, minHeight: 52, resize: 'vertical' }, placeholder: '可选，附在节点说明后面', value: form.capabilityNote, onChange: (e) => update('capabilityNote', e.target.value) }),
             ),
             h(Row, { label: '工作区根目录' },
               h('input', { style: S.inputFlex, placeholder: data?.defaultAllowedRoot ? `例如 ${data.defaultAllowedRoot}；留空自动使用它` : '留空自动使用默认数据目录', value: String(form.allowedRoots || '').split('\n')[0], onChange: (e) => update('allowedRoots', e.target.value.trim()) }),
-            ),
-            h(Row, { label: '连接概况' },
-              h('div', { style: { ...S.meta, paddingTop: 6, lineHeight: 1.8 } },
-                h('div', null, `WebSocket 端点：${instance.endpoint || '（未就绪）'}`),
-                h('div', null, `上级：${parent.url ? `${parent.url}（${parent.connected ? '已连接' : '未连接'}）` : '无'}`),
-                h('div', null, `当前任务：${data.currentInbound ? `${data.currentInbound.remoteTaskId}（${data.currentInbound.from}）` : '空闲'}`),
-                h('div', null, `最近任务：${(data.tasks ?? []).slice(0, 3).map((t) => `${t.taskId.slice(-6)} ${t.status}`).join('，') || '无'}`),
-              ),
             ),
             h('div', { style: { gridColumn: '2', display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'flex-end' } },
               statusLine,
@@ -750,7 +764,7 @@ export function apply(ctx) {
       name: 'sidebar.panellist',
       id: 'cow-activity',
       order: 20,
-      label: 'Cow 活动',
+      label: 'COW状态',
     }, CowActivityIcon));
   } catch { /* 侧边栏插槽不可用时忽略 */ }
   try {
