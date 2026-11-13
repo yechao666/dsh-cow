@@ -793,16 +793,16 @@ function CowActivityPanel() {
         h(PanelChip, { tone: peer.connected ? 'on' : 'off' }, peer.connected ? '在线' : '离线'),
         peer.version ? h(PanelChip, null, `v${peer.version}`) : null,
         peer.encrypted ? h(E2EChip, { compact: true }) : null,
-        h('span', { style: { ...S.meta, fontSize: 10.5, marginLeft: 'auto' } }, roleLabel),
-        role === 'child' && peer.connected && peer.version && data?.pluginVersion && peer.version !== data.pluginVersion
+        (peer.upgradeAvailable ?? Boolean(peer.connected && peer.version && data?.pluginVersion && peer.version !== data.pluginVersion))
           ? h('button', {
               type: 'button',
-              style: { ...S.secondary, height: 24, padding: '0 8px', fontSize: 10.5, marginLeft: 4 },
+              style: { ...S.secondary, height: 24, padding: '0 8px', fontSize: 10.5 },
               disabled: Boolean(upgrading),
               title: `把 ${peer.label} 升级到 ${data.pluginVersion}`,
               onClick: () => upgradePeer(peer.label),
             }, upgrading === peer.label ? '升级中…' : `升级到 ${data.pluginVersion}`)
           : null,
+        h('span', { style: { ...S.meta, fontSize: 10.5, marginLeft: 'auto' } }, roleLabel),
       ),
       h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(175px, 1fr))', gap: '7px 14px' } },
         facts.map(([label, value, mono]) => h('div', { key: label, style: { display: 'grid', gap: 1, minWidth: 0 } },
@@ -1429,15 +1429,6 @@ function CoCowSettingsPage() {
               ),
               h(Row, { label: '' }, h('span', { style: S.hint }, '子 DSH 在「上级地址」中填上面的连接地址，密码就是上面的连接密码。每个节点各自设置密码：本节点的下级用这个密码，中间节点的下级用中间节点自己的密码。密码只保存摘要，不回显。')),
             ),
-          ),
-          h('div', { style: S.card },
-            h('div', { style: S.cardHead },
-              h('h3', { style: S.cardTitle }, '已连接的子 DSH'),
-              h('span', { style: S.badgeOff }, `${children.length} 个`),
-            ),
-            children.length > 0
-              ? h('div', null, children.map((peer) => h(PeerRow, { key: peer.label, peer, busy, onRemove: removePeer, onUpgrade: upgradePeer, currentVersion: data?.pluginVersion })))
-              : h('div', { style: S.hint }, '还没有子 DSH 连上来。'),
           ),
           h('div', { style: S.card },
             (() => {

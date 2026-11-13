@@ -55,6 +55,7 @@ function wrap(fn) {
 export function createAdminHandlers(deps) {
   const state = () => {
     const cfg = deps.resolveConfig();
+    const currentVersion = String(deps.pluginVersion ?? '');
     const connections = deps.channel?.connections?.() ?? [];
     const peerList = deps.peers.list().map((peer) => {
       const status = deps.channel?.status?.(peer.label) ?? { state: 'offline' };
@@ -68,6 +69,10 @@ export function createAdminHandlers(deps) {
         direction: status.direction ?? null,
         node: status.node ?? null,
         version: status.node?.version ?? '',
+        upgradeAvailable: peer.relation === 'child'
+          && status.state === 'connected'
+          && Boolean(status.node?.version)
+          && status.node.version !== currentVersion,
         encrypted: status.e2e === true,
         description: status.node?.description ?? peer.capabilitySummary ?? '',
         currentTask: deps.currentTaskFor?.(peer.label) ?? null,
