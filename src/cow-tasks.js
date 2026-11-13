@@ -221,6 +221,29 @@ export class CowTasks {
     return { sent, failed, remaining };
   }
 
+  /**
+   * 子端以目标版本重连后，把仍在等待的升级任务标记为成功。
+   * plugin_manager 安装会卸载插件，旧任务会话可能来不及回传结果。
+   */
+  reconcileUpgrade(peer, version) {
+    const target = String(version ?? '');
+    if (!target) return 0;
+    let changed = 0;
+    for (const task of this.tasks.values()) {
+      if (!task.upgrade || String(task.peer ?? '') !== String(peer ?? '')) continue;
+      if (!['queued', 'running'].includes(task.status)) continue;
+      if (!task.upgradeTarget || String(task.upgradeTarget) !== target) continue;
+      task.status = 'succeeded';
+      task.summary = `子端已重连并上报目标版本 ${target}`;
+      task.error = null;
+      task.finishedAt = nowIso();
+      task.progress = [...(task.progress ?? []), { at: nowIso(), kind: 'done', text: `子端已上报 ${target}` }].slice(-20);
+      this.#persist(task);
+      changed += 1;
+    }
+    return changed;
+  }
+
   /** 重试一个失败/取消/中断的出站任务，沿用同一个 taskId。 */
   retry(taskId, { timeoutSec = 3600 } = {}) {
     const task = this.get(taskId);

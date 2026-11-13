@@ -82,7 +82,10 @@ export function createUpgradeService({
       timeoutSec: 900,
     });
     const task = tasks.get(snapshot.taskId);
-    if (task) task.upgrade = true; // 父端只对升级任务的 plugin_manager 安装请求自动放行
+    if (task) {
+      task.upgrade = true; // 父端只对升级任务的 plugin_manager 安装请求自动放行
+      task.upgradeTarget = target;
+    }
     log.info?.(`[dsh-cow] 升级任务已派发 ${peer} -> ${pkg.version}（${snapshot.taskId}）`);
 
     const startedAt = Date.now();

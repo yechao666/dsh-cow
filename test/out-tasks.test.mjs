@@ -30,6 +30,22 @@ test('出站任务落盘；重启后未完成任务标记为中断，可 retry',
   assert.equal(channel.sent.filter((item) => item.frame.type === 'task.assign').length, 2);
 });
 
+test('升级任务在子端以目标版本重连后自动完成', () => {
+  const home = mkdtempSync(join(tmpdir(), 'cow-out-upgrade-'));
+  const tasks = new CowTasks({ channel: makeChannel(), instance: { instanceId: 'cow_a' }, logger: silent, home });
+  const created = tasks.assign({ peer: '子 B', prompt: '升级', cwd: '/tmp' });
+  const task = tasks.get(created.taskId);
+  task.upgrade = true;
+  task.upgradeTarget = '1.18.9';
+  task.status = 'running';
+
+  assert.equal(tasks.reconcileUpgrade('子 B', '1.18.8'), 0);
+  assert.equal(tasks.get(created.taskId).status, 'running');
+  assert.equal(tasks.reconcileUpgrade('子 B', '1.18.9'), 1);
+  assert.equal(tasks.get(created.taskId).status, 'succeeded');
+  assert.match(tasks.get(created.taskId).summary, /1.18.9/);
+});
+
 test('taskId 幂等：重复 assign 返回同一任务且只发送一次', () => {
   const home = mkdtempSync(join(tmpdir(), 'cow-out-idem-'));
   const channel = makeChannel();

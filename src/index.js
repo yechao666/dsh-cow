@@ -338,6 +338,7 @@ export function apply(ctx, rawConfig = {}) {
       // hello 到达时 peers 里可能还没有记录，入站连接先挂在 instanceId 上；
       // 这里把它归位到 peer.label，保证 UI/工具按名字能查到连接状态。
       try { channel.rebind(existing?.label || instanceId, peerLabel); } catch { /* 忽略 */ }
+      tasks.reconcileUpgrade(peerLabel, node?.version);
       tasks.flushQueue(peerLabel);
       return;
     }

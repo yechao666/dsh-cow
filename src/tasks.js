@@ -531,6 +531,33 @@ export class TaskManager {
     for (const finish of [...waiters]) finish();
   }
 
+  /**
+   * 升级类任务以「子端重连后上报的版本」为准完成。
+   * plugin_manager 安装会卸载插件，旧会话往往来不及回传成功；只要子端
+   * 以目标版本重新上线，就把仍在运行/排队的升级任务标记为成功。
+   */
+  reconcileUpgrade(peerLabel, version) {
+    const target = String(version ?? '');
+    if (!target) return 0;
+    let changed = 0;
+    for (const task of this.tasks.values()) {
+      if (!task.upgrade || String(task.peer ?? '') !== String(peerLabel ?? '')) continue;
+      if (!['queued', 'running'].includes(task.status)) continue;
+      if (!task.upgradeTarget || String(task.upgradeTarget) !== target) continue;
+      task.status = 'succeeded';
+      task.summary = `子端已重连并上报目标版本 ${target}`;
+      task.error = null;
+      task.finishedAt = new Date().toISOString();
+      this.#record(task, { phase: 'done', message: `子端已上报 ${target}` });
+      this.#persist(task);
+      this.#releaseAgent(task);
+      this.#notify(task);
+      this.#emit(task, 'task.completed');
+      changed += 1;
+    }
+    return changed;
+  }
+
   /** 记录进度并推给发起方（由 index.js 转成 task.progress 帧）。 */
   #progress(task, { phase, message, tool, throttleKey = '' }) {
     const now = Date.now();
