@@ -266,20 +266,43 @@ function CowTopology({ state }) {
   const peers = state.peers ?? [];
   const parent = peers.find((peer) => peer.relation === 'parent') ?? null;
   const children = peers.filter((peer) => peer.relation !== 'parent');
-  const vline = (height) => h('div', { style: { width: 1, height, background: 'var(--dsw-alias-border-l2)' } });
+  const vline = (height) => h('div', { style: { width: 1, height, background: 'var(--dsw-alias-border-l2)', marginLeft: 20 } });
+  const sectionLabel = (text, extra) => h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 } },
+    h('span', { style: { ...S.meta, fontSize: 10.5, fontWeight: 650, letterSpacing: '0.4px' } }, text),
+    extra ? h('span', { style: { ...S.meta, fontSize: 10.5 } }, extra) : null,
+  );
+  const childRow = (child) => h('div', {
+    key: child.label,
+    style: {
+      display: 'grid', gap: 2, padding: '7px 10px 7px 12px',
+      borderLeft: '2px solid var(--dsw-alias-border-l2)',
+      marginLeft: 19, position: 'relative',
+    },
+  },
+    h('div', { style: { display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' } },
+      h('span', { style: { width: 6, height: 6, borderRadius: 99, background: child.connected ? '#38a169' : 'var(--dsw-alias-label-tertiary)' } }),
+      h('span', { style: { fontSize: 12, fontWeight: 600 } }, child.label),
+      h(PanelChip, { tone: child.connected ? 'on' : 'off' }, child.connected ? '在线' : '离线'),
+      child.version ? h('span', { style: { ...S.meta, fontSize: 10.5 } }, `v${child.version}`) : null,
+      child.encrypted ? h('span', { style: { ...S.meta, fontSize: 10.5 } }, 'E2E') : null,
+      child.currentTask ? h('span', { style: { ...S.meta, fontSize: 10.5, marginLeft: 'auto', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '55%' } }, `任务：${child.currentTask.title || child.currentTask.taskId}`) : null,
+    ),
+  );
   return h('div', { style: { ...PANEL.card, background: 'linear-gradient(180deg, color-mix(in srgb, var(--dsw-alias-brand-primary) 4%, var(--dsw-alias-bg-l1)), var(--dsw-alias-bg-l1))' } },
     h('div', { style: PANEL.cardHead },
       h('div', { style: { display: 'grid', gap: 1 } },
         h('h3', { style: PANEL.cardTitle }, '节点拓扑'),
-        h('span', { style: { ...S.meta, fontSize: 11 } }, '当前节点居中；上方直接上级，下方直接下级'),
+        h('span', { style: { ...S.meta, fontSize: 11 } }, '上级在上，当前节点与直接下级依次向下排列'),
       ),
       h(PanelChip, { tone: 'brand' }, `${children.filter((child) => child.connected).length}/${children.length} 子节点在线`),
     ),
-    h('div', { style: { display: 'grid', justifyItems: 'center', gap: 0, padding: '4px 0 2px', overflowX: 'auto' } },
+    h('div', { style: { display: 'grid', gap: 0, padding: '2px 0' } },
+      sectionLabel('上级节点'),
       parent
-        ? h(TopologyNode, { label: parent.label, version: parent.version, connected: parent.connected, encrypted: parent.encrypted, currentTask: parent.currentTask })
-        : h('div', { style: { ...PANEL.chip, color: 'var(--dsw-alias-label-tertiary)', borderStyle: 'dashed', padding: '6px 12px', fontSize: 11 } }, '无直接上级'),
-      vline(16),
+        ? h('div', { style: { display: 'grid', gap: 6 } }, h(TopologyNode, { label: parent.label, version: parent.version, connected: parent.connected, encrypted: parent.encrypted, currentTask: parent.currentTask }))
+        : h('div', { style: { ...PANEL.chip, color: 'var(--dsw-alias-label-tertiary)', borderStyle: 'dashed', padding: '6px 12px', fontSize: 11, justifySelf: 'start' } }, '无直接上级'),
+      vline(18),
+      sectionLabel('当前节点'),
       h(TopologyNode, {
         label: instance.displayName || '本机',
         version: instance.version,
@@ -288,18 +311,11 @@ function CowTopology({ state }) {
         currentTask: state.currentInbound ?? null,
         self: true,
       }),
-      vline(16),
+      vline(18),
+      sectionLabel('下级节点', children.length ? `${children.length} 个` : ''),
       children.length
-        ? h('div', { style: { position: 'relative', paddingTop: 16, display: 'flex', gap: 16, justifyContent: 'center', flexWrap: 'wrap', width: '100%' } },
-            children.length > 1
-              ? h('div', { style: { position: 'absolute', top: 0, left: '12%', right: '12%', height: 1, background: 'var(--dsw-alias-border-l2)' } })
-              : null,
-            children.map((child) => h('div', { key: child.label, style: { display: 'grid', justifyItems: 'center' } },
-              h('div', { style: { width: 1, height: 16, background: 'var(--dsw-alias-border-l2)' } }),
-              h(TopologyNode, { label: child.label, version: child.version, connected: child.connected, encrypted: child.encrypted, currentTask: child.currentTask }),
-            )),
-          )
-        : h('div', { style: { ...PANEL.chip, color: 'var(--dsw-alias-label-tertiary)', borderStyle: 'dashed', padding: '6px 12px', fontSize: 11 } }, '无直接下级'),
+        ? h('div', { style: { display: 'grid', gap: 2 } }, children.map(childRow))
+        : h('div', { style: { ...PANEL.chip, color: 'var(--dsw-alias-label-tertiary)', borderStyle: 'dashed', padding: '6px 12px', fontSize: 11, justifySelf: 'start' } }, '无直接下级'),
     ),
   );
 }
@@ -583,10 +599,24 @@ function CowActivityPanel() {
       : null,
     section === 'nodes'
       ? h('div', { style: { display: 'grid', gap: 12 } },
+          h('div', { style: { ...S.meta, fontSize: 10.5, fontWeight: 650, letterSpacing: '0.4px' } }, '上级节点'),
+          parentPeer ? nodeDetail(parentPeer, true) : h('div', { style: PANEL.card }, h('div', { style: PANEL.empty }, '无直接上级')),
+          h('div', { style: { ...S.meta, fontSize: 10.5, fontWeight: 650, letterSpacing: '0.4px', marginTop: 4 } }, '本机节点'),
+          nodeDetail({
+            label: instance.displayName || '本机',
+            connected: true,
+            version: instance.version,
+            uuid: instance.uuid,
+            instanceId: instance.instanceId,
+            encrypted: (stats.encrypted ?? 0) > 0,
+            direction: '',
+            currentTask: state.currentInbound ?? null,
+            description: instance.description || '',
+          }),
+          h('div', { style: { ...S.meta, fontSize: 10.5, fontWeight: 650, letterSpacing: '0.4px', marginTop: 4 } }, '子节点（垂直排列）'),
           children.length
-            ? h('div', { style: { display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))' } }, children.map((child) => nodeDetail(child)))
+            ? h('div', { style: { display: 'grid', gap: 10 } }, children.map((child) => nodeDetail(child)))
             : h('div', { style: PANEL.card }, h('div', { style: PANEL.empty }, '当前没有子 DSH')),
-          parentPeer ? nodeDetail(parentPeer, true) : null,
         )
       : null,
     section === 'tasks'
