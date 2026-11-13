@@ -38,6 +38,15 @@ const PACKAGE = (() => {
   }
 })();
 
+/** 插件热重载时 ESM 模块会缓存 PACKAGE，这里每次重新读磁盘版本。 */
+function currentPackageVersion() {
+  try {
+    return JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
+  } catch {
+    return PACKAGE.version;
+  }
+}
+
 export const name = 'dsh-cow';
 export const inject = [];
 export { Config, resolveConfig } from './config.js';
@@ -69,7 +78,7 @@ export function apply(ctx, rawConfig = {}) {
     logger.warn(`无法写入实例身份（${home}）：${error?.message ?? error}`);
     instance = { instanceId: `cow_mem_${Math.random().toString(16).slice(2, 10)}`, displayName: '', role: 'leader', parent: null, createdAt: new Date().toISOString() };
   }
-  instance.version = PACKAGE.version;
+  instance.version = currentPackageVersion();
   if (!instance.uuid) instance.uuid = '';
   // 节点名称以配置为准（留空时 resolve 会给计算机名），保证 hello 上报的是当前名称。
   const configuredName = resolve().displayName;
@@ -358,7 +367,7 @@ export function apply(ctx, rawConfig = {}) {
   const files = new FileExchange({ instance, channel, peers, resolveConfig: resolve, logger, activity });
   const upgrade = createUpgradeService({
     root: fileURLToPath(new URL('..', import.meta.url)),
-    pkg: PACKAGE,
+    pkg: { ...PACKAGE, version: currentPackageVersion() },
     files,
     tasks,
     peers,
@@ -417,7 +426,7 @@ export function apply(ctx, rawConfig = {}) {
   const setPassword = (password) => {
     setJoinPassword(home, password);
     Object.assign(instance, loadIdentity({ home }));
-    instance.version = PACKAGE.version;
+    instance.version = currentPackageVersion();
   if (!instance.uuid) instance.uuid = '';
   // 节点名称以配置为准（留空时 resolve 会给计算机名），保证 hello 上报的是当前名称。
   const configuredName = resolve().displayName;
@@ -451,7 +460,7 @@ export function apply(ctx, rawConfig = {}) {
     saveSettings: (patch) => writeSettings(home, patch),
     applySettings,
     getEndpoint: () => carrier?.endpoint() ?? '',
-    pluginVersion: PACKAGE.version,
+    pluginVersion: currentPackageVersion(),
   });
 
   // ── 工具 ─────────────────────────────────────────────────────
