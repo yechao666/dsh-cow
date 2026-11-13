@@ -1,0 +1,56 @@
+{
+  "name": "dsh-cow",
+  "version": "1.10.1",
+  "description": "dsh-cow：多台 DSH 之间的协同工作插件（WebSocket 全双工）",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./protocol": "./src/protocol.js",
+    "./package.json": "./package.json",
+    "./client": "./lib/client.js"
+  },
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-sidebar",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-slots"
+      ],
+      "platform": "web",
+      "immediately": true
+    }
+  },
+  "files": [
+    "DESIGN.md",
+    "README.md",
+    "client-src",
+    "cordis.patch.yml",
+    "docs",
+    "lib",
+    "scripts",
+    "src"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "smoke": "node --test test/*.test.mjs",
+    "build:client": "node scripts/build-client.mjs",
+    "pack:plugin": "npm pack --pack-destination dist",
+    "join-child": "node scripts/join-child.mjs",
+    "cow-cli": "node scripts/cow-cli.mjs"
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "~3.19.0"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "esbuild": "0.25.12"
+  }
+}

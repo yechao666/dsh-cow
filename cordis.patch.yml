@@ -1,0 +1,9 @@
+# dsh-cow bundle patch：把插件插进 profile。
+#
+#   dsh plugin --profile desktop add link:/path/to/dsh-cow
+#   # 然后把 "dsh-cow" 加进 profile package.json 的 dsh.profile.bundles
+#
+# 行 id 同时是设置命名空间与设置页标题：dsh-cow。
+- insert:
+    - id: dsh-cow
+      name: 'dsh-cow'
