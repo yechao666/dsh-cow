@@ -159,6 +159,50 @@ function CowActivityPanel() {
   const [data, setData] = React.useState(null);
   const [error, setError] = React.useState('');
   const [loading, setLoading] = React.useState(false);
+  const [answers, setAnswers] = React.useState({});
+  const [answering, setAnswering] = React.useState('');
+
+  const answerQuestion = async (questionId) => {
+    setAnswering(questionId);
+    setError('');
+    try {
+      const response = await fetch(api('answer'), {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ questionId, answer: answers[questionId] ?? '' }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload?.error?.message || `HTTP ${response.status}`);
+      setAnswers((current) => ({ ...current, [questionId]: '' }));
+      await load();
+    } catch (answerError) {
+      setError(answerError.message);
+    } finally {
+      setAnswering('');
+    }
+  };
+
+  const answerTask = async (taskId) => {
+    setAnswering(taskId);
+    setError('');
+    try {
+      const response = await fetch(api('answer'), {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ taskId, answer: answers[taskId] ?? '' }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload?.error?.message || `HTTP ${response.status}`);
+      setAnswers((current) => ({ ...current, [taskId]: '' }));
+      await load();
+    } catch (answerError) {
+      setError(answerError.message);
+    } finally {
+      setAnswering('');
+    }
+  };
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -234,6 +278,91 @@ function CowActivityPanel() {
           h('span', { style: { wordBreak: 'break-all' } }, value),
         ))),
         info.description ? h('div', { style: { ...S.meta, marginTop: 8, whiteSpace: 'pre-wrap', lineHeight: 1.6 } }, info.description) : null,
+      );
+    })(),
+    (() => {
+      const outbound = (data?.state?.tasks ?? []).slice(0, 8);
+      const inbound = (data?.state?.inboundTasks ?? []).slice(0, 8);
+      const pending = (data?.state?.tasks ?? []).filter((task) => task.pendingQuestion);
+      const row = (task, extra) => h('div', { key: `${extra || ''}${task.taskId}`, style: S.listRow },
+        h('div', { style: { display: 'grid', gap: 2, minWidth: 0, flex: '1 1 auto' } },
+          h('div', { style: S.row },
+            h('span', { style: { fontSize: 12, fontWeight: 600 } }, task.title || task.taskId),
+            h('span', { style: ['queued', 'running'].includes(task.status) ? S.badgeOn : S.badgeOff },
+              task.status === 'queued' && task.queuePosition ? `排队第 ${task.queuePosition} 位` : task.status),
+            h('span', { style: S.meta }, extra || ''),
+            task.finishedAt ? h('span', { style: S.meta }, new Date(task.finishedAt).toLocaleTimeString('zh-CN', { hour12: false })) : null,
+          ),
+          h('div', { style: { ...S.meta, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, task.prompt || task.summary || ''),
+        ),
+      );
+      return h(React.Fragment, null,
+        h('div', { style: S.card },
+          h('div', { style: S.cardHead },
+            h('h3', { style: S.cardTitle }, '我派出的任务'),
+            h('span', { style: S.badgeOff }, `${outbound.length} 条`),
+          ),
+          outbound.length === 0 ? h('div', { style: S.hint }, '还没有派发任务。') : h('div', null, outbound.map((task) => row(task, task.peer))),
+        ),
+        h('div', { style: S.card },
+          h('div', { style: S.cardHead },
+            h('h3', { style: S.cardTitle }, '本机执行 / 排队'),
+            h('span', { style: S.badgeOff }, `${inbound.length} 条`),
+          ),
+          inbound.length === 0 ? h('div', { style: S.hint }, '当前没有本机执行的入站任务。') : h('div', null, inbound.map((task) => row(task, task.from))),
+        ),
+        pending.length
+          ? h('div', { style: S.card },
+              h('div', { style: S.cardHead },
+                h('h3', { style: S.cardTitle }, '待人工处理的审批 / 提问'),
+                h('span', { style: S.badgeOn }, `${pending.length} 条`),
+              ),
+              h('div', { style: { display: 'grid', gap: 8 } }, pending.map((task) => h('div', { key: task.taskId, style: { borderTop: '1px solid var(--dsw-alias-border-l2)', paddingTop: 8 } },
+                h('div', { style: { fontSize: 12.5, lineHeight: 1.5 } }, `${task.title || task.taskId}：${task.pendingQuestion?.question || ''}`),
+                task.pendingQuestion?.options?.length
+                  ? h('div', { style: { ...S.row, marginTop: 6 } }, task.pendingQuestion.options.map((option) => h('button', {
+                      key: option, type: 'button', style: S.secondary,
+                      onClick: () => setAnswers((current) => ({ ...current, [task.taskId]: option })),
+                    }, option)))
+                  : null,
+                h('div', { style: { ...S.row, marginTop: 6 } },
+                  h('input', {
+                    style: { ...S.inputFlex, flex: '1 1 auto' },
+                    placeholder: '回答子 DSH 的提问 / 审批',
+                    value: answers[task.taskId] ?? '',
+                    onChange: (e) => setAnswers((current) => ({ ...current, [task.taskId]: e.target.value })),
+                  }),
+                  h('button', { type: 'button', style: S.button, disabled: Boolean(answering), onClick: () => answerTask(task.taskId) }, answering === task.taskId ? '发送中…' : '回答'),
+                ),
+              ))),
+            )
+          : null,
+        (data?.state?.questions ?? []).length
+          ? h('div', { style: S.card },
+              h('div', { style: S.cardHead },
+                h('h3', { style: S.cardTitle }, '子 DSH 待处理提问 / 审批'),
+                h('span', { style: S.badgeOn }, `${data.state.questions.length} 条`),
+              ),
+              h('div', { style: { display: 'grid', gap: 8 } }, data.state.questions.map((question) => h('div', { key: question.questionId, style: { borderTop: '1px solid var(--dsw-alias-border-l2)', paddingTop: 8 } },
+                h('div', { style: { fontSize: 12.5, lineHeight: 1.5 } }, `${question.from || '子 DSH'}：${question.question || ''}`),
+                question.options?.length
+                  ? h('div', { style: { ...S.row, marginTop: 6 } }, question.options.map((option) => h('button', {
+                      key: option, type: 'button', style: S.secondary,
+                      onClick: () => setAnswers((current) => ({ ...current, [question.questionId]: option })),
+                    }, option)))
+                  : null,
+                h('div', { style: { ...S.row, marginTop: 6 } },
+                  h('input', {
+                    style: { ...S.inputFlex, flex: '1 1 auto' },
+                    placeholder: '回答子 DSH 的提问 / 审批',
+                    value: answers[question.questionId] ?? '',
+                    onChange: (e) => setAnswers((current) => ({ ...current, [question.questionId]: e.target.value })),
+                  }),
+                  h('button', { type: 'button', style: S.button, disabled: Boolean(answering), onClick: () => answerQuestion(question.questionId) }, answering === question.questionId ? '发送中…' : '回答'),
+                ),
+              ))),
+            )
+          : null,
       );
     })(),
     h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, margin: '16px 0 8px' } },
@@ -483,6 +612,27 @@ function CoCowSettingsPage() {
     message ? h('span', { style: S.ok }, message) : null,
     error ? h('span', { style: S.err }, error) : null,
   );
+
+  const answerQuestion = async (questionId) => {
+    setAnswering(questionId);
+    setError('');
+    try {
+      const response = await fetch(api('answer'), {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ questionId, answer: answers[questionId] ?? '' }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload?.error?.message || `HTTP ${response.status}`);
+      setAnswers((current) => ({ ...current, [questionId]: '' }));
+      await load();
+    } catch (answerError) {
+      setError(answerError.message);
+    } finally {
+      setAnswering('');
+    }
+  };
 
   const answerTask = async (taskId) => {
     const answer = String(answers[taskId] ?? '').trim();

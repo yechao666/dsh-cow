@@ -16,7 +16,6 @@ export function registerApprovalTakeover({ ctx, askQuestion, taskIdForSession, h
       if (!hasParent?.()) return await next();
       const sessionId = req?.agent?.session?.id ?? req?.agent?.session?.sessionId ?? '';
       const taskId = taskIdForSession?.(sessionId) ?? '';
-      if (!taskId) return await next();
 
       const tool = String(req?.toolName ?? 'tool');
       const reason = String(req?.reason ?? '').trim();

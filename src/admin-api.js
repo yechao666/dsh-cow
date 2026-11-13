@@ -99,7 +99,9 @@ export function createAdminHandlers(deps) {
       peers: peerList,
       connections,
       tasks: deps.tasks?.list?.() ?? [],
+      questions: deps.tasks?.pendingQuestions?.() ?? [],
       currentInbound: deps.currentInbound?.() ?? null,
+      inboundTasks: deps.inboundTasks?.() ?? [],
       parent: {
         url: deps.instance.parentUrl ?? '',
         connected: peerList.some((item) => item.relation === 'parent' && item.connected),
@@ -229,10 +231,12 @@ export function createAdminHandlers(deps) {
       if (req.method !== 'POST') return sendJson(res, 405, { error: { code: 'method_not_allowed', message: '只支持 POST' } });
       const body = await readBody(req);
       const taskId = String(body?.taskId ?? '').trim();
+      const questionId = String(body?.questionId ?? '').trim();
       const answer = String(body?.answer ?? '');
-      if (!taskId) return sendJson(res, 400, { error: { code: 'invalid_request', message: '缺少 taskId' } });
+      if (!taskId && !questionId) return sendJson(res, 400, { error: { code: 'invalid_request', message: '缺少 taskId 或 questionId' } });
       try {
-        deps.tasks.answer(taskId, answer);
+        if (questionId) deps.tasks.answerQuestion(questionId, answer);
+        else deps.tasks.answer(taskId, answer);
         sendJson(res, 200, state());
       } catch (error) {
         sendJson(res, 409, { error: { code: 'answer_failed', message: String(error?.message ?? error) } });

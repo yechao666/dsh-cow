@@ -24,7 +24,7 @@ function call(handler, { method = 'GET', body = null } = {}) {
   });
 }
 
-function makeRig({ password = '', answer = () => {}, cancel = () => {}, upgrade = null, doctor = null, saveSettings = () => {} } = {}) {
+function makeRig({ password = '', answer = () => {}, cancel = () => {}, upgrade = null, doctor = null, saveSettings = () => {}, tasks: tasksOverride = null } = {}) {
   const home = mkdtempSync(join(tmpdir(), 'cow-admin-'));
   const peers = new PeerRegistry({ file: join(home, 'peers.json') });
   const saved = { password: '', parent: null };
@@ -41,7 +41,7 @@ function makeRig({ password = '', answer = () => {}, cancel = () => {}, upgrade 
     resolveConfig: () => ({ displayName: 'self', capabilityNote: '', allowedRoots: '', listenHost: '127.0.0.1', listenPort: 0 }),
     peers,
     channel,
-    tasks: { list: () => [], answer, cancel },
+    tasks: tasksOverride ?? { list: () => [], answer, cancel },
     upgrade,
     doctor,
     currentInbound: () => null,
@@ -140,4 +140,17 @@ test('POST /upgrade 调用升级服务', async () => {
   assert.equal(result.status, 200);
   assert.deepEqual(calls, ['子 B']);
   assert.equal(result.json.status, 'succeeded');
+});
+
+test('POST /answer 支持按 questionId 回答未绑定任务的提问', async () => {
+  let answered = null;
+  const tasks = {
+    list: () => [],
+    answer: () => {},
+    answerQuestion: (questionId, answer) => { answered = { questionId, answer }; },
+  };
+  const { handlers } = makeRig({ tasks });
+  const result = await call(handlers['/api/cow/answer'], { method: 'POST', body: { questionId: 'q1', answer: '允许一次' } });
+  assert.equal(result.status, 200);
+  assert.deepEqual(answered, { questionId: 'q1', answer: '允许一次' });
 });

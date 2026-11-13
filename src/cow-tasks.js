@@ -23,6 +23,7 @@ export class CowTasks {
     this.now = now ?? (() => Date.now());
     this.queueTtlMs = Number(queueTtlMs) > 0 ? Number(queueTtlMs) : 2 * 3600_000;
     this.tasks = new Map();
+    this.unboundQuestions = new Map();
     this.dir = home ? join(coDshDir(home), 'out-tasks') : null;
     this.artifactRoot = home ? join(coDshDir(home), 'artifacts') : null;
     this.files = files ?? null;
@@ -243,7 +244,21 @@ export class CowTasks {
   onEvent({ from, event, payload }) {
     const taskId = String(payload?.taskId ?? '');
     const task = this.get(taskId);
-    if (!task) return;
+    if (!task) {
+      // 未绑定出站任务的审批/提问（子端本地会话也接管）：存为待人工问题。
+      if (event === 'task.question' && payload?.questionId) {
+        this.unboundQuestions.set(String(payload.questionId), {
+          questionId: String(payload.questionId),
+          from: String(from ?? ''),
+          taskId,
+          question: String(payload?.question ?? '').slice(0, 2000),
+          options: Array.isArray(payload?.options) ? payload.options.slice(0, 10).map(String) : [],
+          askedAt: nowIso(),
+        });
+        this.activity?.add({ kind: 'question', text: `子 DSH 待处理：${String(payload?.question ?? '').slice(0, 160)}`, peer: String(from ?? ''), taskId });
+      }
+      return;
+    }
     if (event === 'task.progress') {
       if (TERMINAL.has(task.status)) return;
       const nextStatus = String(payload?.status ?? '');
@@ -336,6 +351,24 @@ export class CowTasks {
       }
       this.#persist(task);
     }
+  }
+
+  /** 未绑定任务的待回答问题（本地会话审批等）。 */
+  pendingQuestions() {
+    return [...this.unboundQuestions.values()];
+  }
+
+  /** 回答未绑定任务的提问（按 questionId）。 */
+  answerQuestion(questionId, answer) {
+    const question = this.unboundQuestions.get(String(questionId));
+    if (!question) throw new Error('该问题已处理或不存在');
+    this.channel.send(question.from, {
+      type: 'task.answer',
+      payload: { taskId: question.taskId || '', questionId: question.questionId, answer: String(answer ?? '') },
+    });
+    this.unboundQuestions.delete(String(questionId));
+    this.activity?.add({ kind: 'answer', text: `已回答子 DSH：${String(answer ?? '').slice(0, 120)}`, peer: question.from, taskId: question.taskId });
+    return { ok: true, questionId: question.questionId };
   }
 
   /** 回答远端任务提出的问题。 */

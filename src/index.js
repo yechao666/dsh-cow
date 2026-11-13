@@ -152,6 +152,25 @@ export function apply(ctx, rawConfig = {}) {
     return null;
   };
 
+  // 本机作为子 DSH 时，正在执行/排队的入站任务（含远端 taskId 与队列位置）。
+  const inboundTasks = () => {
+    const rows = [];
+    for (const [localTaskId, remoteTaskId] of inboundLocal) {
+      const task = manager.get(localTaskId);
+      if (!task) continue;
+      const snapshot = manager.snapshot(localTaskId);
+      rows.push({
+        ...snapshot,
+        taskId: remoteTaskId,
+        localTaskId,
+        from: inboundFrom.get(localTaskId) ?? '',
+        prompt: task.prompt ?? '',
+        queuePosition: manager.queuePosition(localTaskId),
+      });
+    }
+    return rows.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  };
+
   // 远端提问：子端 cow_ask 发 task.question，上级 cow_answer 回 task.answer。
   const pendingQuestions = new Map();
   const askQuestion = ({ taskId, question, options = [], timeoutSec = 300 }) => new Promise((resolve) => {
@@ -421,6 +440,7 @@ export function apply(ctx, rawConfig = {}) {
     channel,
     tasks,
     currentInbound,
+    inboundTasks,
     doctor,
     upgrade,
     activity,

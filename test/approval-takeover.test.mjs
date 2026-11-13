@@ -30,7 +30,7 @@ test('审批请求转成远端提问，允许一次映射为 allowed-once', asyn
   assert.deepEqual(questions[0].options, ['允许一次', '拒绝']);
 });
 
-test('拒绝映射为 rejected；无上级或非委派任务则交回本机', async () => {
+test('拒绝映射为 rejected；无上级交回本机，非委派任务也转发给上级', async () => {
   const denied = setup({ askResult: { ok: true, answer: '拒绝' } });
   assert.equal(await denied.listener(request, next), 'rejected');
 
@@ -39,8 +39,9 @@ test('拒绝映射为 rejected；无上级或非委派任务则交回本机', as
   assert.equal(noParent.questions.length, 0);
 
   const noTask = setup({ taskId: '' });
-  assert.equal(await noTask.listener(request, next), 'rejected');
-  assert.equal(noTask.questions.length, 0);
+  assert.equal(await noTask.listener(request, next), 'allowed-once');
+  assert.equal(noTask.questions.length, 1);
+  assert.equal(noTask.questions[0].taskId, '');
 });
 
 test('上级超时或取消时 fail-closed 返回 unavailable', async () => {

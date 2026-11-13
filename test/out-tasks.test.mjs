@@ -173,3 +173,20 @@ test('升级任务自动放行 plugin_manager 的 install_bundle 审批', async 
   const answer = channel.sent.find((item) => item.frame.type === 'task.answer');
   assert.equal(answer?.frame.payload.answer, '允许一次');
 });
+
+test('未绑定任务的子端提问进入待人工列表，可按 questionId 回答', () => {
+  const home = mkdtempSync(join(tmpdir(), 'cow-out-unbound-'));
+  const channel = makeChannel();
+  const tasks = new CowTasks({ channel, instance: { instanceId: 'cow_a' }, logger: silent, home });
+  tasks.onEvent({
+    from: '子 B',
+    event: 'task.question',
+    payload: { taskId: '', questionId: 'q-unbound', question: '允许写文件吗？', options: ['允许一次', '拒绝'] },
+  });
+  assert.equal(tasks.pendingQuestions().length, 1);
+  tasks.answerQuestion('q-unbound', '允许一次');
+  assert.equal(tasks.pendingQuestions().length, 0);
+  const answer = channel.sent.find((item) => item.frame.type === 'task.answer');
+  assert.equal(answer.frame.payload.questionId, 'q-unbound');
+  assert.equal(answer.frame.payload.answer, '允许一次');
+});
