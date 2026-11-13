@@ -109,7 +109,7 @@ function PeerRow({ peer, busy, onRemove, onUpgrade, currentVersion }) {
           : null,
       ),
       peer.description ? h('div', { style: { ...S.meta, whiteSpace: 'pre-wrap' } }, peer.description.slice(0, 200)) : null,
-      peer.currentTask ? h('div', { style: S.meta }, `正在执行：${peer.currentTask.title || peer.currentTask.taskId}（${peer.currentTask.status}）`) : null,
+      peer.currentTask ? h('div', { style: S.meta }, `正在执行：${peer.currentTask.title || peer.currentTask.taskId}（${taskStatusLabel(peer.currentTask.status)}）`) : null,
       h('div', { style: { ...S.meta, wordBreak: 'break-all' } }, `UUID: ${peer.uuid || peer.instanceId || '-'}`),
     ),
     h('button', {
@@ -200,6 +200,20 @@ const PANEL = {
   activityDot: { width: 8, height: 8, borderRadius: 999, marginTop: 5 },
   activityText: { fontSize: 12.5, lineHeight: 1.5, wordBreak: 'break-word' },
 };
+
+const TASK_STATUS_LABELS = {
+  queued: '排队中',
+  running: '执行中',
+  succeeded: '已完成',
+  failed: '失败',
+  canceled: '已取消',
+  interrupted: '已中断',
+  waiting: '等待中',
+};
+
+function taskStatusLabel(status) {
+  return TASK_STATUS_LABELS[status] ?? String(status ?? '');
+}
 
 function panelStatusStyle(status) {
   const map = {
@@ -321,7 +335,7 @@ function CowTopology({ state }) {
 }
 
 function TaskLine({ task, extra }) {
-  const status = task.status === 'queued' && task.queuePosition ? `排队第 ${task.queuePosition} 位` : task.status;
+  const status = task.status === 'queued' && task.queuePosition ? `排队第 ${task.queuePosition} 位` : taskStatusLabel(task.status);
   const tone = panelStatusStyle(task.status);
   const glyph = task.status === 'running' ? '▶' : task.status === 'queued' ? '⏳' : task.status === 'succeeded' ? '✓' : task.status === 'failed' || task.status === 'interrupted' ? '✕' : '–';
   const last = task.progress?.slice(-1)[0]?.text || task.prompt || '';
@@ -534,12 +548,12 @@ function CowActivityPanel() {
   const activeInbound = inbound.filter((task) => ['queued', 'running'].includes(task.status));
   const items = data?.activity?.items ?? [];
   const roleLabel = parent.connected || instance.role === 'member' ? '子 DSH' : '主 DSH';
-  const taskCounts = ['queued', 'running', 'succeeded', 'failed', 'canceled'].map((status) => ({
+  const taskCounts = ['queued', 'running', 'succeeded', 'failed', 'interrupted', 'canceled'].map((status) => ({
     status,
     value: [...tasks, ...inbound].filter((task) => task.status === status).length,
   }));
-  const taskColors = { queued: '#f59e0b', running: '#4f8df7', succeeded: '#34c38f', failed: '#ef4444', canceled: '#94a3b8' };
-  const taskLabels = { queued: '排队', running: '执行中', succeeded: '成功', failed: '失败', canceled: '取消' };
+  const taskColors = { queued: '#f59e0b', running: '#4f8df7', succeeded: '#34c38f', failed: '#ef4444', interrupted: '#ef4444', canceled: '#94a3b8' };
+  const taskLabels = { queued: '排队', running: '执行中', succeeded: '成功', failed: '失败', interrupted: '中断', canceled: '取消' };
   const endpoint = instance.endpoint ? `${String(instance.endpoint).replace(/^http/, 'ws')}/channel` : '未就绪';
   const parentVersion = parentPeer?.version || parent.node?.version || '';
   const timeOf = (iso) => {
@@ -610,7 +624,7 @@ function CowActivityPanel() {
       ['连接方向', peer.direction === 'out' ? '本机 → 对端' : peer.direction === 'in' ? '对端 → 本机' : '', false],
       ['连接时间', conn?.since ? new Date(conn.since).toLocaleString('zh-CN', { hour12: false }) : '', false],
       ['最近心跳', conn?.lastSeenAt ? new Date(conn.lastSeenAt).toLocaleString('zh-CN', { hour12: false }) : '', false],
-      ['当前任务', peer.currentTask ? `${peer.currentTask.title || peer.currentTask.taskId}（${peer.currentTask.status}）` : '', false],
+      ['当前任务', peer.currentTask ? `${peer.currentTask.title || peer.currentTask.taskId}（${taskStatusLabel(peer.currentTask.status)}）` : '', false],
     ].filter(([, value]) => value);
     return h('div', { key: `${isParent ? 'parent' : 'child'}:${peer.label}`, style: { ...PANEL.card, padding: '12px 14px', marginBottom: 0 } },
       h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 9 } },
@@ -660,7 +674,7 @@ function CowActivityPanel() {
                 h('span', null, timeOf(item.at)),
                 item.peer ? h('span', null, item.peer) : null,
                 item.taskId ? h('span', { style: S.mono }, item.taskId.slice(-10)) : null,
-                item.status ? h('span', null, item.status) : null,
+                item.status ? h('span', null, taskStatusLabel(item.status)) : null,
               ),
             ),
           );
@@ -1271,7 +1285,7 @@ function CoCowSettingsPage() {
                       h('div', { style: { display: 'grid', gap: 4, minWidth: 0, flex: '1 1 auto' } },
                         h('div', { style: S.row },
                           h('span', { style: { fontSize: 12, fontWeight: 600 } }, task.title || task.taskId),
-                          h('span', { style: ['queued', 'running'].includes(task.status) ? S.badgeOn : S.badgeOff }, task.status === 'queued' && task.queuePosition ? `排队第 ${task.queuePosition} 位` : task.status),
+                          h('span', { style: ['queued', 'running'].includes(task.status) ? S.badgeOn : S.badgeOff }, task.status === 'queued' && task.queuePosition ? `排队第 ${task.queuePosition} 位` : taskStatusLabel(task.status)),
                           h('span', { style: S.meta }, task.peer || ''),
                           h('button', {
                             type: 'button',
