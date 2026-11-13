@@ -11,7 +11,7 @@
  */
 import { createHash, randomBytes } from 'node:crypto';
 import { readdirSync, readFileSync, statSync, unlinkSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { basename, join, relative } from 'node:path';
 import { ensureDir, tasksDir, writeJsonAtomic } from './store.js';
 import { resolveWorkspace } from './paths.js';
 import { ProtocolError } from './protocol.js';
@@ -85,6 +85,7 @@ export class TaskManager {
     this.queue = [];
     this.active = 0;
     this.startedAt = Date.now();
+    this.workspaceQueue = Promise.resolve();
   }
 
   init() {
@@ -672,29 +673,70 @@ export class TaskManager {
    * 把任务会话挂到工作目录对应的 Workspace 下，让子 DSH 的会话列表按工作区分组，
    * 与主 DSH 的「按工作区」组织方式一致。
    */
+  #queueWorkspace(operation) {
+    const run = this.workspaceQueue.then(operation, operation);
+    this.workspaceQueue = run.catch(() => {});
+    return run;
+  }
+
+  /**
+   * 把任务会话挂到工作目录对应的 Workspace 下，让子 DSH 的会话列表按工作区分组，
+   * 与主 DSH 的「按工作区」组织方式一致。
+   * 同一路径可能因为并发 resolve/create 产生重复 Workspace，这里串行创建并把
+   * 重复项中的会话合并到保留项后删除重复项。
+   */
   async #attachWorkspace(sessionId, cwd, workspaceName = '') {
-    let registry = null;
-    try {
-      registry = this.ctx?.get?.('workspaceRegistry', false) ?? null;
-    } catch {
-      registry = null;
-    }
-    if (!registry || typeof registry.resolveByPath !== 'function') return;
-    try {
-      let workspace = await registry.resolveByPath(cwd);
-      if (!workspace && typeof registry.create === 'function') {
-        workspace = await registry.create(cwd, workspaceName || undefined);
+    return this.#queueWorkspace(async () => {
+      let registry = null;
+      try {
+        registry = this.ctx?.get?.('workspaceRegistry', false) ?? null;
+      } catch {
+        registry = null;
       }
-      if (!workspace) return;
-      // 主子工作区名称对齐：主 DSH 下达任务时带过来的工作区名优先。
-      if (workspaceName && workspace.title !== workspaceName && typeof workspace.setTitle === 'function') {
-        await workspace.setTitle(workspaceName);
+      if (!registry || typeof registry.resolveByPath !== 'function') return;
+      try {
+        // 按 allowedRoots 归并，而不是按任务的具体子目录：同一子 DSH 的所有
+        // cow 会话应落在同一个工作区，名称与主 DSH 的工作区对齐。
+        const candidates = this.roots()
+          .filter((root) => cwd === root || cwd.startsWith(`${root.replace(/[\\/]$/, '')}/`))
+          .sort((a, b) => b.length - a.length);
+        const workspacePath = candidates[0] ?? cwd;
+        const workspaceTitle = workspaceName || basename(workspacePath);
+        let workspace = await registry.resolveByPath(workspacePath);
+        if (!workspace && typeof registry.create === 'function') {
+          workspace = await registry.create(workspacePath, workspaceTitle);
+        }
+        if (!workspace) return;
+
+        // 合并同一路径的重复工作区：保留当前项，把其它项的会话迁过来后删除。
+        const duplicates = registry.list().filter((item) => item.id !== workspace.id
+          && (item.path === workspace.path || item.path.startsWith(`${workspace.path}/`)));
+        for (const duplicate of duplicates) {
+          for (const duplicateSession of duplicate.sessionIds ?? []) {
+            try {
+              if (!workspace.sessionIds.includes(duplicateSession)) await workspace.attachSession(duplicateSession);
+            } catch (error) {
+              this.logger.warn?.(`[dsh-cow] 迁移会话 ${duplicateSession} 到工作区 ${workspace.id} 失败：${error?.message ?? error}`);
+            }
+          }
+          if (typeof registry.delete === 'function') {
+            try {
+              await registry.delete(duplicate.id);
+            } catch (error) {
+              this.logger.warn?.(`[dsh-cow] 删除重复工作区 ${duplicate.id} 失败：${error?.message ?? error}`);
+            }
+          }
+        }
+
+        // 主子工作区名称对齐：主 DSH 下达任务时带过来的工作区名优先。
+        if (workspaceName && workspace.title !== workspaceName && typeof workspace.setTitle === 'function') {
+          await workspace.setTitle(workspaceName);
+        }
+        if (!workspace.sessionIds.includes(sessionId)) await workspace.attachSession(sessionId);
+      } catch (error) {
+        this.logger.warn?.(`[dsh-cow] 会话 ${sessionId} 挂到工作区失败：${error?.message ?? error}`);
       }
-      if (Array.isArray(workspace.sessionIds) && workspace.sessionIds.includes(sessionId)) return;
-      await workspace.attachSession(sessionId);
-    } catch (error) {
-      this.logger.warn?.(`[dsh-cow] 会话 ${sessionId} 挂到工作区失败：${error?.message ?? error}`);
-    }
+    });
   }
 
   #attachSessionEvents(task, agent) {
