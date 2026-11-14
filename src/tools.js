@@ -341,7 +341,7 @@ export function createToolDefinitions({ instance, channel, peers, tasks, current
     },
     {
       name: 'cow_send',
-      description: '发送一条 dsh-cow 消息。普通消息不等待；kind=question/approval 发送提问；带 replyTo 时作为对某条提问的回复。',
+      description: '发送 dsh-cow 消息，主 DSH 不等待、不轮询。kind=dispatch 派发任务（异步进入子 DSH 输入队列）；kind=ask 向主 DSH 提问/审批；kind=answer 回答提问；kind=complete 由子 DSH 回合结束自动发送，主端以通知注入原会话。',
       parameters: {
         type: 'object',
         properties: {
