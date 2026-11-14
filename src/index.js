@@ -325,18 +325,21 @@ export function apply(ctx, rawConfig = {}) {
     const payload = event?.payload ?? {};
     if (type === 'task.offer') {
       const taskId = String(payload?.taskId ?? '');
+      logger.info?.(`[dsh-cow] 收到任务邀请 ${taskId}，准备认领`);
       if (!taskId) return;
       offeredTasks.add(taskId);
       channel.send(from, { type: 'task.claim', payload: { taskId } });
       return;
     }
     if (type === 'task.claim.abort') {
+      logger.info?.(`[dsh-cow] 认领被拒绝 ${String(payload?.taskId ?? '')}：${String(payload?.reason ?? '')}`);
       offeredTasks.delete(String(payload?.taskId ?? ''));
       logger.info?.(`[dsh-cow] 任务认领被拒绝：${String(payload?.reason ?? '')}`);
       return;
     }
     if (type === 'task.body') {
       const taskId = String(payload?.taskId ?? '');
+      logger.info?.(`[dsh-cow] 收到任务正文 ${taskId}，开始执行`);
       if (taskId) offeredTasks.delete(taskId);
       void handleInboundTask(payload, from);
       return;

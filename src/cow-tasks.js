@@ -466,6 +466,7 @@ export class CowTasks {
 
   /** 子端执行前认领；消息不存在/已结束则拒绝，避免做无用功。 */
   #handleClaim(taskId, from) {
+    this.logger.info?.(`[dsh-cow] 收到认领 ${taskId} from=${from || '(empty)'}`);
     const task = this.get(taskId);
     if (!task) {
       this.channel.send(from, { type: 'task.claim.abort', payload: { taskId, reason: '消息不存在或已被删除' } });
@@ -485,6 +486,7 @@ export class CowTasks {
     this.#persist(task);
     const target = from || task.peer;
     this.channel.send(target, { type: 'task.claim.ok', payload: { taskId } });
+    this.logger.info?.(`[dsh-cow] 认领通过 ${taskId} -> ${target}，下发正文`);
     this.#sendBody(task);
   }
 
