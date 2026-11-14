@@ -361,7 +361,7 @@ export function apply(ctx, rawConfig = {}) {
       resolveQuestionAnswer(payload);
       return;
     }
-    if (type === 'task.progress' || type === 'task.result' || type === 'task.question') {
+    if (type === 'task.claim' || type === 'task.progress' || type === 'task.result' || type === 'task.question') {
       tasks.onEvent({ from, event: type, payload });
       return;
     }
