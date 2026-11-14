@@ -1590,7 +1590,7 @@ export function apply(ctx) {
       id: COW_RIGHT_ID,
       kind: COW_RIGHT_KIND,
       title: () => 'COW状态',
-      guide: [{ id: 'cow-status', order: 5, title: () => 'COW状态', description: () => '节点、对话与连接状态' }],
+      guide: [{ order: 5, title: () => 'COW状态', description: () => '节点、对话与连接状态' }],
     });
     if (typeof ctx.effect === 'function') ctx.effect(registerTab, 'dsh-cow: right status tab');
     else registerTab();
@@ -1602,6 +1602,10 @@ export function apply(ctx) {
       name: 'sidebar.right.pane.tab',
       key: COW_RIGHT_ID,
     }, CowRightStatus));
+    ctx.slots.inject('sidebar.right.pane.tab.title', () => ctx.slots.register({
+      name: 'sidebar.right.pane.tab.title',
+      key: COW_RIGHT_ID,
+    }, () => h('span', null, 'COW状态')));
   } catch (error) {
     console.error('[dsh-cow] right tab body failed', error);
   }
