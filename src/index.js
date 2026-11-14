@@ -350,13 +350,27 @@ export function apply(ctx, rawConfig = {}) {
       if (!taskId) return;
       offeredTasks.add(taskId);
       try {
-        manager.create({
+        const local = manager.create({
           taskId,
           prompt: `这是一条 dsh-cow 任务邀请，任务 ID：${taskId}。请先调用 cow_claim 工具认领该任务，任务正文会作为工具结果返回；拿到正文后再开始执行。不要直接开始工作。`,
           title: `认领任务 ${taskId}`,
           cwd: '',
           timeoutSec: 3600,
         }, { callerLabel: from });
+        void manager.waitTerminal(local.taskId).then((done) => {
+          channel.send(from, {
+            type: 'task.result',
+            payload: {
+              taskId,
+              status: done.status,
+              summary: done.summary ?? '',
+              error: done.error ? (done.error.message ?? String(done.error)) : null,
+              artifacts: done.artifacts ?? [],
+            },
+          });
+        }).catch((error) => {
+          channel.send(from, { type: 'task.result', payload: { taskId, status: 'failed', error: String(error?.message ?? error) } });
+        });
       } catch (error) {
         logger.warn?.(`[dsh-cow] 创建认领会话失败：${error?.message ?? error}`);
       }
