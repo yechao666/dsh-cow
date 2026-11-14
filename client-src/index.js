@@ -726,6 +726,7 @@ function CowActivityPanel() {
   const renderPending = (question, key, body) => h('div', { key, style: { display: 'grid', gap: 7, padding: '10px 0', borderTop: '1px solid var(--dsw-alias-border-l2)' } },
     h('div', { style: { display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' } },
       h('span', { style: { ...PANEL.chip, color: '#b7791f', background: 'rgba(183,121,31,0.12)', borderColor: 'rgba(183,121,31,0.35)' } }, '待处理'),
+      question.source ? h('span', { style: { ...PANEL.chip, color: 'var(--dsw-alias-label-secondary)' } }, `来源：${question.source}`) : null,
       h('span', { style: { fontSize: 12.5, lineHeight: 1.55, minWidth: 0 } }, question.text),
     ),
     question.options?.length
@@ -882,12 +883,12 @@ function CowActivityPanel() {
     ? h('div', { style: { ...PANEL.card, marginBottom: 0, borderColor: 'rgba(183,121,31,0.35)' } },
         h('div', { style: PANEL.cardHead }, h('h3', { style: PANEL.cardTitle }, '需要你决定'), h(PanelChip, { tone: 'brand' }, `${pendingTotal} 条`)),
         pendingTasks.map((task) => renderPending(
-          { text: `${task.title || task.taskId}：${task.pendingQuestion?.question || ''}`, options: task.pendingQuestion?.options },
+          { text: `${task.title || task.taskId}：${task.pendingQuestion?.question || ''}`, options: task.pendingQuestion?.options, source: task.peer },
           task.taskId,
           { taskId: task.taskId, answer: answers[task.taskId] ?? '' },
         )),
         questions.map((question) => renderPending(
-          { text: `${question.from || '子 DSH'}：${question.question || ''}`, options: question.options },
+          { text: question.question || '', options: question.options, source: question.from || '子 DSH' },
           question.questionId,
           { questionId: question.questionId, answer: answers[question.questionId] ?? '' },
         )),
