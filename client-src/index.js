@@ -1570,11 +1570,14 @@ function openCowRight() {
 export function apply(ctx) {
   cowRightbar = ctx.sidebarRight ?? null;
   try {
-    ctx.effect?.(() => ctx.sidebarRightTabs.register({
+    const registerTab = () => ctx.sidebarRightTabs.register({
       id: COW_RIGHT_ID,
       kind: COW_RIGHT_KIND,
       title: () => 'COW状态',
-    }), 'dsh-cow: right status tab');
+      guide: [{ id: 'cow-status', order: 5, title: () => 'COW状态', description: () => '节点、对话与连接状态' }],
+    });
+    if (typeof ctx.effect === 'function') ctx.effect(registerTab, 'dsh-cow: right status tab');
+    else registerTab();
   } catch (error) {
     console.error('[dsh-cow] right tab type failed', error);
   }
