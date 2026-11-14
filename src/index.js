@@ -411,6 +411,8 @@ export function apply(ctx, rawConfig = {}) {
           timeoutSec: 3600,
           rawPrompt: true,
         }, { callerLabel: from });
+        inbound.set(taskId, local.taskId);
+        inboundLocal.set(local.taskId, taskId);
         void manager.waitTerminal(local.taskId).then((done) => {
           channel.send(from, {
             type: 'task.result',
@@ -424,6 +426,9 @@ export function apply(ctx, rawConfig = {}) {
           });
         }).catch((error) => {
           channel.send(from, { type: 'task.result', payload: { taskId, status: 'failed', error: String(error?.message ?? error) } });
+        }).finally(() => {
+          inbound.delete(taskId);
+          inboundLocal.delete(local.taskId);
         });
       } catch (error) {
         logger.warn?.(`[dsh-cow] 创建认领会话失败：${error?.message ?? error}`);
