@@ -905,6 +905,7 @@ function CowActivityPanel() {
         h(PanelChip, { tone: 'on' }, `${stats.connected ?? 0} 连接`),
         h(PanelChip, { tone: 'brand' }, `${stats.encrypted ?? 0} 加密`),
         pendingTotal ? h(PanelChip, { tone: 'brand' }, `${pendingTotal} 待处理`) : null,
+        cowRightbar ? h('button', { type: 'button', style: { ...S.secondary, height: 28, padding: '0 10px', fontSize: 11.5 }, onClick: openCowRight }, '右侧打开') : null,
         h('button', { type: 'button', style: { ...S.secondary, height: 28, padding: '0 10px', fontSize: 11.5 }, onClick: () => { void load(); }, disabled: loading }, loading ? '刷新中…' : '刷新'),
       ),
     ),
@@ -1554,8 +1555,37 @@ function CoCowSettingsPage() {
 }
 
 export const name = 'dsh-cow-client';
-export const inject = ['slots'];
+export const inject = ['slots', 'sidebarRightTabs', 'sidebarRight'];
+const COW_RIGHT_KIND = 'cow-status';
+const COW_RIGHT_ID = 'dsh-cow/status';
+let cowRightbar = null;
+
+function CowRightStatus() {
+  return h(CowActivityPanel, null);
+}
+
+function openCowRight() {
+  try { cowRightbar?.openTab?.(COW_RIGHT_KIND); } catch (error) { console.error('[dsh-cow] open right tab failed', error); }
+}
 export function apply(ctx) {
+  cowRightbar = ctx.sidebarRight ?? null;
+  try {
+    ctx.effect?.(() => ctx.sidebarRightTabs.register({
+      id: COW_RIGHT_ID,
+      kind: COW_RIGHT_KIND,
+      title: () => 'COW状态',
+    }), 'dsh-cow: right status tab');
+  } catch (error) {
+    console.error('[dsh-cow] right tab type failed', error);
+  }
+  try {
+    ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
+      name: 'sidebar.right.pane.tab',
+      key: COW_RIGHT_ID,
+    }, CowRightStatus));
+  } catch (error) {
+    console.error('[dsh-cow] right tab body failed', error);
+  }
   try {
     ctx.slots.inject('main', () => ctx.slots.register({
       name: 'main',
