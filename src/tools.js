@@ -63,7 +63,7 @@ function sessionIdOf(exec) {
   return String(exec?.agent?.session?.id ?? exec?.agent?.session?.sessionId ?? '') || '';
 }
 
-export function createToolDefinitions({ instance, channel, peers, tasks, currentInbound, files, upgrade, workspaceTitleForSession, askQuestion, taskIdForSession, claimTask, doctor, taskTimeoutSec = 3600 }) {
+export function createToolDefinitions({ instance, channel, peers, tasks, currentInbound, files, upgrade, workspaceTitleForSession, askQuestion, askMessage, answerChatQuestion, taskIdForSession, claimTask, doctor, taskTimeoutSec = 3600 }) {
   return [
     ...(files ? [
       {
@@ -198,11 +198,9 @@ export function createToolDefinitions({ instance, channel, peers, tasks, current
         },
         output: output(),
         timeoutMs: 310_000,
-        async execute(args, exec) {
-          const taskId = typeof taskIdForSession === 'function' ? taskIdForSession(sessionIdOf(exec)) : '';
-          if (!taskId) throw new Error('cow_ask 只能在执行上级委派任务时使用（当前会话不属于远端任务）');
-          return askQuestion({
-            taskId,
+        async execute(args) {
+          if (typeof askMessage !== 'function') throw new Error('当前节点不能发起询问');
+          return askMessage({
             question: String(args?.question ?? ''),
             options: Array.isArray(args?.options) ? args.options.map(String) : [],
             timeoutSec: Number(args?.timeoutSec) || 300,
@@ -266,6 +264,24 @@ export function createToolDefinitions({ instance, channel, peers, tasks, current
       async execute(args) {
         if (typeof claimTask !== 'function') throw new Error('当前节点不能认领任务');
         return claimTask(String(args?.taskId ?? '').trim());
+      },
+    },
+    {
+      name: 'cow_reply',
+      description: '回答子 DSH 的 cow_ask 询问/审批。按 questionId 回复，消息会回到同一对话。',
+      parameters: {
+        type: 'object',
+        properties: {
+          questionId: { type: 'string', description: '询问 ID' },
+          answer: { type: 'string', description: '回答内容' },
+        },
+        required: ['questionId', 'answer'],
+        additionalProperties: false,
+      },
+      output: output(),
+      async execute(args) {
+        if (typeof answerChatQuestion !== 'function') throw new Error('当前节点不能回答询问');
+        return answerChatQuestion(String(args?.questionId ?? ''), String(args?.answer ?? ''));
       },
     },
     {
@@ -492,5 +508,5 @@ export function createToolDefinitions({ instance, channel, peers, tasks, current
         return tasks.retry(String(args?.taskId ?? '').trim(), { timeoutSec: Number(args?.timeoutSec) || taskTimeoutSec });
       },
     },
-  ];
+  ].filter((tool) => !['cow_delegate', 'cow_task', 'cow_cancel', 'cow_claim', 'cow_answer', 'cow_retry'].includes(tool.name));
 }

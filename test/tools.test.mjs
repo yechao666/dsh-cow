@@ -12,26 +12,11 @@ const deps = {
 
 test('工具清单：status/peers/delegate/task/cancel/notify', () => {
   const names = createToolDefinitions(deps).map((tool) => tool.name);
-  assert.deepEqual(names, ['cow_set_file_policy', 'cow_answer', 'cow_claim', 'cow_status', 'cow_peers', 'cow_send', 'cow_delegate', 'cow_task', 'cow_cancel', 'cow_notify', 'cow_retry']);
+  assert.deepEqual(names, ['cow_set_file_policy', 'cow_reply', 'cow_status', 'cow_peers', 'cow_send', 'cow_notify']);
 });
 
-test('cow_delegate 拒绝未知节点与上级；离线节点交给队列', async () => {
-  const queued = [];
-  const tools = createToolDefinitions({
-    ...deps,
-    peers: { list: () => [
-      { label: '子 DSH-x', instanceId: 'cow_child', relation: 'child' },
-      { label: '主 DSH', instanceId: 'cow_parent', relation: 'parent' },
-    ] },
-    tasks: { ...deps.tasks, assign: (input) => { queued.push(input); return { taskId: 't1', status: 'queued' }; } },
-  });
-  const delegate = tools.find((tool) => tool.name === 'cow_delegate');
-  await assert.rejects(() => delegate.execute({ peer: '不存在', prompt: 'hello' }), /未知节点/);
-  await assert.rejects(() => delegate.execute({ peer: '主 DSH', prompt: 'hello' }), /不能把任务派回上级/);
-  const result = await delegate.execute({ peer: '子 DSH-x', prompt: 'hello' });
-  assert.equal(result.status, 'queued');
-  assert.equal(queued.length, 1);
-});
+test.skip('cow_delegate 已移除', () => {});
+
 
 
 

@@ -102,6 +102,9 @@ export function apply(ctx, rawConfig = {}) {
   const offeredTasks = new Set();
   const pendingClaims = new Map();
   const chatSessions = new Map(); // peer -> { sessionId }
+  const chatOrigins = new Map(); // peer -> originSessionId
+  const pendingChatQuestions = new Map(); // questionId -> {resolve,timer}
+  const outgoingChatQuestions = new Map(); // questionId -> peer
   let chatSeq = 0;
   const manager = new TaskManager({
     ctx,
@@ -234,6 +237,32 @@ export function apply(ctx, rawConfig = {}) {
     });
   };
 
+  const askMessage = ({ question, options = [], timeoutSec = 300 } = {}) => {
+    const parent = peers.list().find((peer) => peer.relation === 'parent');
+    if (!parent) return Promise.reject(new Error('本机没有可直接询问的上级'));
+    const id = `q_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    const originSessionId = [...chatOrigins.values()][0] ?? '';
+    const sent = channel.send(parent.label, { type: 'chat.question', payload: { id, question, options, originSessionId } });
+    if (!sent.delivered) return Promise.reject(new Error('提问未送达主 DSH'));
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        pendingChatQuestions.delete(id);
+        reject(new Error('等待主 DSH 回答超时'));
+      }, Math.max(5, Number(timeoutSec) || 300) * 1000);
+      timer.unref?.();
+      pendingChatQuestions.set(id, { resolve, reject, timer });
+    });
+  };
+
+  const answerChatQuestion = (questionId, answer) => {
+    const peer = outgoingChatQuestions.get(questionId);
+    if (!peer) throw new Error('没有找到这条待回答的询问');
+    outgoingChatQuestions.delete(questionId);
+    const sent = channel.send(peer, { type: 'chat.answer', payload: { questionId, answer: String(answer ?? '') } });
+    if (!sent.delivered) throw new Error('回答未送达子 DSH');
+    return { questionId, answer: String(answer ?? '') };
+  };
+
   const taskIdForSession = (sessionId) => {
     if (!sessionId) return '';
     for (const task of manager.tasks.values()) {
@@ -359,6 +388,25 @@ export function apply(ctx, rawConfig = {}) {
   const onEvent = ({ from, event }) => {
     const type = String(event?.type ?? '');
     const payload = event?.payload ?? {};
+    if (type === 'chat.answer') {
+      const questionId = String(payload?.questionId ?? '');
+      const pending = pendingChatQuestions.get(questionId);
+      if (pending) {
+        clearTimeout(pending.timer);
+        pendingChatQuestions.delete(questionId);
+        pending.resolve({ questionId, answer: String(payload?.answer ?? '') });
+      }
+      return;
+    }
+    if (type === 'chat.question') {
+      const questionId = String(payload?.id ?? '');
+      const text = String(payload?.question ?? '');
+      const origin = String(payload?.originSessionId ?? '');
+      if (!questionId || !text) return;
+      outgoingChatQuestions.set(questionId, from);
+      injectChat(origin, from, `${text}\n\n请用 cow_reply(questionId="${questionId}", answer="...") 回答。`);
+      return;
+    }
     if (type === 'chat.message') {
       const messageId = String(payload?.id ?? '');
       const text = String(payload?.text ?? '');
@@ -366,6 +414,7 @@ export function apply(ctx, rawConfig = {}) {
       if (!messageId || !text) return;
       const state = chatSessions.get(from) ?? { sessionId: null };
       chatSessions.set(from, state);
+      chatOrigins.set(from, origin);
       chatSeq += 1;
       const taskId = `chat_${from.replace(/[^\w.-]+/g, '_')}_${Date.now().toString(36)}_${chatSeq}`;
       try {
@@ -678,6 +727,8 @@ export function apply(ctx, rawConfig = {}) {
       files,
       upgrade,
       askQuestion,
+      askMessage,
+      answerChatQuestion,
       taskIdForSession,
       claimTask,
       doctor,
