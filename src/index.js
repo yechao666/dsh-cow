@@ -378,6 +378,8 @@ export function apply(ctx, rawConfig = {}) {
           rawPrompt: true,
           sessionId: state.sessionId,
         }, { callerLabel: from });
+        inbound.set(taskId, local.taskId);
+        inboundLocal.set(local.taskId, taskId);
         void manager.waitTerminal(local.taskId).then((done) => {
           if (done.sessionId) state.sessionId = done.sessionId;
           channel.send(from, {
@@ -391,6 +393,9 @@ export function apply(ctx, rawConfig = {}) {
           });
         }).catch((error) => {
           channel.send(from, { type: 'chat.reply', payload: { replyTo: messageId, originSessionId: origin, text: String(error?.message ?? error), status: 'failed' } });
+        }).finally(() => {
+          inbound.delete(taskId);
+          inboundLocal.delete(local.taskId);
         });
       } catch (error) {
         channel.send(from, { type: 'chat.reply', payload: { replyTo: messageId, originSessionId: origin, text: String(error?.message ?? error), status: 'failed' } });
