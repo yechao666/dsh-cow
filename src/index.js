@@ -440,6 +440,12 @@ export function apply(ctx, rawConfig = {}) {
       const text = String(payload?.text ?? '');
       const origin = String(payload?.originSessionId ?? '');
       if (!messageId || !text) return;
+      const sender = peers.get(from);
+      if (sender?.relation === 'child') {
+        injectChat(origin, from, text);
+        activity.add({ kind: 'chat', text: `${from} 通知：${text.slice(0, 160)}`, peer: from, status: 'replied' });
+        return;
+      }
       const workspaceName = String(payload?.workspaceName ?? '').trim();
       const chatKey = `${from}::${workspaceName}::${origin}`;
       const state = chatSessions.get(chatKey) ?? { sessionId: null };
