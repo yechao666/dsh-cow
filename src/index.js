@@ -223,7 +223,7 @@ export function apply(ctx, rawConfig = {}) {
     return '';
   };
 
-  const tasks = new CowTasks({ channel: null, instance, logger, home, activity });
+  const tasks = new CowTasks({ channel: null, instance, logger, home, activity, queueTtlMs: resolve().queueTtlMinutes * 60_000 });
 
   const handleInboundTask = async (payload, from) => {
     const remoteTaskId = String(payload?.taskId ?? '');
@@ -443,6 +443,8 @@ export function apply(ctx, rawConfig = {}) {
     ensureParentPeer();
     carrier?.restart({ listenHost: cfg.listenHost, listenPort: cfg.listenPort });
     channel.tick?.();
+    tasks.queueTtlMs = Math.max(60_000, cfg.queueTtlMinutes * 60_000);
+    upgrade?.setTimeoutMs?.(cfg.upgradeTimeoutSeconds * 1000);
   };
 
   const adminHandlers = createAdminHandlers({

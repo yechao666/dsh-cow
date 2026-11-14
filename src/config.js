@@ -55,6 +55,8 @@ export const Config = z.object({
   maxConcurrentTasks: z.number().default(2).volatile().description('同时执行的远端任务上限'),
   maxQueuedTasks: z.number().default(8).volatile().description('排队上限，超出直接拒绝'),
   maxTaskMinutes: z.number().default(60).volatile().description('单个远端任务最长执行时间（分钟）'),
+  queueTtlMinutes: z.number().default(120).volatile().description('子端离线时任务在队列中保留的分钟数'),
+  upgradeTimeoutSeconds: z.number().default(120).volatile().description('等待子端升级重连的秒数'),
   maxFileMB: z.number().default(50).volatile().description('单个交换文件的上限（MB）'),
   maxConcurrentFiles: z.number().default(4).volatile().description('同时进行的文件传输上限'),
   taskRetentionHours: z.number().default(72).volatile().description('任务记录保留时长（小时）'),
@@ -148,6 +150,8 @@ export function resolveConfig(input = {}) {
     maxConcurrentTasks: 1, // 每个子 DSH 同时只执行一个任务
     maxQueuedTasks: positive(raw(input, 'maxQueuedTasks', 8), 8),
     maxTaskMinutes: positive(raw(input, 'maxTaskMinutes', 60), 60),
+    queueTtlMinutes: positive(raw(input, 'queueTtlMinutes', 120), 120),
+    upgradeTimeoutSeconds: positive(raw(input, 'upgradeTimeoutSeconds', 120), 120),
     taskRetentionHours: positive(raw(input, 'taskRetentionHours', 72), 72),
     agentPreset: String(raw(input, 'agentPreset', '')).trim(),
     transport: ['auto', 'p2p', 'haos'].includes(String(raw(input, 'transport', 'auto')))

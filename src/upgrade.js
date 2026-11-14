@@ -29,6 +29,7 @@ export function createUpgradeService({
   timeoutMs = 120_000,
 }) {
   const log = logger ?? console;
+  let waitTimeoutMs = timeoutMs;
 
   async function upgradePeer(peer, { targetVersion = '' } = {}) {
     const target = String(targetVersion || pkg.version);
@@ -89,7 +90,7 @@ export function createUpgradeService({
     log.info?.(`[dsh-cow] 升级任务已派发 ${peer} -> ${pkg.version}（${snapshot.taskId}）`);
 
     const startedAt = Date.now();
-    while (Date.now() - startedAt < timeoutMs) {
+    while (Date.now() - startedAt < waitTimeoutMs) {
       await sleep(pollMs);
       const latestStatus = channel?.status?.(peer);
       const latestRegistered = peers.get(peer);
@@ -124,9 +125,12 @@ export function createUpgradeService({
       taskId: snapshot.taskId,
       remotePath,
       sha256,
-      message: `等待 ${Math.round(timeoutMs / 1000)}s 仍未看到子端上报 ${target}；安装可能已完成，需要重启子端加载新插件`,
+      message: `等待 ${Math.round(waitTimeoutMs / 1000)}s 仍未看到子端上报 ${target}；安装可能已完成，需要重启子端加载新插件`,
     };
   }
 
-  return { upgradePeer };
+  return {
+    upgradePeer,
+    setTimeoutMs(ms) { if (Number(ms) > 0) waitTimeoutMs = Number(ms); },
+  };
 }
