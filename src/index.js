@@ -238,6 +238,8 @@ export function apply(ctx, rawConfig = {}) {
     });
   };
 
+  const originForSession = () => [...chatOrigins.values()][0] ?? '';
+
   const postChatQuestion = ({ question, options = [] } = {}, sessionId = '') => {
     const parent = peers.list().find((peer) => peer.relation === 'parent');
     if (!parent) throw new Error('本机没有可直接询问的上级');
@@ -772,6 +774,7 @@ export function apply(ctx, rawConfig = {}) {
       upgrade,
       askQuestion,
       askMessage,
+      originForSession,
       postChatQuestion,
       answerChatQuestion,
       taskIdForSession,
