@@ -405,6 +405,8 @@ export class CowTasks {
       task.summary = String(payload?.summary ?? '');
       task.error = payload?.error ? String(payload.error) : null;
       task.finishedAt = nowIso();
+      task.pendingQuestion = null;
+      task.awaitingMain = false;
       task.artifacts = Array.isArray(payload?.artifacts)
         ? payload.artifacts.slice(0, 50).map((item) => ({
             name: String(item?.name ?? ''),
@@ -570,7 +572,11 @@ export class CowTasks {
 
   /** 未绑定任务的待回答问题（本地会话审批等）。 */
   pendingQuestions() {
-    return [...this.unboundQuestions.values()];
+    const cutoff = this.now() - 60 * 60_000;
+    return [...this.unboundQuestions.values()].filter((item) => {
+      const at = Date.parse(item.askedAt ?? '');
+      return !Number.isFinite(at) || at >= cutoff;
+    });
   }
 
   /** 回答未绑定任务的提问（按 questionId）。 */
@@ -612,6 +618,8 @@ export class CowTasks {
     if (TERMINAL.has(task.status)) return this.snapshot(task);
     this.channel.send(task.peer, { type: 'task.cancel', payload: { taskId, reason } });
     task.status = 'canceled';
+    task.pendingQuestion = null;
+    task.awaitingMain = false;
     task.error = reason;
     task.finishedAt = nowIso();
     if (task.timer) clearTimeout(task.timer);
