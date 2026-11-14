@@ -100,6 +100,7 @@ export function apply(ctx, rawConfig = {}) {
   }
   const inboundFrom = new Map(); // localTaskId -> 对端 peer
   const offeredTasks = new Set();
+  const pendingClaims = new Map();
   const manager = new TaskManager({
     ctx,
     resolveConfig: () => ({ ...resolve(), maxConcurrentTasks: 1 }),
@@ -220,8 +221,15 @@ export function apply(ctx, rawConfig = {}) {
     if (!parent) throw new Error('本机没有可直接认领的上级');
     const sent = channel.send(parent.label, { type: 'task.claim', payload: { taskId } });
     if (!sent.delivered) throw new Error('认领请求未送达主 DSH');
-    logger.info?.(`[dsh-cow] 已发送任务认领 ${taskId}`);
-    return { taskId, status: 'claiming', message: '已发送认领请求，等待主 DSH 下发任务正文' };
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        pendingClaims.delete(taskId);
+        reject(new Error('等待主 DSH 下发任务正文超时'));
+      }, 60_000);
+      timer.unref?.();
+      pendingClaims.set(taskId, { resolve, reject, timer });
+      logger.info?.(`[dsh-cow] 已发送任务认领 ${taskId}，等待正文`);
+    });
   };
 
   const taskIdForSession = (sessionId) => {
@@ -338,23 +346,51 @@ export function apply(ctx, rawConfig = {}) {
     const payload = event?.payload ?? {};
     if (type === 'task.offer') {
       const taskId = String(payload?.taskId ?? '');
-      logger.info?.(`[dsh-cow] 收到任务邀请 ${taskId}，准备认领`);
+      logger.info?.(`[dsh-cow] 收到任务邀请 ${taskId}，创建认领会话`);
       if (!taskId) return;
       offeredTasks.add(taskId);
-      channel.send(from, { type: 'task.claim', payload: { taskId } });
+      try {
+        manager.create({
+          taskId,
+          prompt: `这是一条 dsh-cow 任务邀请，任务 ID：${taskId}。请先调用 cow_claim 工具认领该任务，任务正文会作为工具结果返回；拿到正文后再开始执行。不要直接开始工作。`,
+          title: `认领任务 ${taskId}`,
+          cwd: '',
+          timeoutSec: 3600,
+        }, { callerLabel: from });
+      } catch (error) {
+        logger.warn?.(`[dsh-cow] 创建认领会话失败：${error?.message ?? error}`);
+      }
       return;
     }
     if (type === 'task.claim.abort') {
-      logger.info?.(`[dsh-cow] 认领被拒绝 ${String(payload?.taskId ?? '')}：${String(payload?.reason ?? '')}`);
-      offeredTasks.delete(String(payload?.taskId ?? ''));
-      logger.info?.(`[dsh-cow] 任务认领被拒绝：${String(payload?.reason ?? '')}`);
+      const taskId = String(payload?.taskId ?? '');
+      const pending = pendingClaims.get(taskId);
+      if (pending) {
+        clearTimeout(pending.timer);
+        pendingClaims.delete(taskId);
+        pending.reject(new Error(String(payload?.reason ?? '认领被拒绝')));
+      }
+      offeredTasks.delete(taskId);
+      logger.info?.(`[dsh-cow] 任务认领被拒绝：${taskId} ${String(payload?.reason ?? '')}`);
       return;
     }
     if (type === 'task.body') {
       const taskId = String(payload?.taskId ?? '');
-      logger.info?.(`[dsh-cow] 收到任务正文 ${taskId}，开始执行`);
-      if (taskId) offeredTasks.delete(taskId);
-      void handleInboundTask(payload, from);
+      logger.info?.(`[dsh-cow] 收到任务正文 ${taskId}，交给 cow_claim`);
+      const pending = pendingClaims.get(taskId);
+      if (pending) {
+        clearTimeout(pending.timer);
+        pendingClaims.delete(taskId);
+        pending.resolve({
+          ok: true,
+          taskId,
+          prompt: String(payload?.prompt ?? ''),
+          cwd: String(payload?.cwd ?? ''),
+          title: String(payload?.title ?? ''),
+          timeoutSec: Number(payload?.timeoutSec) || 3600,
+        });
+      }
+      offeredTasks.delete(taskId);
       return;
     }
     if (type === 'task.assign') {
