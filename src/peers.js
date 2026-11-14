@@ -72,6 +72,15 @@ export class PeerRegistry {
     const data = readJson(this.file, null);
     const list = Array.isArray(data?.peers) ? data.peers : [];
     this.peers = list.map(normalizePeer).filter(Boolean);
+    // 同一父节点可能被历史配置重复登记（不同端口/地址）；保留最新一条，避免 cow_peers 出现两个“主 DSH”。
+    const unique = [];
+    for (const peer of this.peers) {
+      const existing = unique.findIndex((item) => item.relation === peer.relation && item.label === peer.label);
+      if (existing < 0) { unique.push(peer); continue; }
+      if (String(peer.addedAt ?? '') > String(unique[existing].addedAt ?? '')) unique[existing] = peer;
+    }
+    const changed = unique.length !== this.peers.length;
+    this.peers = unique;
     for (const raw of list) {
       const peer = this.peers.find((item) => item.id === String(raw?.id ?? raw?.instanceId ?? ''));
       if (peer && raw?.tokenEnc) peer.token = decryptSecret(this.home, raw.tokenEnc);
@@ -81,6 +90,7 @@ export class PeerRegistry {
     } catch {
       this.stamp = 0;
     }
+    if (changed) this.save();
     return this.peers;
   }
 
