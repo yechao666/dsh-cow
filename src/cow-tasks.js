@@ -472,7 +472,7 @@ export class CowTasks {
       ? `\n选项：${question.options.join(' / ')}`
       : '';
     const text = [
-      '**[COW 询问]**',
+      '[COW 询问]',
       `- 子节点：${task.peer}`,
       `- 任务：${task.title || task.taskId}`,
       `- 任务 ID：${task.taskId}`,
