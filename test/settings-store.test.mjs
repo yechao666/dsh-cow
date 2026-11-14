@@ -15,7 +15,7 @@ test('写入只接受白名单字段，并强制类型', () => {
   writeSettings(home, {
     displayName: 'mac-mini',
     allowedRoots: '/work\n/data',
-    maxTaskMinutes: '30',
+    maxConcurrentFiles: '6',
     maxFileMB: '80',
     // 不在白名单里的字段应被忽略
     apiKey: 'should-not-be-written',
@@ -23,10 +23,10 @@ test('写入只接受白名单字段，并强制类型', () => {
   const stored = readSettings(home);
   assert.equal(stored.displayName, 'mac-mini');
   assert.equal(stored.allowedRoots, '/work\n/data');
-  assert.equal(stored.maxTaskMinutes, 30);
+  assert.equal(stored.maxConcurrentFiles, 6);
   assert.equal(stored.maxFileMB, 80);
   assert.equal(stored.apiKey, undefined);
-  assert.deepEqual(Object.keys(stored).sort(), ['allowedRoots', 'displayName', 'maxFileMB', 'maxTaskMinutes']);
+  assert.deepEqual(Object.keys(stored).sort(), ['allowedRoots', 'displayName', 'maxConcurrentFiles', 'maxFileMB']);
   assert.equal(settingsPath(home).endsWith('cow/settings.json'), true);
 });
 
@@ -36,8 +36,8 @@ test('开放端口可以设为 0（复用宿主端口），其他数值字段必
   assert.equal(readSettings(home).listenPort, 3100);
   writeSettings(home, { listenPort: '0' });
   assert.equal(readSettings(home).listenPort, 0);
-  writeSettings(home, { maxTaskMinutes: 0 });
-  assert.equal(readSettings(home).maxTaskMinutes, undefined, '0 不是合法的任务时长');
+  writeSettings(home, { maxFileMB: 0 });
+  assert.equal(readSettings(home).maxFileMB, undefined, '0 不是合法的文件上限');
 });
 
 test('空字符串表示清空覆盖，回落到装配配置', () => {
@@ -51,23 +51,22 @@ test('空字符串表示清空覆盖，回落到装配配置', () => {
 
 test('覆盖层合并到 resolveConfig 后生效', () => {
   const home = tempHome();
-  writeSettings(home, { displayName: 'from-ui', allowedRoots: '/ui/root', relayPollSeconds: 5, channelEnabled: false });
+  writeSettings(home, { displayName: 'from-ui', allowedRoots: '/ui/root', maxFileMB: 20, channelEnabled: false });
   const merged = { ...{ displayName: 'from-profile', allowedRoots: '/profile/root' }, ...readSettings(home) };
   const cfg = resolveConfig(merged);
   assert.equal(cfg.displayName, 'from-ui');
   assert.equal(cfg.allowedRoots, '/ui/root');
-  assert.equal(cfg.relayPollSeconds, 5);
+  assert.equal(cfg.maxFileMB, 20);
   // 长连接是协议的一部分，配置层不可关闭
   assert.equal(cfg.channelEnabled, true);
 });
 
-test('询问设置可保存并读取', () => {
+test('消息子会话的 preset 可保存并读取', () => {
   const home = tempHome();
-  writeSettings(home, { askFullTakeover: true, askConcurrency: 3, autoContinueOnReconnect: false });
+  writeSettings(home, { agentPreset: 'web', autoDetect: false });
   const saved = readSettings(home);
-  assert.equal(saved.askFullTakeover, true);
-  assert.equal(saved.askConcurrency, 3);
-  assert.equal(saved.autoContinueOnReconnect, false);
+  assert.equal(saved.agentPreset, 'web');
+  assert.equal(saved.autoDetect, false);
 });
 
 test('设置页可改字段清单是显式白名单', () => {

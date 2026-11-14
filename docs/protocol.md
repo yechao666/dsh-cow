@@ -1,13 +1,13 @@
-# cow 线协议 v1
+# cow 线协议 v1（纯消息）
 
-dsh-cow 的所有协同业务都走 **一条 WebSocket 双工长连接**，不再有跨实例的 HTTP 任务接口。
-文字端口里的 `<endpoint>` 形如 `http://mac-mini.local:59999/cow/v1`。
+dsh-cow 的所有协同业务都走 **一条 WebSocket 双工长连接**，没有跨实例 HTTP 任务接口，
+也没有任务、认领或任务队列。文字端口里的 `<endpoint>` 形如 `http://mac-mini.local:59999/cow/v1`。
 
 - 传输：WebSocket（RFC 6455），文本帧 JSON，单帧上限 512 KiB
 - 路径：`/cow/v1/channel`
 - 鉴权：挑战—应答（见下节）；兼容 `Authorization: Bearer <password>` 头
 - 编码：UTF-8 JSON；时间戳为 ISO 8601 字符串
-- 对端：只允许**直接上级 / 直接下级**；任务与文件都只发给直接下级
+- 对端：只允许**直接上级 / 直接下级**；消息与文件都只发给直接下级
 
 ## 1. 连接与鉴权
 
@@ -77,68 +77,111 @@ key = HKDF-SHA256(base = passwordHash, salt = nonce, info = "cow/v1/e2e", 32)
 { "type": "event", "seq": 12, "msgId": "cods_a:12", "at": "…", "enc": { "v": 1, "iv": "…", "tag": "…", "data": "…" } }
 ```
 
-`data` 是 `{"event":"task.assign","payload":{…}}` 的 AES-256-GCM 密文，AAD 为 `cow/v1/e2e`；
+`data` 是 `{"event":"msg.dispatch","payload":{…}}` 的 AES-256-GCM 密文，AAD 为 `cow/v1/e2e`；
 文件分块也在 `payload` 内，因此同样被加密。`hello` / `welcome` / `auth.challenge` / `ack` / `ping`
 保持明文，便于握手与排障。任一侧未声明 `enc` 时该连接回落明文（升级过渡期）。
 
 `event` 是业务类型字符串，`payload` 见下节。发件箱按 peer 保留最近 300 条，
 收到 ack 后丢弃；接收方按 `msgId` 去重（内存窗口 512 条）。
 
-## 3. 业务事件
+## 3. 消息信封
 
-### 3.1 任务
-
-| event | 方向 | payload |
-|---|---|---|
-| `task.assign` | 主 → 子 | `taskId, prompt, title, cwd, workspaceName, timeoutSec, caller, callerLabel` |
-| `task.progress` | 子 → 主 | `taskId, seq, kind, text, tool?, status?, position?` |
-| `task.result` | 子 → 主 | `taskId, status, summary, error, artifacts[]` |
-| `task.cancel` | 主 → 子 | `taskId, reason` |
-| `task.question` | 子 → 主 | `taskId, questionId, question, options[], timeoutSec` |
-| `task.answer` | 主 → 子 | `taskId, questionId, answer` |
-
-`task.assign` 的 `cwd` 必须在子端 `allowedRoots` 内；`workspaceName` 用于把子端会话挂到
-与主端同名的工作区。子端同一时刻只执行一个任务（`maxConcurrentTasks: 1`），
-其余进入 FIFO 队列（默认 `maxQueuedTasks: 8`），超出直接拒绝 `too_many_tasks`。
-同一个 `taskId` 重复下发会被忽略，避免 at-least-once 造成重复执行。
-
-排队中的任务还会回传 `status: "queued"` 与 `position`（1-based），开始执行时回传 `status: "running"`，父端据此把任务从 running 改回 queued；`task.progress.kind` 取值：`phase`（阶段）、`turn`（新一轮）、`tool`（工具调用）、
-`text`（助手文本，800ms 节流）、`question` / `answer`、`done`、`error`。
-`seq` 在单个任务内递增（可能与子端注入的阶段帧重复，消费方按条数容错即可）。
-
-`task.result.status`：`succeeded` | `failed` | `canceled`。
-`task.result.artifacts[]`：任务期间 cwd 下新增/修改文件的清单（`name,path,bytes,sha256,modifiedAt`，
-最多 50 个）；主端会自动拉取 ≤10MB 的条目到 `$DSH_HOME/cow/artifacts/<taskId>/`。
-
-### 3.2 离线队列
-
-主端发送 `task.assign` 时如果对端不在线，任务进入**离线队列**（默认保留 2 小时）：
-
-- 任务快照 `status: "queued"`，带 `queuedAt`、`queueExpiresAt`、`attempts`
-- 对端 `hello` 到达时自动 `flushQueue`，把未过期任务重新下发并转 `running`
-- 过期任务判 `failed`（错误说明可用 `cow_retry` 重试）
-- `task.cancel` 对排队任务只做本地取消，不等待对端
-
-### 3.3 远端提问
-
-子端 Agent 需要发起方决策时调用 `cow_ask`，主端在任务快照的 `pendingQuestion`
-里看到问题与选项，再用 `cow_answer` 回传：
+四条消息共用同一个信封。`peer` 是这条会话所属的**子节点标签**（主端视角），
+子端按 `peer + workspace.id + session.id` 隔离本地会话。
 
 ```json
-{ "taskId": "cowtask_…", "questionId": "q_…", "question": "交付用 A 还是 B？", "options": ["A", "B"], "timeoutSec": 300 }
+{
+  "kind": "dispatch",
+  "messageId": "msg_…",
+  "questionId": "",
+  "replyTo": "",
+  "peer": "子 DSH-A",
+  "text": "…",
+  "options": [],
+  "workspace": { "id": "cods_workspace…", "name": "项目名", "path": "/abs/path" },
+  "session": { "id": "cods_session…", "title": "主会话" },
+  "approvalMode": "follow",
+  "createdAt": "2026-11-15T00:00:00.000Z"
+}
 ```
 
-子端工具阻塞等待 `task.answer`（默认 300s，超时返回 `{ok:false,error:"timeout"}`）。
-问题只存在于内存与任务快照，进程重启后丢失。
+### 3.1 dispatch（主 → 子）
 
-审批接管：子端执行委派任务时若 DSH 触发 `approval/request`，插件把请求转成同样的
-`task.question`（文本“子 DSH 请求审批：<tool>（<reason>）”，选项“允许一次/拒绝”），
-把回答映射为 `allowed-once` / `rejected`；超时、取消或主端不可达返回 `unavailable`（fail-closed）。
-只接管委派任务会话，本机自己的会话审批仍走本机 answerer。
+主 DSH 用 `cow_send(peer, message)` 发送。消息**只入队、立即返回**，不等结果：
+
+```json
+{
+  "kind": "dispatch",
+  "messageId": "msg_…",
+  "peer": "子 DSH-A",
+  "text": "把周报整理成 markdown",
+  "workspace": { "id": "…", "name": "docs", "path": "/Users/yechao/work/docs" },
+  "session": { "id": "…", "title": "周报" },
+  "approvalMode": "follow"
+}
+```
+
+子端按隔离键找到/新建子会话，把 `text` 作为一条用户消息交给 Agent；同一隔离键复用同一会话。
+子端工作目录取 `workspace.path`（必须在本机 `allowedRoots` 内），不可用时落到第一个根目录下的
+`workspace.name` 同名目录。
+
+### 3.2 complete（子 → 主）
+
+子端回合结束（Agent `whenIdle` + 子代理收敛 + 会话 flush）后自动发送：
+
+```json
+{
+  "kind": "complete",
+  "messageId": "msg_…",
+  "replyTo": "msg_dispatch…",
+  "peer": "子 DSH-A",
+  "text": "周报已生成：…",
+  "workspace": { … },
+  "session": { … },
+  "createdAt": "…"
+}
+```
+
+主端把 `text` 以通知（`source.kind = "notification"`）注入 `session.id` 对应的**原会话**，
+从而开启新一轮回复；界面上显示“这条通知触发了本轮回复。”。
+同一 `messageId` 重复送达只注入一次。
+
+### 3.3 ask / answer（子 ↔ 主）
+
+子端在派发会话里用 `cow_send(kind="ask")` 提问，信封复用原 dispatch 的
+`peer/workspace/session`，并带 `questionId`（默认等于 messageId）与 `options[]`：
+
+```json
+{
+  "kind": "ask",
+  "messageId": "q_…",
+  "questionId": "q_…",
+  "peer": "子 DSH-A",
+  "text": "交付用 A 还是 B？",
+  "options": ["A", "B"],
+  "workspace": { … },
+  "session": { … }
+}
+```
+
+主端把它注入原会话，并提示用 `cow_send(peer, message, replyTo=questionId)` 回答。
+回答以 `msg.answer` 发回同一子节点：
+
+```json
+{ "kind": "answer", "replyTo": "q_…", "peer": "子 DSH-A", "text": "A", "workspace": { … }, "session": { … } }
+```
+
+子端收到 `msg.answer`：若有工具/审批正在等待该 `questionId`，直接兑现等待；
+否则作为一条 `[COW 回答]` 输入唤醒同一子会话。
+
+提问只存在于内存；超时（默认 300s）返回失败。审批接管：子端执行派发会话时若 DSH 触发
+`approval/request`，插件把它转成同样的 `msg.ask`（文本“子 DSH 请求审批：<tool>（<reason>）”，
+选项“允许一次/拒绝”），把回答映射为 `allowed-once` / `rejected`；超时、取消或主端不可达
+返回 `unavailable`（fail-closed）。只接管派发会话，本机自己的会话审批仍走本机 answerer。
 
 ### 3.4 协作消息
 
-`peer.message`：`{ message, targetSessionId? }`，仅做通知，不保证被 Agent 消费。
+`peer.message`：`{ message }`，仅做通知，不保证被 Agent 消费。
 
 ## 4. 文件交换
 
@@ -174,23 +217,20 @@ key = HKDF-SHA256(base = passwordHash, salt = nonce, info = "cow/v1/e2e", 32)
 | POST | `/cow/v1/files/send` | 本机发文件/目录 |
 | POST | `/cow/v1/files/receive` | 本机取文件 |
 | GET | `/cow/v1/channel` | WebSocket 升级；普通 GET 返回 426 |
-| GET | `/api/cow/doctor` | 本机设置页生成诊断包（同源，无 token） |
-| POST | `/api/cow/answer` | 设置页回答远端提问 |
+| GET | `/api/cow/state` | 设置页状态（同源） |
+| POST | `/api/cow/answer` | 设置页回答远端询问（questionId） |
 
-跨实例的任务、进度、提问、文件块全部走 WebSocket，不走上表接口。
+跨实例的消息、提问、文件块全部走 WebSocket，不走上表接口。
 
 ## 6. 错误码
 
 | code | 含义 |
 |---|---|
 | `invalid_request` | 参数缺失/类型错 |
-| `payload_too_large` | prompt/context/请求体超限 |
+| `payload_too_large` | 消息/请求体超限 |
 | `unauthorized` | 证明/token 无效 |
 | `forbidden` | 工作目录越界或未配置 allowedRoots |
-| `not_found` | 任务/传输不存在 |
-| `conflict` | 任务仍在排队或执行，不能续聊 |
-| `too_many_tasks` | 运行 + 排队已满 |
-| `timeout` | 执行超时（任务 `error.code`，同时取消 Agent） |
-| `interrupted` | 进程重启中断（任务 `error.code`） |
+| `not_found` | 传输/询问不存在 |
+| `conflict` | 回答未送达或状态冲突 |
 | `unavailable` | 宿主缺 agents/sessions、模型不可用或 dsh-cow 被禁用 |
 | `internal` | 未预期错误 |

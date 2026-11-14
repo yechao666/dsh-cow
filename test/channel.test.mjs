@@ -8,9 +8,7 @@ import { Channel } from '../src/channel.js';
 import { hashJoinPassword } from '../src/identity.js';
 import { PeerRegistry } from '../src/peers.js';
 import { issueToken } from '../src/tokens.js';
-import { Inbox } from '../src/inbox.js';
-import { RemoteTaskIndex } from '../src/remote-tasks.js';
-import { NotificationRouter } from '../src/notify.js';
+import { MessageRouter } from '../src/message-router.js';
 
 const silent = { info() {}, warn() {}, error() {}, debug() {} };
 
@@ -194,26 +192,16 @@ test('离线时事件进发件箱，连上后按序补发并被 ack 清空', asy
   }
 });
 
-test('任务完成事件经通道送达后注入发起会话（端到端）', async () => {
+test('complete 消息经通道送达后注入发起会话（端到端）', async () => {
   const a = await startAcceptor();
   const home = mkdtempSync(join(tmpdir(), 'cow-chan-d-'));
-  const inbox = new Inbox({ file: join(home, 'inbox.json') });
-  const remoteIndex = new RemoteTaskIndex({ file: join(home, 'remote.json') });
   const peers = new PeerRegistry({ file: join(home, 'peers.json') });
   peers.upsert({ url: a.url, token: a.token, label: 'a-host', instanceId: 'cods_aaaa' });
-  remoteIndex.remember('task_remote', { label: 'a-host', url: a.url }, { originSessionId: 'session-9' });
 
   const injected = [];
-  const ctx = {
-    get: () => ({ get: (id) => (id === 'session-9' ? { session: { id }, followup: (message) => injected.push(message) } : undefined) }),
-  };
-  const router = new NotificationRouter({
-    ctx,
-    resolveConfig: () => ({ notifyMode: 'inject', maxInjectionsPerMinute: 3 }),
-    peers,
-    remoteIndex,
-    inbox,
-    logger: silent,
+  const router = new MessageRouter({
+    channel: { send: () => ({ delivered: true }) },
+    inject: (...args) => { injected.push(args); return true; },
   });
 
   const b = new Channel({
@@ -222,7 +210,7 @@ test('任务完成事件经通道送达后注入发起会话（端到端）', as
     peers,
     instance: { instanceId: 'cods_bbbb', displayName: 'B' },
     authorize: () => null,
-    onEvent: (input) => router.handle(input),
+    onEvent: (input) => router.handle(input.from, input.event),
     logger: silent,
     home,
   });
@@ -230,12 +218,18 @@ test('任务完成事件经通道送达后注入发起会话（端到端）', as
     b.start();
     await waitFor(() => b.connectedCount() === 1);
     a.channel.send('b-host', {
-      type: 'task.completed',
-      payload: { taskId: 'task_remote', status: 'succeeded', title: '构建', summary: '结论：构建成功', needsInput: null },
+      type: 'msg.complete',
+      payload: {
+        kind: 'complete', messageId: 'msg_1', replyTo: 'msg_0',
+        peer: 'b-host', text: '结论：构建成功',
+        workspace: { id: 'w1', name: 'A', path: '/a' },
+        session: { id: 'session-9', title: '主会话' },
+      },
     });
     await waitFor(() => injected.length === 1);
-    assert.match(injected[0].content[0].text, /构建成功/);
-    assert.match(injected[0].content[0].text, /cow_task/);
+    assert.equal(injected[0][0], 'session-9');
+    assert.match(injected[0][2], /构建成功/);
+    assert.equal(injected[0][3], 'complete');
   } finally {
     b.stop();
     await a.close();

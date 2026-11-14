@@ -1,6 +1,6 @@
 /**
  * 设置页的宿主 API（浏览器同源调用）：`/api/cow/*`。
- * 只负责读取状态与保存配置；通讯与任务全部走 WebSocket。
+ * 只负责读取状态、保存配置与回答询问；通讯全部走 WebSocket 消息。
  */
 import { DEFAULT_ALLOWED_ROOT } from './config.js';
 
@@ -85,9 +85,9 @@ export function createAdminHandlers(deps) {
           && versionLess(status.node.version, currentVersion),
         encrypted: status.e2e === true,
         description: status.node?.description ?? peer.capabilitySummary ?? '',
-        currentTask: deps.currentTaskFor?.(peer.label) ?? null,
       };
     });
+    const pendingAsks = deps.router?.pending?.() ?? [];
     return {
       instance: {
         instanceId: deps.instance.instanceId,
@@ -107,23 +107,14 @@ export function createAdminHandlers(deps) {
         listenPort: cfg.listenPort ?? 0,
         maxFileMB: Number.isFinite(cfg.maxFileMB) ? cfg.maxFileMB : 50,
         maxConcurrentFiles: Number.isFinite(cfg.maxConcurrentFiles) ? cfg.maxConcurrentFiles : 4,
-        maxQueuedTasks: Number.isFinite(cfg.maxQueuedTasks) ? cfg.maxQueuedTasks : 20,
-        maxTaskMinutes: Number.isFinite(cfg.maxTaskMinutes) ? cfg.maxTaskMinutes : 60,
-        queueTtlMinutes: Number.isFinite(cfg.queueTtlMinutes) ? cfg.queueTtlMinutes : 120,
-        taskRetentionDays: Number.isFinite(cfg.taskRetentionDays) ? cfg.taskRetentionDays : 3,
-        autoContinueOnReconnect: cfg.autoContinueOnReconnect !== false,
-        askConcurrency: Number.isFinite(cfg.askConcurrency) ? cfg.askConcurrency : 2,
-        askFullTakeover: cfg.askFullTakeover !== false,
+        agentPreset: cfg.agentPreset ?? '',
       },
       pluginVersion: deps.pluginVersion ?? '',
       defaultAllowedRoot: DEFAULT_ALLOWED_ROOT,
       passwordConfigured: deps.passwordConfigured?.() ?? false,
       peers: peerList,
       connections,
-      tasks: deps.tasks?.list?.() ?? [],
-      questions: deps.tasks?.pendingQuestions?.() ?? [],
-      currentInbound: deps.currentInbound?.() ?? null,
-      inboundTasks: deps.inboundTasks?.() ?? [],
+      pendingAsks,
       parent: {
         url: deps.instance.parentUrl ?? '',
         connected: peerList.some((item) => item.relation === 'parent' && item.connected),
@@ -132,7 +123,7 @@ export function createAdminHandlers(deps) {
       stats: {
         peers: peerList.length,
         connected: peerList.filter((item) => item.connected).length,
-        tasks: deps.tasks?.list?.().length ?? 0,
+        pendingAsks: pendingAsks.length,
       },
     };
   };
@@ -181,33 +172,6 @@ export function createAdminHandlers(deps) {
       sendJson(res, 200, { url, passwordConfigured: Boolean(password) });
     }),
 
-    '/api/cow/delegate': wrap(async (req, res) => {
-      if (req.method !== 'POST') return sendJson(res, 405, { error: { code: 'method_not_allowed', message: '只支持 POST' } });
-      const body = await readBody(req);
-      const peer = String(body?.peer ?? '').trim();
-      const prompt = String(body?.prompt ?? '').trim();
-      if (!peer || !prompt) return sendJson(res, 400, { error: { code: 'invalid_request', message: '缺少 peer 或 prompt' } });
-      const waitSeconds = Math.max(0, Math.min(600, Number(body?.waitSeconds ?? 120) || 0));
-      try {
-        const created = deps.tasks.assign({
-          peer,
-          prompt,
-          cwd: String(body?.cwd ?? ''),
-          title: String(body?.title ?? ''),
-          timeoutSec: Number(body?.timeoutSec) || 3600,
-        });
-        const deadline = Date.now() + waitSeconds * 1000;
-        let snapshot = deps.tasks.get(created.taskId);
-        while (snapshot && !['succeeded', 'failed', 'canceled'].includes(snapshot.status) && Date.now() < deadline) {
-          await new Promise((resolve) => setTimeout(resolve, 300));
-          snapshot = deps.tasks.get(created.taskId);
-        }
-        sendJson(res, 200, snapshot ? deps.tasks.snapshot(snapshot) : created);
-      } catch (error) {
-        sendJson(res, 409, { error: { code: 'task_failed', message: String(error?.message ?? error) } });
-      }
-    }),
-
     '/api/cow/activity': wrap(async (req, res) => {
       if (req.method !== 'GET') return sendJson(res, 405, { error: { code: 'method_not_allowed', message: '只支持 GET' } });
       const limit = Math.max(1, Math.min(200, Number(new URL(req.url ?? '/', 'http://cow.local').searchParams.get('limit')) || 100));
@@ -218,47 +182,19 @@ export function createAdminHandlers(deps) {
           total: items.length,
           connected: (deps.channel?.connections?.() ?? []).filter((item) => item.ready).length,
           encrypted: (deps.channel?.connections?.() ?? []).filter((item) => item.e2e).length,
-          queued: (deps.tasks?.list?.() ?? []).filter((task) => task.status === 'queued').length,
+          pendingAsks: (deps.router?.pending?.() ?? []).length,
         },
       });
-    }),
-
-    '/api/cow/upgrade': wrap(async (req, res) => {
-      if (req.method !== 'POST') return sendJson(res, 405, { error: { code: 'method_not_allowed', message: '只支持 POST' } });
-      const body = await readBody(req);
-      const peer = String(body?.peer ?? '').trim();
-      if (!peer) return sendJson(res, 400, { error: { code: 'invalid_request', message: '缺少 peer' } });
-      try {
-        if (!deps.upgrade) throw new Error('升级服务未启用');
-        sendJson(res, 200, await deps.upgrade.upgradePeer(peer, { targetVersion: String(body?.targetVersion ?? '') }));
-      } catch (error) {
-        sendJson(res, 400, { error: { code: 'upgrade_failed', message: String(error?.message ?? error) } });
-      }
-    }),
-
-    '/api/cow/cancel': wrap(async (req, res) => {
-      if (req.method !== 'POST') return sendJson(res, 405, { error: { code: 'method_not_allowed', message: '只支持 POST' } });
-      const body = await readBody(req);
-      const taskId = String(body?.taskId ?? '').trim();
-      if (!taskId) return sendJson(res, 400, { error: { code: 'invalid_request', message: '缺少 taskId' } });
-      try {
-        deps.tasks.cancel(taskId, String(body?.reason ?? '配置页取消'));
-        sendJson(res, 200, state());
-      } catch (error) {
-        sendJson(res, 409, { error: { code: 'cancel_failed', message: String(error?.message ?? error) } });
-      }
     }),
 
     '/api/cow/answer': wrap(async (req, res) => {
       if (req.method !== 'POST') return sendJson(res, 405, { error: { code: 'method_not_allowed', message: '只支持 POST' } });
       const body = await readBody(req);
-      const taskId = String(body?.taskId ?? '').trim();
       const questionId = String(body?.questionId ?? '').trim();
       const answer = String(body?.answer ?? '');
-      if (!taskId && !questionId) return sendJson(res, 400, { error: { code: 'invalid_request', message: '缺少 taskId 或 questionId' } });
+      if (!questionId) return sendJson(res, 400, { error: { code: 'invalid_request', message: '缺少 questionId' } });
       try {
-        if (questionId) deps.tasks.answerQuestion(questionId, answer);
-        else deps.tasks.answer(taskId, answer);
+        deps.router.answer(questionId, answer);
         sendJson(res, 200, state());
       } catch (error) {
         sendJson(res, 409, { error: { code: 'answer_failed', message: String(error?.message ?? error) } });

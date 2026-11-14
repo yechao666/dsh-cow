@@ -1,34 +1,35 @@
 /**
  * dsh-cow（co-work）——多台 DSH 通过一条 WebSocket 长连接协同工作。
  *
- *  - 主 DSH：监听端口，接受子 DSH 的 WebSocket 连接；下发任务、观察结果。
- *  - 子 DSH：输入主 DSH 地址 + 共用密码，主动建立长连接；执行任务并回传结果。
- *  - 所有业务帧都是 JSON：hello / welcome / task.assign / task.progress /
- *    task.result / task.cancel / peer.message / ping / pong。
+ * 纯消息架构：没有任务、认领或任务队列。
+ *   - dispatch：主 DSH 把一条消息放进子 DSH 的会话输入队列，立即返回，不轮询。
+ *   - complete：子 DSH 回合结束时自动发回，主端以通知注入原会话。
+ *   - ask / answer：子 DSH 向主 DSH 提问/审批，主 DSH 回答后回到同一子会话。
+ * 所有业务帧都是 JSON：hello / welcome / msg.* / file.* / ping / pong。
  */
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveConfig, Config, SETTINGS_NAMESPACE, DEFAULT_ALLOWED_ROOT } from './config.js';
 import { coDshDir, ensureDir, resolveHomeDir } from './store.js';
 import { loadIdentity, patchIdentity, verifyJoinPassword, setJoinPassword } from './identity.js';
 import { PeerRegistry, peersPath } from './peers.js';
 import { Channel } from './channel.js';
-import { CowTasks } from './cow-tasks.js';
-import { TaskManager } from './tasks.js';
 import { createAdminHandlers } from './admin-api.js';
 import { createHandler, mountCarrier } from './server.js';
 import { readSettings, writeSettings } from './settings-store.js';
 import { createToolDefinitions, registerTools } from './tools.js';
 import { createDoctor } from './doctor.js';
-import { createUpgradeService } from './upgrade.js';
 import { registerApprovalTakeover } from './approval-takeover.js';
 import { ActivityLog } from './activity.js';
 import { FileExchange } from './files.js';
 import { normalizeRoots } from './paths.js';
 import { buildMachineDescription } from './machine-profile.js';
-import { validateCreateTask, PROTOCOL_VERSION, ROUTE_PREFIX } from './protocol.js';
+import { MessageBridge } from './message-bridge.js';
+import { MessageRouter } from './message-router.js';
+import { resolveChildCwd, sessionInfo } from './session-info.js';
+import { PROTOCOL_VERSION, ROUTE_PREFIX } from './protocol.js';
 
 const PACKAGE = (() => {
   try {
@@ -50,8 +51,6 @@ function currentPackageVersion() {
 export const name = 'dsh-cow';
 export const inject = [];
 export { Config, resolveConfig } from './config.js';
-export { TaskManager } from './tasks.js';
-export { CowTasks } from './cow-tasks.js';
 export { PROTOCOL_VERSION, ROUTE_PREFIX } from './protocol.js';
 
 function consoleLogger() {
@@ -69,7 +68,13 @@ export function apply(ctx, rawConfig = {}) {
   const logger = consoleLogger();
   const home = resolveHomeDir();
   const resolve = () => resolveConfig({ ...(rawConfig ?? {}), ...readSettings(home) });
-  const startedAt = Date.now();
+  const service = (serviceName) => {
+    try {
+      return ctx.get?.(serviceName, false) ?? null;
+    } catch {
+      return null;
+    }
+  };
 
   let instance;
   try {
@@ -80,7 +85,6 @@ export function apply(ctx, rawConfig = {}) {
   }
   instance.version = currentPackageVersion();
   if (!instance.uuid) instance.uuid = '';
-  // 节点名称以配置为准（留空时 resolve 会给计算机名），保证 hello 上报的是当前名称。
   const configuredName = resolve().displayName;
   if (configuredName) instance.displayName = configuredName;
 
@@ -92,506 +96,59 @@ export function apply(ctx, rawConfig = {}) {
   Object.defineProperty(instance, 'description', { get: describe, configurable: true });
 
   const peers = new PeerRegistry({ file: peersPath(home), logger });
-  // 清理历史遗留的「自己连自己」记录。
   for (const peer of peers.list()) {
     if ((peer.instanceId && peer.instanceId === instance.instanceId) || (peer.uuid && peer.uuid === instance.uuid)) {
       try { peers.remove(peer.label); } catch { /* 忽略 */ }
     }
   }
-  const inboundFrom = new Map(); // localTaskId -> 对端 peer
-  const offeredTasks = new Set();
-  const pendingClaims = new Map();
-  const chatSessions = new Map(); // peer -> { sessionId }
-  const chatOrigins = new Map(); // peer -> originSessionId
-  const pendingChatQuestions = new Map(); // questionId -> {resolve,timer}
-  const chatQuestionSessions = new Map(); // questionId -> child session
-  const outgoingChatQuestions = new Map(); // questionId -> peer
-  let chatSeq = 0;
-  const manager = new TaskManager({
-    ctx,
-    resolveConfig: () => ({ ...resolve(), maxConcurrentTasks: 1 }),
-    instance,
-    logger,
-    home,
-    emit: (event) => {
-      if (event?.type === 'task.started') {
-        const localTaskId = String(event.task?.taskId ?? '');
-        const remoteTaskId = inboundLocal.get(localTaskId);
-        const peer = inboundFrom.get(localTaskId);
-        if (remoteTaskId && peer) {
-          channel.send(peer, { type: 'task.progress', payload: { taskId: remoteTaskId, status: 'running', text: '开始执行任务' } });
-        }
-        return;
-      }
-      if (['task.completed', 'task.failed', 'task.canceled'].includes(event?.type)) {
-        activity.add({
-          kind: 'inbound',
-          text: `本机执行${event.type === 'task.completed' ? '完成' : event.type === 'task.canceled' ? '取消' : '失败'}：${event.task?.title ?? event.task?.taskId ?? ''}`,
-          taskId: event.task?.taskId ?? '',
-          peer: event.task?.callerLabel ?? '',
-          status: event.task?.status ?? '',
-        });
-      }
-      if (event?.type !== 'task.progress' || !event.progress) return;
-      const localTaskId = String(event.task?.taskId ?? '');
-      const remoteTaskId = inboundLocal.get(localTaskId);
-      const peer = inboundFrom.get(localTaskId);
-      if (!remoteTaskId || !peer) return;
-      channel.send(peer, {
-        type: 'task.progress',
-        payload: {
-          taskId: remoteTaskId,
-          seq: event.progress.seq,
-          kind: event.progress.phase,
-          text: event.progress.message,
-          ...(event.progress.tool ? { tool: event.progress.tool } : {}),
-        },
-      });
-    },
-  });
-  manager.init();
-  try { ensureDir(DEFAULT_ALLOWED_ROOT); } catch { /* 默认数据目录创建失败时保留给用户手动处理 */ }
-  manager.setAllowedRoots(normalizeRoots(resolve().allowedRoots));
-
-  const authorize = (password) => (verifyJoinPassword(instance, password) ? { kind: 'join', label: '' } : null);
 
   const activity = new ActivityLog();
-  const inbound = new Map(); // remoteTaskId -> localTaskId
-  const inboundLocal = new Map(); // localTaskId -> remoteTaskId
+  const authorize = (password) => (verifyJoinPassword(instance, password) ? { kind: 'join', label: '' } : null);
 
-  // 兼容旧接口：返回当前正在执行的入站任务快照（队列中不返回）。
-  const currentInbound = () => {
-    for (const localTaskId of inboundLocal.keys()) {
-      const task = manager.get(localTaskId);
-      if (!task) continue;
-      if (task.status === 'running') return manager.snapshot(localTaskId);
+  let carrier = null;
+  let channel = null;
+  let files = null;
+  let bridge = null;
+  let router = null;
+  let doctor = null;
+
+  const agentOf = (sessionId) => service('agents')?.get?.(sessionId) ?? null;
+
+  const injectMessage = (sessionId, from, text, kind = 'complete') => {
+    const agent = agentOf(sessionId);
+    if (!agent || typeof agent.followup !== 'function') {
+      logger.warn(`[dsh-cow] 找不到可注入的原会话 ${sessionId || '(空)'}，${kind} 消息未送达 Agent`);
+      activity.add({ kind: 'message', text: `无法把 ${from} 的 ${kind} 消息注入原会话`, peer: from, status: 'dropped' });
+      return false;
     }
-    return null;
-  };
-
-  // 本机作为子 DSH 时，正在执行/排队的入站任务（含远端 taskId 与队列位置）。
-  const inboundTasks = () => {
-    const rows = [];
-    for (const [localTaskId, remoteTaskId] of inboundLocal) {
-      const task = manager.get(localTaskId);
-      if (!task) continue;
-      const snapshot = manager.snapshot(localTaskId);
-      rows.push({
-        ...snapshot,
-        taskId: remoteTaskId,
-        localTaskId,
-        from: inboundFrom.get(localTaskId) ?? '',
-        prompt: task.prompt ?? '',
-        queuePosition: manager.queuePosition(localTaskId),
-      });
-    }
-    return rows.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
-  };
-
-  // 远端提问：子端 cow_ask 发 task.question，上级 cow_answer 回 task.answer。
-  const pendingQuestions = new Map();
-  const askQuestion = ({ taskId, question, options = [], timeoutSec = 300 }) => new Promise((resolve) => {
-    const parent = peers.list().find((peer) => peer.relation === 'parent');
-    if (!parent) {
-      resolve({ ok: false, error: '本机没有可直接提问的上级' });
-      return;
-    }
-    const questionId = `q_${randomBytes(6).toString('base64url')}`;
-    const sent = channel.send(parent.label, {
-      type: 'task.question',
-      payload: { taskId, questionId, question: String(question ?? '').slice(0, 2000), options, timeoutSec },
-    });
-    if (!sent.delivered) {
-      resolve({ ok: false, error: `上级 ${parent.label} 未连接，问题没有送达` });
-      return;
-    }
-    const waitMs = Math.min(300, Math.max(10, Number(timeoutSec) || 300)) * 1000;
-    const timer = setTimeout(() => {
-      pendingQuestions.delete(questionId);
-      resolve({ ok: false, error: `等待上级回答超时（${Math.round(waitMs / 1000)}s）` });
-    }, waitMs);
-    timer.unref?.();
-    pendingQuestions.set(questionId, { resolve, timer, taskId, questionId, at: new Date().toISOString() });
-  });
-  const resolveQuestionAnswer = (payload) => {
-    const questionId = String(payload?.questionId ?? '');
-    const pending = pendingQuestions.get(questionId);
-    if (!pending) return;
-    pendingQuestions.delete(questionId);
-    clearTimeout(pending.timer);
-    pending.resolve({ ok: true, answer: String(payload?.answer ?? ''), questionId });
-  };
-  const claimTask = (taskId) => {
-    if (!taskId) throw new Error('taskId 不能为空');
-    const parent = peers.list().find((peer) => peer.relation === 'parent');
-    if (!parent) throw new Error('本机没有可直接认领的上级');
-    const sent = channel.send(parent.label, { type: 'task.claim', payload: { taskId } });
-    if (!sent.delivered) throw new Error('认领请求未送达主 DSH');
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        pendingClaims.delete(taskId);
-        reject(new Error('等待主 DSH 下发任务正文超时'));
-      }, 60_000);
-      timer.unref?.();
-      pendingClaims.set(taskId, { resolve, reject, timer });
-      logger.info?.(`[dsh-cow] 已发送任务认领 ${taskId}，等待正文`);
-    });
-  };
-
-  const originForSession = () => [...chatOrigins.values()][0] ?? '';
-
-  const postChatQuestion = ({ question, options = [] } = {}, sessionId = '') => {
-    const parent = peers.list().find((peer) => peer.relation === 'parent');
-    if (!parent) throw new Error('本机没有可直接询问的上级');
-    const id = `q_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-    const originSessionId = [...chatOrigins.values()][0] ?? '';
-    const sent = channel.send(parent.label, { type: 'chat.question', payload: { id, question, options, originSessionId } });
-    if (!sent.delivered) throw new Error('提问未送达主 DSH');
-    if (sessionId) chatQuestionSessions.set(id, sessionId);
-    return { id, status: 'sent', question, options };
-  };
-
-  const askMessage = ({ question, options = [], timeoutSec = 300 } = {}) => {
-    const parent = peers.list().find((peer) => peer.relation === 'parent');
-    if (!parent) return Promise.reject(new Error('本机没有可直接询问的上级'));
-    const id = `q_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-    const originSessionId = [...chatOrigins.values()][0] ?? '';
-    const sent = channel.send(parent.label, { type: 'chat.question', payload: { id, question, options, originSessionId } });
-    if (!sent.delivered) return Promise.reject(new Error('提问未送达主 DSH'));
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        pendingChatQuestions.delete(id);
-        reject(new Error('等待主 DSH 回答超时'));
-      }, Math.max(5, Number(timeoutSec) || 300) * 1000);
-      timer.unref?.();
-      pendingChatQuestions.set(id, { resolve, reject, timer });
-    });
-  };
-
-  const answerChatQuestion = (questionId, answer) => {
-    const peer = outgoingChatQuestions.get(questionId);
-    if (!peer) throw new Error('没有找到这条待回答的询问');
-    outgoingChatQuestions.delete(questionId);
-    const sent = channel.send(peer, { type: 'chat.answer', payload: { questionId, answer: String(answer ?? '') } });
-    if (!sent.delivered) throw new Error('回答未送达子 DSH');
-    return { questionId, answer: String(answer ?? '') };
-  };
-
-  const taskIdForSession = (sessionId) => {
-    if (!sessionId) return '';
-    for (const task of manager.tasks.values()) {
-      if (task.sessionId !== sessionId) continue;
-      const remoteTaskId = inboundLocal.get(task.taskId);
-      if (remoteTaskId) return remoteTaskId;
-    }
-    return '';
-  };
-
-
-
-  const tasks = new CowTasks({ channel: null, instance, logger, home, activity, queueTtlMs: resolve().queueTtlMinutes * 60_000, retentionDays: resolve().taskRetentionDays, autoContinueOnReconnect: resolve().autoContinueOnReconnect, askConcurrency: resolve().askConcurrency, askFullTakeover: resolve().askFullTakeover });
-  const injectChat = (sessionId, from, text) => {
-    const agents = ctx.get?.('agents', false);
-    const agent = agents?.get?.(sessionId);
-    if (!agent || typeof agent.followup !== 'function') return false;
-    agent.followup({
-      id: randomBytes(8).toString('hex'),
-      role: 'user',
-      content: [{ type: 'text', text: `[COW 对话回复] ${from}\n\n${text}` }],
-      source: { kind: 'notification' },
-    });
-    return true;
-  };
-
-  const injectAsk = (sessionId, text) => {
-    const agents = ctx.get?.('agents', false);
-    const agent = agents?.get?.(sessionId);
-    if (!agent || typeof agent.followup !== 'function') return false;
     agent.followup({
       id: randomBytes(8).toString('hex'),
       role: 'user',
       content: [{ type: 'text', text }],
-      source: { kind: 'cow-ask' },
+      source: { kind: 'notification' },
     });
+    activity.add({ kind: 'message', text: `收到 ${from} 的 ${kind} 消息，已注入原会话`, peer: from, status: 'injected' });
     return true;
-  };
-  tasks.setAskPolicy({ concurrency: resolve().askConcurrency, fullTakeover: resolve().askFullTakeover });
-  tasks.setAskInjector(injectAsk);
-
-  const handleInboundTask = async (payload, from) => {
-    const remoteTaskId = String(payload?.taskId ?? '');
-    if (!remoteTaskId) return;
-    // at-least-once 重发：同一个远端 taskId 已经在跑/排队时不重复建任务。
-    if (inbound.has(remoteTaskId)) {
-      channel.send(from, { type: 'task.progress', payload: { taskId: remoteTaskId, text: '任务已在本机排队或执行中，忽略重复下发' } });
-      return;
-    }
-    const promptText = payload?.claimTool
-      ? `[dsh-cow] 本任务已通过 ${payload.claimTool} 认领（任务 ID ${String(payload?.taskId ?? '')}）。不要再用其他插件的任务工具。\n\n${String(payload?.prompt ?? '')}`
-      : payload?.prompt;
-    const validated = validateCreateTask({
-      taskId: payload?.taskId,
-      prompt: promptText,
-      title: payload?.title,
-      cwd: payload?.cwd,
-      timeoutSec: payload?.timeoutSec,
-      caller: payload?.caller,
-      workspaceName: payload?.workspaceName,
-    });
-    if (!validated.ok) {
-      channel.send(from, { type: 'task.result', payload: { taskId: remoteTaskId, status: 'failed', error: validated.message } });
-      return;
-    }
-    let localTaskId = '';
-    try {
-      const snapshot = manager.create(validated.value, { callerLabel: payload?.callerLabel || from });
-      localTaskId = snapshot.taskId;
-      inbound.set(remoteTaskId, snapshot.taskId);
-      inboundLocal.set(snapshot.taskId, remoteTaskId);
-      inboundFrom.set(snapshot.taskId, from);
-      const queued = snapshot.status === 'queued';
-      channel.send(from, {
-        type: 'task.progress',
-        payload: {
-          taskId: remoteTaskId,
-          status: snapshot.status,
-          position: queued ? manager.queuePosition(snapshot.taskId) : 0,
-          text: queued ? '已进入本机任务队列，等待前面的任务完成' : '已接受任务，开始执行',
-        },
-      });
-      const done = await manager.waitTerminal(snapshot.taskId);
-      logger.info?.(`[dsh-cow] 本地任务 ${snapshot.taskId} 结束：${done.status} / ${JSON.stringify(done.error)}`);
-      channel.send(from, {
-        type: 'task.result',
-        payload: {
-          taskId: remoteTaskId,
-          status: done.status,
-          summary: done.summary ?? '',
-          error: done.error ? (done.error.message ?? String(done.error)) : null,
-          artifacts: done.artifacts ?? [],
-        },
-      });
-    } catch (error) {
-      const message = error?.message ?? error?.code ?? JSON.stringify(error);
-      channel.send(from, { type: 'task.result', payload: { taskId: remoteTaskId, status: 'failed', error: String(message) } });
-    } finally {
-      inbound.delete(remoteTaskId);
-      if (localTaskId) {
-        inboundLocal.delete(localTaskId);
-        inboundFrom.delete(localTaskId);
-      }
-    }
-  };
-
-  const handleInboundContinue = (payload, from) => {
-    const remoteTaskId = String(payload?.taskId ?? '');
-    if (!remoteTaskId) return;
-    const localTaskId = inbound.get(remoteTaskId) || (manager.get(remoteTaskId) ? remoteTaskId : '');
-    if (!localTaskId) {
-      channel.send(from, { type: 'task.result', payload: { taskId: remoteTaskId, status: 'failed', error: '子端没有找到这个任务，无法继续' } });
-      return;
-    }
-    try {
-      manager.continueTask(localTaskId, String(payload?.message ?? '继续完成当前任务。'));
-      channel.send(from, { type: 'task.progress', payload: { taskId: remoteTaskId, status: 'running', text: '已收到继续指令，正在继续执行' } });
-    } catch (error) {
-      channel.send(from, { type: 'task.progress', payload: { taskId: remoteTaskId, status: 'running', text: `继续指令未生效：${error?.message ?? error}` } });
-    }
   };
 
   const onEvent = ({ from, event }) => {
     const type = String(event?.type ?? '');
     const payload = event?.payload ?? {};
-    if (type === 'chat.answer') {
-      const questionId = String(payload?.questionId ?? '');
-      const pending = pendingChatQuestions.get(questionId);
-      if (pending) {
-        clearTimeout(pending.timer);
-        pendingChatQuestions.delete(questionId);
-        pending.resolve({ questionId, answer: String(payload?.answer ?? '') });
-      }
-      const sessionId = chatQuestionSessions.get(questionId);
-      chatQuestionSessions.delete(questionId);
-      if (sessionId) {
-        try {
-          const local = [...manager.tasks.values()].find((task) => task.sessionId === sessionId);
-          const agent = local?.agent ?? ctx.get?.('agents', false)?.get?.(sessionId);
-          if (agent && typeof agent.followup === 'function') {
-            agent.followup({ id: randomBytes(8).toString('hex'), role: 'user', content: [{ type: 'text', text: `[COW 回复] ${String(payload?.answer ?? '')}` }], source: { kind: 'notification' } });
-            logger.info?.(`[dsh-cow] 已把回复注入会话 ${sessionId}，开启新一轮`);
-          } else {
-            logger.warn?.(`[dsh-cow] 找不到可继续的会话 agent：${sessionId}`);
-          }
-        } catch (error) {
-          logger.warn?.(`[dsh-cow] 注入回复失败：${error?.message ?? error}`);
-        }
-      }
+    if (type === 'msg.dispatch') {
+      void bridge.dispatch(payload, from).catch((error) => {
+        logger.warn(`[dsh-cow] 处理 ${from} 的 dispatch 失败：${error?.message ?? error}`);
+      });
+      activity.add({ kind: 'message', text: `收到 ${from} 的 dispatch：${String(payload.text ?? '').slice(0, 80)}`, peer: from, status: 'received' });
       return;
     }
-    if (type === 'chat.question') {
-      const questionId = String(payload?.id ?? '');
-      const text = String(payload?.question ?? '');
-      const origin = String(payload?.originSessionId ?? '');
-      if (!questionId || !text) return;
-      outgoingChatQuestions.set(questionId, from);
-      injectChat(origin, from, `${text}\n\n请用 cow_send(peer="${from}", message="...", replyTo="${questionId}") 回答。`);
+    if (type === 'msg.answer') {
+      void bridge.handleAnswer(payload, from).catch((error) => {
+        logger.warn(`[dsh-cow] 处理 ${from} 的 answer 失败：${error?.message ?? error}`);
+      });
       return;
     }
-    if (type === 'chat.message') {
-      const messageId = String(payload?.id ?? '');
-      const text = String(payload?.text ?? '');
-      const origin = String(payload?.originSessionId ?? '');
-      if (!messageId || !text) return;
-      const sender = peers.get(from);
-      if (sender?.relation === 'child') {
-        injectChat(origin, from, text);
-        activity.add({ kind: 'chat', text: `${from} 通知：${text.slice(0, 160)}`, peer: from, status: 'replied' });
-        return;
-      }
-      const workspaceName = String(payload?.workspaceName ?? '').trim();
-      const chatKey = `${from}::${workspaceName}::${origin}`;
-      const state = chatSessions.get(chatKey) ?? { sessionId: null };
-      chatSessions.set(chatKey, state);
-      chatOrigins.set(chatKey, origin);
-      chatSeq += 1;
-      const taskId = `chat_${from.replace(/[^\w.-]+/g, '_')}_${Date.now().toString(36)}_${chatSeq}`;
-      try {
-        let chatCwd = '';
-        if (workspaceName) {
-          const root = normalizeRoots(resolve().allowedRoots)[0];
-          if (root) {
-            chatCwd = join(root, workspaceName.replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '-').slice(0, 80));
-            try { mkdirSync(chatCwd, { recursive: true }); } catch { chatCwd = ''; }
-          }
-        }
-        const local = manager.create({
-          taskId,
-          prompt: text,
-          title: `${workspaceName ? `[${workspaceName}] ` : ''}与 ${from} 对话`,
-          cwd: chatCwd,
-          timeoutSec: 3600,
-          rawPrompt: true,
-          sessionId: state.sessionId,
-        }, { callerLabel: from });
-        inbound.set(taskId, local.taskId);
-        inboundLocal.set(local.taskId, taskId);
-        void manager.waitTerminal(local.taskId).then((done) => {
-          if (done.sessionId) state.sessionId = done.sessionId;
-          channel.send(from, {
-            type: 'chat.reply',
-            payload: {
-              replyTo: messageId,
-              originSessionId: origin,
-              text: done.summary ?? done.error?.message ?? '',
-              status: done.status,
-            },
-          });
-        }).catch((error) => {
-          channel.send(from, { type: 'chat.reply', payload: { replyTo: messageId, originSessionId: origin, text: String(error?.message ?? error), status: 'failed' } });
-        }).finally(() => {
-          inbound.delete(taskId);
-          inboundLocal.delete(local.taskId);
-        });
-      } catch (error) {
-        channel.send(from, { type: 'chat.reply', payload: { replyTo: messageId, originSessionId: origin, text: String(error?.message ?? error), status: 'failed' } });
-      }
-      return;
-    }
-    if (type === 'task.offer') {
-      const taskId = String(payload?.taskId ?? '');
-      logger.info?.(`[dsh-cow] 收到任务邀请 ${taskId}，创建认领会话`);
-      if (!taskId) return;
-      offeredTasks.add(taskId);
-      try {
-        const local = manager.create({
-          taskId,
-          prompt: `这是一条 dsh-cow 任务邀请，任务 ID：${taskId}。请先调用 cow_claim 工具认领该任务，然后开始执行。`,
-          title: String(payload?.title ?? '').trim() || `认领任务 ${taskId}`,
-          cwd: '',
-          timeoutSec: 3600,
-          rawPrompt: true,
-        }, { callerLabel: from });
-        inbound.set(taskId, local.taskId);
-        inboundLocal.set(local.taskId, taskId);
-        void manager.waitTerminal(local.taskId).then((done) => {
-          channel.send(from, {
-            type: 'task.result',
-            payload: {
-              taskId,
-              status: done.status,
-              summary: done.summary ?? '',
-              error: done.error ? (done.error.message ?? String(done.error)) : null,
-              artifacts: done.artifacts ?? [],
-            },
-          });
-        }).catch((error) => {
-          channel.send(from, { type: 'task.result', payload: { taskId, status: 'failed', error: String(error?.message ?? error) } });
-        }).finally(() => {
-          inbound.delete(taskId);
-          inboundLocal.delete(local.taskId);
-        });
-      } catch (error) {
-        logger.warn?.(`[dsh-cow] 创建认领会话失败：${error?.message ?? error}`);
-      }
-      return;
-    }
-    if (type === 'task.claim.abort') {
-      const taskId = String(payload?.taskId ?? '');
-      const pending = pendingClaims.get(taskId);
-      if (pending) {
-        clearTimeout(pending.timer);
-        pendingClaims.delete(taskId);
-        pending.reject(new Error(String(payload?.reason ?? '认领被拒绝')));
-      }
-      offeredTasks.delete(taskId);
-      logger.info?.(`[dsh-cow] 任务认领被拒绝：${taskId} ${String(payload?.reason ?? '')}`);
-      return;
-    }
-    if (type === 'task.body') {
-      const taskId = String(payload?.taskId ?? '');
-      logger.info?.(`[dsh-cow] 收到任务正文 ${taskId}，交给 cow_claim`);
-      const pending = pendingClaims.get(taskId);
-      if (pending) {
-        clearTimeout(pending.timer);
-        pendingClaims.delete(taskId);
-        pending.resolve({
-          ok: true,
-          taskId,
-          prompt: String(payload?.prompt ?? ''),
-          cwd: String(payload?.cwd ?? ''),
-          title: String(payload?.title ?? ''),
-          timeoutSec: Number(payload?.timeoutSec) || 3600,
-        });
-      }
-      offeredTasks.delete(taskId);
-      return;
-    }
-    if (type === 'task.assign') {
-      void handleInboundTask(payload, from);
-      return;
-    }
-    if (type === 'task.continue') {
-      handleInboundContinue(payload, from);
-      return;
-    }
-    if (type === 'task.cancel') {
-      const local = inbound.get(String(payload?.taskId ?? ''));
-      if (local) manager.cancel(local, String(payload?.reason ?? '对端取消'));
-      return;
-    }
-    if (type === 'task.answer') {
-      resolveQuestionAnswer(payload);
-      return;
-    }
-    if (type === 'chat.reply') {
-      const text = String(payload?.text ?? '');
-      const origin = String(payload?.originSessionId ?? '');
-      if (origin && text) injectChat(origin, from, text);
-      activity.add({ kind: 'chat', text: `${from} 回复：${text.slice(0, 160)}`, peer: from, status: 'replied' });
-      return;
-    }
-    if (type === 'task.claim' || type === 'task.progress' || type === 'task.result' || type === 'task.question') {
-      tasks.onEvent({ from, event: type, payload });
+    if (type === 'msg.complete' || type === 'msg.ask') {
+      router.handle(from, event);
       return;
     }
     if (type.startsWith('file.')) {
@@ -599,7 +156,8 @@ export function apply(ctx, rawConfig = {}) {
       return;
     }
     if (type === 'peer.message') {
-      logger.info?.(`[dsh-cow] 收到 ${from} 的消息：${String(payload?.message ?? '').slice(0, 200)}`);
+      logger.info(`[dsh-cow] 收到 ${from} 的消息：${String(payload?.message ?? '').slice(0, 200)}`);
+      activity.add({ kind: 'message', text: `收到 ${from} 的协作消息`, peer: from, status: 'received' });
     }
   };
 
@@ -623,11 +181,7 @@ export function apply(ctx, rawConfig = {}) {
         relation: 'child',
         capabilitySummary: String(node?.description ?? ''),
       });
-      // hello 到达时 peers 里可能还没有记录，入站连接先挂在 instanceId 上；
-      // 这里把它归位到 peer.label，保证 UI/工具按名字能查到连接状态。
       try { channel.rebind(existing?.label || instanceId, peerLabel); } catch { /* 忽略 */ }
-      tasks.reconcileUpgrade(peerLabel, node?.version);
-      tasks.flushQueue(peerLabel);
       return;
     }
     const parent = peers.list().find((peer) => peer.instanceId === instanceId) ?? peers.list().find((peer) => peer.relation === 'parent');
@@ -637,52 +191,89 @@ export function apply(ctx, rawConfig = {}) {
         instanceId: instanceId || parent.instanceId,
         capabilitySummary: String(node?.description ?? parent.capabilitySummary ?? ''),
       });
-      tasks.flushQueue(parent.label);
     }
   };
 
-  const channel = new Channel({
-    ctx,
-    resolveConfig: resolve,
-    peers,
-    instance,
-    authorize,
-    onEvent,
-    onPeer,
-    logger,
-    home,
-  });
-  tasks.channel = channel;
-  channel.onOffline = (label) => { tasks.peerOffline(label); };
-  const files = new FileExchange({ instance, channel, peers, resolveConfig: resolve, logger, activity });
-  const upgrade = createUpgradeService({
-    root: fileURLToPath(new URL('..', import.meta.url)),
-    pkg: { ...PACKAGE, version: currentPackageVersion() },
-    files,
-    tasks,
-    peers,
-    channel,
-    home,
-    logger,
-    timeoutMs: resolve().maxTaskMinutes * 60_000,
-  });
-  const disposeApproval = registerApprovalTakeover({
-    ctx,
-    askQuestion,
-    taskIdForSession,
-    hasParent: () => peers.list().some((peer) => peer.relation === 'parent' && channel.status(peer.label).state === 'connected'),
-    logger,
-  });
-  tasks.files = files;
-  const doctor = createDoctor({ instance, channel, peers, tasks, manager, files, home, resolveConfig: resolve, startedAt: Date.now(), logger });
+  channel = new Channel({ ctx, resolveConfig: resolve, peers, instance, authorize, onEvent, onPeer, logger, home });
+  files = new FileExchange({ instance, channel, peers, resolveConfig: resolve, logger, activity });
 
-  /** 确保「上级」peer 存在，让通道主动拨号。 */
+  /** 新会话选 preset：web/desktop 的工具体在 preset 里，不选可能没有 bash。 */
+  const selectPreset = async (agent) => {
+    const presets = service('agentPresets');
+    const presetId = resolve().agentPreset || presets?.defaultId || '';
+    if (!presets?.select || !presetId) return;
+    await presets.select(agent, presetId);
+    logger.info?.(`[dsh-cow] dispatch 子会话使用 agent preset: ${presetId}`);
+  };
+
+  const attachWorkspace = async (session, cwd, workspaceName) => {
+    const registry = service('workspaceRegistry');
+    if (!registry || typeof registry.resolveByPath !== 'function' || !cwd) return;
+    try {
+      let workspace = await registry.resolveByPath(cwd);
+      if (!workspace && typeof registry.create === 'function') {
+        workspace = await registry.create(cwd, workspaceName || basename(cwd));
+      }
+      if (!workspace) return;
+      if (workspaceName && workspace.title !== workspaceName && typeof workspace.setTitle === 'function') {
+        await workspace.setTitle(workspaceName);
+      }
+      if (session?.id && !(workspace.sessionIds ?? []).includes(session.id)) {
+        await workspace.attachSession(session.id);
+      }
+    } catch (error) {
+      logger.warn?.(`[dsh-cow] 会话挂到工作区失败：${error?.message ?? error}`);
+    }
+  };
+
+  const finishTurn = async (agent) => {
+    const sessions = service('sessions');
+    const subagents = service('subagents');
+    await sessions?.flush?.(agent.session);
+    while (subagents?.waitForChildren ? await subagents.waitForChildren(agent) : false) {
+      await agent.whenIdle?.();
+    }
+  };
+
+  const agentOptions = () => {
+    const selection = service('agentDefaultModel')?.currentSelection?.() ?? {};
+    const options = {};
+    if (selection.provider) options.provider = selection.provider;
+    if (selection.model) options.model = selection.model;
+    if (selection.reasoningEffort) options.reasoningEffort = selection.reasoningEffort;
+    return options;
+  };
+
+  bridge = new MessageBridge({
+    channel,
+    agents: {
+      get: (sessionId) => service('agents')?.get?.(sessionId) ?? null,
+      create: (options) => service('agents')?.create?.(options),
+    },
+    logger,
+    agentOptions,
+    workspacePath: (workspace) => resolveChildCwd({ workspace, roots: normalizeRoots(resolve().allowedRoots) }),
+    prepareAgent: async (agent, envelope, cwd) => {
+      await selectPreset(agent);
+      const titleService = service('sessionTitle');
+      const title = String(envelope?.session?.title ?? '').trim();
+      if (titleService?.rename && title && agent?.session) {
+        try { titleService.rename(agent.session, `[COW] ${title}`); } catch (error) {
+          logger.warn?.(`[dsh-cow] 设置子会话标题失败：${error?.message ?? error}`);
+        }
+      }
+      await attachWorkspace(agent?.session, cwd, envelope?.workspace?.name);
+    },
+    finishTurn,
+  });
+
+  router = new MessageRouter({ channel, inject: injectMessage, logger });
+
   const ensureParentPeer = () => {
     const url = String(instance.parentUrl ?? '').trim();
     const password = String(instance.parentPassword ?? '');
     if (!url || !password) return null;
     const existing = peers.list().find((peer) => peer.relation === 'parent');
-    // 一个节点只能有一个上级：切换上级时清掉旧记录（避免并存的父节点）。
     for (const peer of peers.list()) {
       if (peer.relation === 'parent' && peer.label !== existing?.label) {
         try { peers.remove(peer.label); } catch { /* 忽略 */ }
@@ -718,38 +309,47 @@ export function apply(ctx, rawConfig = {}) {
     setJoinPassword(home, password);
     Object.assign(instance, loadIdentity({ home }));
     instance.version = currentPackageVersion();
-  if (!instance.uuid) instance.uuid = '';
-  // 节点名称以配置为准（留空时 resolve 会给计算机名），保证 hello 上报的是当前名称。
-  const configuredName = resolve().displayName;
-  if (configuredName) instance.displayName = configuredName;
+    if (!instance.uuid) instance.uuid = '';
   };
 
-  let carrier = null;
   const applySettings = async () => {
     const cfg = resolve();
-    manager.setAllowedRoots(normalizeRoots(cfg.allowedRoots));
     ensureParentPeer();
     carrier?.restart({ listenHost: cfg.listenHost, listenPort: cfg.listenPort });
     channel.tick?.();
-    tasks.queueTtlMs = Math.max(60_000, cfg.queueTtlMinutes * 60_000);
-    tasks.retentionDays = cfg.taskRetentionDays;
-    tasks.autoContinueOnReconnect = cfg.autoContinueOnReconnect;
-    tasks.setAskPolicy({ concurrency: cfg.askConcurrency, fullTakeover: cfg.askFullTakeover });
-    tasks.setAskInjector(injectAsk);
-    tasks.prune?.();
-    upgrade?.setTimeoutMs?.(cfg.maxTaskMinutes * 60_000);
   };
+
+  try { ensureDir(DEFAULT_ALLOWED_ROOT); } catch { /* 默认数据目录创建失败时保留给用户手动处理 */ }
+
+  const doctorFn = createDoctor({
+    instance,
+    channel,
+    peers,
+    files,
+    activity,
+    router,
+    home,
+    resolveConfig: resolve,
+    startedAt: Date.now(),
+    logger,
+  });
+  doctor = doctorFn;
+
+  const disposeApproval = registerApprovalTakeover({
+    ctx,
+    ask: ({ sessionId, question, options, timeoutSec }) => bridge.ask({ sessionId, question, options, timeoutSec }),
+    hasParent: () => peers.list().some((peer) => peer.relation === 'parent' && channel.status(peer.label).state === 'connected'),
+    logger,
+  });
 
   const adminHandlers = createAdminHandlers({
     instance,
     resolveConfig: resolve,
     peers,
     channel,
-    tasks,
-    currentInbound,
-    inboundTasks,
+    router,
+    bridge,
     doctor,
-    upgrade,
     activity,
     passwordConfigured,
     setPassword,
@@ -768,29 +368,11 @@ export function apply(ctx, rawConfig = {}) {
       instance,
       channel,
       peers,
-      tasks,
-      currentInbound,
       files,
-      upgrade,
-      askQuestion,
-      askMessage,
-      originForSession,
-      postChatQuestion,
-      answerChatQuestion,
-      taskIdForSession,
-      claimTask,
       doctor,
-      taskTimeoutSec: resolve().maxTaskMinutes * 60,
-      workspaceTitleForSession: (sessionId) => {
-        if (!sessionId) return '';
-        try {
-          const registry = ctx.get?.('workspaceRegistry', false);
-          const workspace = registry?.list?.().find((item) => item.sessionIds?.includes(sessionId));
-          return workspace?.title ?? '';
-        } catch {
-          return '';
-        }
-      },
+      bridge,
+      router,
+      sessionInfoFor: (session) => sessionInfo(ctx, session),
     }),
   );
 
@@ -805,7 +387,7 @@ export function apply(ctx, rawConfig = {}) {
       return `- ${status.state === 'connected' ? '[在线]' : '[离线]'} ${peer.label}（${peer.relation === 'parent' ? '上级' : '下级'}）${status.node?.description ? `：${String(status.node.description).slice(0, 160)}` : ''}`;
     });
     lines.push(...(conns.length ? ['已连接的节点：', ...conns] : ['当前没有已连接的节点。']));
-    lines.push('派消息用 cow_send（写清 peer、message）；子 DSH 用 cow_send(kind="question") 提问，主 DSH 用 cow_send(replyTo=...) 回答。文件交换用 cow_send_file / cow_receive_file / cow_pull_dir（只限直接下级，允许根目录内 sha256 校验）；文件策略用 cow_set_file_policy 调整。');
+    lines.push('派消息用 cow_send(peer, message)：消息直接进入对方会话输入队列，立即返回，不等待、不轮询；对方回合结束会把 complete 通知注入你派发时的原会话。子 DSH 用 cow_send(kind="ask") 提问/审批，主 DSH 用 cow_send(replyTo=questionId) 回答，回答会回到同一子会话。文件交换用 cow_send_file / cow_receive_file / cow_pull_dir（只限直接下级，允许根目录内 sha256 校验）；文件策略用 cow_set_file_policy 调整。');
     return lines.join('\n');
   };
 
@@ -900,7 +482,7 @@ export function apply(ctx, rawConfig = {}) {
         logger.info(
           `[dsh-cow] 已启动 ${instance.displayName || instance.instanceId} v${instance.version}；` +
             `监听 ${cfg.listenHost}:${cfg.listenPort}；已连接 ${channel.connectedCount()}；` +
-            `allowedRoots ${manager.roots().length} 项`,
+            `allowedRoots ${normalizeRoots(cfg.allowedRoots).length} 项`,
         );
       };
       void boot().catch((error) => logger.error(`[dsh-cow] 启动失败：${error?.message ?? error}`));
@@ -909,11 +491,11 @@ export function apply(ctx, rawConfig = {}) {
         channel.stop();
         carrier?.dispose();
         carrier = null;
-        void manager.dispose();
+        bridge?.dispose();
+        router?.dispose();
       };
     },
     'dsh-cow: lifecycle',
   );
 
-  void startedAt;
 }

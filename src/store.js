@@ -15,10 +15,6 @@ export function coDshDir(home = resolveHomeDir()) {
   return join(home, 'cow');
 }
 
-export function tasksDir(home = resolveHomeDir()) {
-  return join(coDshDir(home), 'tasks');
-}
-
 export function readJson(file, fallback = null) {
   try {
     const text = readFileSync(file, 'utf8');

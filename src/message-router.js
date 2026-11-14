@@ -2,29 +2,50 @@
  * 主端消息路由：只负责把子 DSH 的 complete/ask 注入原会话，把 answer 发回子端。
  * 不维护任务、结果表或轮询队列。
  */
+const SEEN_LIMIT = 512;
+
 export class MessageRouter {
   constructor({ channel, inject, logger }) {
     this.channel = channel;
     this.inject = inject;
     this.logger = logger ?? console;
     this.questions = new Map(); // questionId -> { peer, envelope }
+    this.seen = new Set();
+  }
+
+  #firstSeen(messageId) {
+    const id = String(messageId ?? '');
+    if (!id) return true;
+    if (this.seen.has(id)) return false;
+    this.seen.add(id);
+    if (this.seen.size > SEEN_LIMIT) this.seen.delete(this.seen.values().next().value);
+    return true;
   }
 
   handle(from, frame) {
     const type = String(frame?.type ?? '');
     const payload = frame?.payload ?? {};
     if (type === 'msg.complete') {
+      if (!this.#firstSeen(payload?.messageId)) return true;
       const origin = payload?.session?.id;
-      if (origin) this.inject(origin, from, `[COW 完成] ${payload.text ?? ''}`, 'complete');
+      const text = String(payload?.text ?? '');
+      if (origin) this.inject(origin, from, `[COW 完成] 来自 ${from}${payload?.replyTo ? `（回复消息 ${payload.replyTo}）` : ''}\n\n${text}`, 'complete', payload);
       return true;
     }
     if (type === 'msg.ask') {
       const questionId = payload?.questionId ?? payload?.messageId;
       if (!questionId) return false;
+      if (!this.#firstSeen(payload?.messageId ?? questionId)) return true;
       this.questions.set(questionId, { peer: from, envelope: payload });
       const origin = payload?.session?.id;
       if (origin) {
-        this.inject(origin, from, `[COW 询问] ${payload.text ?? ''}\n\nquestionId: ${questionId}`, 'ask');
+        this.inject(
+          origin,
+          from,
+          `[COW 询问] 来自 ${from}\n\n${payload.text ?? ''}\n\n用 cow_send(peer="${from}", replyTo="${questionId}", message="…") 回答。`,
+          'ask',
+          payload,
+        );
       }
       return true;
     }
@@ -32,13 +53,31 @@ export class MessageRouter {
   }
 
   answer(questionId, text) {
-    const pending = this.questions.get(questionId);
+    const id = String(questionId ?? '');
+    const pending = this.questions.get(id);
     if (!pending) throw new Error('没有找到待回答的询问');
-    this.questions.delete(questionId);
-    this.channel.send(pending.peer, {
+    const sent = this.channel.send(pending.peer, {
       type: 'msg.answer',
-      payload: { ...pending.envelope, kind: 'answer', replyTo: questionId, text: String(text ?? '') },
+      payload: { ...pending.envelope, kind: 'answer', replyTo: id, text: String(text ?? '') },
     });
-    return { questionId, status: 'sent' };
+    if (!sent?.delivered && !sent?.queued) throw new Error('回答未送达：未知节点或通道不可用');
+    this.questions.delete(id);
+    return { questionId: id, status: sent.delivered ? 'sent' : 'queued' };
+  }
+
+  pending() {
+    return [...this.questions.entries()].map(([questionId, item]) => ({
+      questionId,
+      peer: item.peer,
+      question: String(item.envelope?.text ?? ''),
+      options: item.envelope?.options ?? [],
+      session: item.envelope?.session?.id ?? '',
+      createdAt: item.envelope?.createdAt ?? '',
+    }));
+  }
+
+  dispose() {
+    this.questions.clear();
+    this.seen.clear();
   }
 }

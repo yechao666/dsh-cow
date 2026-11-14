@@ -18,25 +18,13 @@ export const EDITABLE_KEYS = [
   'probes',
   'autoDetect',
   'agentPreset',
-  'maxConcurrentTasks',
-  'maxQueuedTasks',
-  'maxTaskMinutes',
-  'queueTtlMinutes',
-  'taskRetentionDays',
-  'autoContinueOnReconnect',
-  'askConcurrency',
-  'askFullTakeover',
   'listenPort',
   'listenHost',
   'maxFileMB', 'maxConcurrentFiles',
-  'transport',
-  'haosBaseUrl',
-  'haosApiKey',
-  'relayPollSeconds',
 ];
 
-const BOOLEAN_KEYS = new Set(['serverEnabled', 'channelEnabled', 'autoDetect', 'allowCascade', 'autoContinueOnReconnect', 'askFullTakeover']);
-const NUMBER_KEYS = new Set(['maxConcurrentTasks', 'maxQueuedTasks', 'maxTaskMinutes', 'queueTtlMinutes', 'taskRetentionDays', 'askConcurrency', 'listenPort', 'maxFileMB', 'maxConcurrentFiles', 'relayPollSeconds']);
+const BOOLEAN_KEYS = new Set(['serverEnabled', 'channelEnabled', 'autoDetect']);
+const NUMBER_KEYS = new Set(['listenPort', 'maxFileMB', 'maxConcurrentFiles', 'capabilityRefreshMinutes']);
 
 let cache = { file: '', stamp: 0, value: null };
 

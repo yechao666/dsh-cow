@@ -1,5 +1,5 @@
 /**
- * cow 活动流：把任务、提问、文件传输、节点连接等事件汇总成一条时间线，
+ * cow 活动流：把消息、文件传输、节点连接等事件汇总成一条时间线，
  * 供设置页与「Cow 活动」侧边栏面板查看。只保留内存最近 N 条，不落盘。
  */
 const DEFAULT_LIMIT = 200;
@@ -14,7 +14,7 @@ export class ActivityLog {
 
   /**
    * 追加一条活动。
-   * @param {{kind?: string, text: string, peer?: string, taskId?: string, status?: string, detail?: object}} entry
+   * @param {{kind?: string, text: string, peer?: string, messageId?: string, status?: string, detail?: object}} entry
    */
   add(entry) {
     const item = {
@@ -23,7 +23,7 @@ export class ActivityLog {
       kind: String(entry?.kind ?? 'info').slice(0, 24),
       text: String(entry?.text ?? '').slice(0, 500),
       peer: String(entry?.peer ?? '').slice(0, 160),
-      taskId: String(entry?.taskId ?? '').slice(0, 120),
+      messageId: String(entry?.messageId ?? '').slice(0, 120),
       status: String(entry?.status ?? '').slice(0, 24),
       ...(entry?.detail && typeof entry.detail === 'object' ? { detail: entry.detail } : {}),
     };

@@ -2,9 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { MessageBridge } from '../src/message-bridge.js';
 
-function fakeEnv(id = 'w1') {
-  return { kind: 'dispatch', messageId: `m_${id}`, peer: 'F', text: 'hello', workspace: { id, name: 'A', path: '/a' }, session: { id: 's1', title: 'T' }, approvalMode: 'follow' };
+function fakeEnv(id = 'w1', seq = 1) {
+  return { kind: 'dispatch', messageId: `m_${id}_${seq}`, peer: 'F', text: 'hello', workspace: { id, name: 'A', path: '/a' }, session: { id: 's1', title: 'T' }, approvalMode: 'follow' };
 }
+
+const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 test('dispatch 进入固定子会话并自动 complete', async () => {
   const sent = [];
@@ -20,17 +22,18 @@ test('dispatch 进入固定子会话并自动 complete', async () => {
   const result = await bridge.dispatch(fakeEnv(), '主 DSH');
   assert.equal(result.status, 'sent');
   assert.equal(input.length, 1);
+  await tick();
   assert.equal(sent[0].frame.type, 'msg.complete');
-  assert.equal(sent[0].frame.payload.replyTo, 'm_w1');
+  assert.equal(sent[0].frame.payload.replyTo, 'm_w1_1');
   assert.equal(sent[0].frame.payload.text, 'done');
 });
 
 test('同一工作区+会话复用子会话，不同会话分开', async () => {
   const agents = { get: () => null, create: async ({ sessionId }) => ({ agent: { session: { seq: 0 }, followup() {}, whenIdle: async () => {} }, sessionId }) };
   const bridge = new MessageBridge({ channel: { send() {} }, agents, summarize: () => '', workspacePath: (ws) => ws.id });
-  const a = await bridge.dispatch(fakeEnv('w1'), '主 DSH');
-  const b = await bridge.dispatch(fakeEnv('w1'), '主 DSH');
-  const c = await bridge.dispatch({ ...fakeEnv('w1'), session: { id: 's2' } }, '主 DSH');
+  const a = await bridge.dispatch(fakeEnv('w1', 1), '主 DSH');
+  const b = await bridge.dispatch(fakeEnv('w1', 2), '主 DSH');
+  const c = await bridge.dispatch({ ...fakeEnv('w1', 3), session: { id: 's2' } }, '主 DSH');
   assert.equal(a.sessionId, b.sessionId);
   assert.notEqual(a.sessionId, c.sessionId);
 });
@@ -44,4 +47,34 @@ test('answer 注入同一子会话', async () => {
   assert.equal(result.status, 'sent');
   assert.equal(input.length, 1);
   assert.match(input[0].content[0].text, /允许一次/);
+});
+
+test('ask 只发消息不建任务，answer 兑现等待中的提问', async () => {
+  const frames = [];
+  const agent = { session: { seq: 0 }, followup() {}, whenIdle: async () => {} };
+  const bridge = new MessageBridge({
+    channel: { send: (peer, frame) => { frames.push({ peer, frame }); return { delivered: true }; } },
+    agents: { get: () => null, create: async ({ sessionId }) => ({ sessionId, agent }) },
+    workspacePath: (w) => w.id,
+  });
+  const dispatch = await bridge.dispatch(fakeEnv('w1', 9), '主 DSH');
+  const pending = bridge.ask({ sessionId: dispatch.sessionId, question: '要 A 还是 B？', options: ['A', 'B'], timeoutSec: 30 });
+  const ask = frames.find((item) => item.frame.type === 'msg.ask');
+  assert.ok(ask, '应该发出 msg.ask');
+  assert.equal(ask.frame.payload.options[0], 'A');
+  assert.equal(ask.frame.payload.session.id, 's1');
+  await bridge.handleAnswer({ ...ask.frame.payload, kind: 'answer', replyTo: ask.frame.payload.questionId, text: 'A' }, '主 DSH');
+  const result = await pending;
+  assert.equal(result.ok, true);
+  assert.equal(result.answer, 'A');
+});
+
+test('重复 messageId 不重复执行', async () => {
+  const input = [];
+  const agent = { session: { seq: 0 }, followup: (m) => input.push(m), whenIdle: async () => {} };
+  const bridge = new MessageBridge({ channel: { send() {} }, agents: { get: () => null, create: async ({ sessionId }) => ({ sessionId, agent }) }, workspacePath: (w) => w.id });
+  await bridge.dispatch(fakeEnv('w1', 1), '主 DSH');
+  const again = await bridge.dispatch(fakeEnv('w1', 1), '主 DSH');
+  assert.equal(again.status, 'duplicate');
+  assert.equal(input.length, 1);
 });

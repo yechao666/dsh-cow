@@ -39,8 +39,8 @@ export const Config = z.object({
     .volatile()
     .description('本实例对外展示的名字，其它 DSH 登记后会看到（留空用主机名）'),
 
-  // ── 入站：别的 DSH 把任务派给我 ──────────────────────────────
-  serverEnabled: z.boolean().default(true).volatile().description('接受其它 DSH 派来的任务'),
+  // ── 入站：别的 DSH 把消息派给我 ──────────────────────────────
+  serverEnabled: z.boolean().default(true).volatile().description('接受其它 DSH 派来的消息'),
   listenPort: z
     .number()
     .default(59999)
@@ -51,33 +51,16 @@ export const Config = z.object({
     .string()
     .default(DEFAULT_ALLOWED_ROOT)
     .volatile()
-    .description('允许远端任务使用的工作目录根，换行分隔。留空自动使用用户主目录下的 dsh-cow-root（由代码按平台解析）'),
-  maxConcurrentTasks: z.number().default(2).volatile().description('同时执行的远端任务上限'),
-  maxQueuedTasks: z.number().default(20).volatile().description('排队上限，超出直接拒绝'),
-  maxTaskMinutes: z.number().default(60).volatile().description('单个远端任务最长执行时间（分钟）'),
-  queueTtlMinutes: z.number().default(120).volatile().description('子端离线时任务在队列中保留的分钟数'),
+    .description('远端消息派来的会话允许使用的工作目录根，换行分隔。留空自动使用用户主目录下的 dsh-cow-root（由代码按平台解析）'),
   maxFileMB: z.number().default(50).volatile().description('单个交换文件的上限（MB）'),
   maxConcurrentFiles: z.number().default(4).volatile().description('同时进行的文件传输上限'),
-  taskRetentionDays: z.number().default(3).volatile().description('任务记录保留天数'),
-  autoContinueOnReconnect: z.boolean().default(true).volatile().description('子端重连后自动发送继续指令'),
-  askConcurrency: z.number().default(2).volatile().description('主 DSH 同时处理的询问数量（审批/提问）'),
-  askFullTakeover: z.boolean().default(true).volatile().description('完全接管子 DSH 的审批与提问，由主 DSH 自动决定'),
   agentPreset: z
     .string()
     .default('')
     .volatile()
-    .description('远端任务使用哪个 agent preset（留空用 profile 默认；不选 preset 的会话可能没有 bash 等工具）'),
-  transport: z
-    .string()
-    .default('auto')
-    .volatile()
-    .description('协作传输方式：auto（有 Haos 凭证走中心转发）/ p2p（实例直连）/ haos（强制中心转发）'),
-  haosBaseUrl: z.string().default('').volatile().description('Haos 中心地址，例如 http://127.0.0.1:4600'),
-  haosApiKey: z.string().role('secret').default('').volatile().description('Haos 用户级 API Key（用于把本实例注册进 Haos）'),
-  relayPollSeconds: z.number().default(2).volatile().description('Haos 模式下拉取待办任务的间隔（秒）'),
-  allowCascade: z.boolean().default(true).volatile().description('允许把收到的任务再派给下级（关闭后本节点只执行不再委派）'),
+    .description('远端消息创建的子会话使用哪个 agent preset（留空用 profile 默认；不选 preset 的会话可能没有 bash 等工具）'),
 
-  // ── 出站：我把任务派给别的 DSH ────────────────────────────────
+  // ── 出站：我把消息派给别的 DSH ────────────────────────────────
   enrollString: z
     .string()
     .default('')
@@ -89,14 +72,6 @@ export const Config = z.object({
     .default('auto')
     .volatile()
     .description('长连接由谁拨号：auto（instanceId 小的一方拨）| always（本机总是拨）| never（只接受对方连接）'),
-  notifyMode: z
-    .string()
-    .default('inject')
-    .volatile()
-    .description('远端通知怎么送给 Agent：inject（直接注入会话）| inbox（只进收件箱）| off'),
-  notifyOnTaskComplete: z.boolean().default(true).volatile().description('远端任务完成/失败时通知发起方'),
-  maxInjectionsPerMinute: z.number().default(3).volatile().description('同一会话每分钟最多注入多少条远端通知'),
-  inboxRetentionHours: z.number().default(168).volatile().description('收件箱保留时长（小时）'),
   capabilityRefreshMinutes: z.number().default(10).volatile().description('对端能力文档缓存时长（分钟）'),
 
   // ── 能力声明 ──────────────────────────────────────────────────
@@ -144,43 +119,22 @@ export function resolveConfig(input = {}) {
   return {
     enabled: Boolean(raw(input, 'enabled', true)),
     displayName: String(raw(input, 'displayName', '')).trim() || defaultDisplayName(),
-    serverEnabled: true, // 子 DSH 定义上就接受主 DSH 的任务，不可关闭
+    serverEnabled: true, // 子 DSH 定义上就接受主 DSH 的消息，不可关闭
     listenPort: Number.isFinite(port) && port >= 0 ? Math.round(port) : 59999,
     listenHost: String(raw(input, 'listenHost', '127.0.0.1')).trim() || '127.0.0.1',
     allowedRoots: String(raw(input, 'allowedRoots', DEFAULT_ALLOWED_ROOT)).trim() || DEFAULT_ALLOWED_ROOT,
-    maxConcurrentTasks: 1, // 每个子 DSH 同时只执行一个任务
-    maxQueuedTasks: positive(raw(input, 'maxQueuedTasks', 20), 20),
-    maxTaskMinutes: positive(raw(input, 'maxTaskMinutes', 60), 60),
-    queueTtlMinutes: positive(raw(input, 'queueTtlMinutes', 120), 120),
-    taskRetentionDays: positive(raw(input, 'taskRetentionDays', 3), 3),
-    autoContinueOnReconnect: raw(input, 'autoContinueOnReconnect', true) !== false,
-    askConcurrency: positive(raw(input, 'askConcurrency', 2), 2),
-    askFullTakeover: raw(input, 'askFullTakeover', true) !== false,
     agentPreset: String(raw(input, 'agentPreset', '')).trim(),
-    transport: ['auto', 'p2p', 'haos'].includes(String(raw(input, 'transport', 'auto')))
-      ? String(raw(input, 'transport', 'auto'))
-      : 'auto',
-    haosBaseUrl: String(raw(input, 'haosBaseUrl', process.env.HAOS_BASE_URL || 'http://127.0.0.1:4600')).replace(/\/+$/, ''),
-    haosApiKey: String(raw(input, 'haosApiKey', process.env.HAOS_API_KEY || '')),
-    relayPollSeconds: positive(raw(input, 'relayPollSeconds', 2), 2),
     maxFileMB: Number.isFinite(Number(raw(input, 'maxFileMB', 50)))
       ? Math.min(1024, Math.max(1, Math.round(Number(raw(input, 'maxFileMB', 50)))))
       : 50,
     maxConcurrentFiles: Number.isFinite(Number(raw(input, 'maxConcurrentFiles', 4)))
       ? Math.min(16, Math.max(1, Math.round(Number(raw(input, 'maxConcurrentFiles', 4)))))
       : 4,
-    allowCascade: true, // 是否有资格继续下派由组织拓扑（是否直接下级）决定，不做开关
     enrollString: String(raw(input, 'enrollString', '')).trim(),
     channelEnabled: true, // 长连接（含重连）是协议的一部分，不可关闭
     channelDial: ['auto', 'always', 'never'].includes(String(raw(input, 'channelDial', 'auto')))
       ? String(raw(input, 'channelDial', 'auto'))
       : 'auto',
-    notifyMode: ['inject', 'inbox', 'off'].includes(String(raw(input, 'notifyMode', 'inject')))
-      ? String(raw(input, 'notifyMode', 'inject'))
-      : 'inject',
-    notifyOnTaskComplete: Boolean(raw(input, 'notifyOnTaskComplete', true)),
-    maxInjectionsPerMinute: positive(raw(input, 'maxInjectionsPerMinute', 3), 3),
-    inboxRetentionHours: positive(raw(input, 'inboxRetentionHours', 168), 168),
     capabilityRefreshMinutes: positive(raw(input, 'capabilityRefreshMinutes', 10), 10),
     autoDetect: Boolean(raw(input, 'autoDetect', true)),
     probes: String(raw(input, 'probes', '')),
