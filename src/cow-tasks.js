@@ -511,6 +511,7 @@ export class CowTasks {
     if (!this.askFullTakeover || !this.askInjector || !task.originSessionId) return false;
     const question = task.pendingQuestion;
     if (!question) return false;
+    if (question.questionId && task.askInjectedFor === question.questionId) return true;
     const options = Array.isArray(question.options) && question.options.length
       ? `\n选项：${question.options.join(' / ')}`
       : '';
@@ -528,6 +529,7 @@ export class CowTasks {
     try {
       const ok = this.askInjector(task.originSessionId, text);
       if (ok) {
+        task.askInjectedFor = question.questionId ?? null;
         task.awaitingMain = true;
         task.progress = [...(task.progress ?? []), { at: nowIso(), kind: 'ask', text: '已注入主 DSH 会话等待决定' }].slice(-20);
         this.#persist(task);
