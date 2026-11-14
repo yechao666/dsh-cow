@@ -101,6 +101,8 @@ export function apply(ctx, rawConfig = {}) {
   const inboundFrom = new Map(); // localTaskId -> 对端 peer
   const offeredTasks = new Set();
   const pendingClaims = new Map();
+  const chatSessions = new Map(); // peer -> { sessionId }
+  let chatSeq = 0;
   const manager = new TaskManager({
     ctx,
     resolveConfig: () => ({ ...resolve(), maxConcurrentTasks: 1 }),
@@ -245,6 +247,19 @@ export function apply(ctx, rawConfig = {}) {
 
 
   const tasks = new CowTasks({ channel: null, instance, logger, home, activity, queueTtlMs: resolve().queueTtlMinutes * 60_000, retentionDays: resolve().taskRetentionDays, autoContinueOnReconnect: resolve().autoContinueOnReconnect, askConcurrency: resolve().askConcurrency, askFullTakeover: resolve().askFullTakeover });
+  const injectChat = (sessionId, from, text) => {
+    const agents = ctx.get?.('agents', false);
+    const agent = agents?.get?.(sessionId);
+    if (!agent || typeof agent.followup !== 'function') return false;
+    agent.followup({
+      id: randomBytes(8).toString('hex'),
+      role: 'user',
+      content: [{ type: 'text', text: `[COW 对话回复] ${from}\n\n${text}` }],
+      source: { kind: 'cow-chat' },
+    });
+    return true;
+  };
+
   const injectAsk = (sessionId, text) => {
     const agents = ctx.get?.('agents', false);
     const agent = agents?.get?.(sessionId);
@@ -344,6 +359,44 @@ export function apply(ctx, rawConfig = {}) {
   const onEvent = ({ from, event }) => {
     const type = String(event?.type ?? '');
     const payload = event?.payload ?? {};
+    if (type === 'chat.message') {
+      const messageId = String(payload?.id ?? '');
+      const text = String(payload?.text ?? '');
+      const origin = String(payload?.originSessionId ?? '');
+      if (!messageId || !text) return;
+      const state = chatSessions.get(from) ?? { sessionId: null };
+      chatSessions.set(from, state);
+      chatSeq += 1;
+      const taskId = `chat_${from.replace(/[^\w.-]+/g, '_')}_${Date.now().toString(36)}_${chatSeq}`;
+      try {
+        const local = manager.create({
+          taskId,
+          prompt: text,
+          title: `与 ${from} 对话`,
+          cwd: '',
+          timeoutSec: 3600,
+          rawPrompt: true,
+          sessionId: state.sessionId,
+        }, { callerLabel: from });
+        void manager.waitTerminal(local.taskId).then((done) => {
+          if (done.sessionId) state.sessionId = done.sessionId;
+          channel.send(from, {
+            type: 'chat.reply',
+            payload: {
+              replyTo: messageId,
+              originSessionId: origin,
+              text: done.summary ?? done.error?.message ?? '',
+              status: done.status,
+            },
+          });
+        }).catch((error) => {
+          channel.send(from, { type: 'chat.reply', payload: { replyTo: messageId, originSessionId: origin, text: String(error?.message ?? error), status: 'failed' } });
+        });
+      } catch (error) {
+        channel.send(from, { type: 'chat.reply', payload: { replyTo: messageId, originSessionId: origin, text: String(error?.message ?? error), status: 'failed' } });
+      }
+      return;
+    }
     if (type === 'task.offer') {
       const taskId = String(payload?.taskId ?? '');
       logger.info?.(`[dsh-cow] 收到任务邀请 ${taskId}，创建认领会话`);
@@ -423,6 +476,12 @@ export function apply(ctx, rawConfig = {}) {
     }
     if (type === 'task.answer') {
       resolveQuestionAnswer(payload);
+      return;
+    }
+    if (type === 'chat.reply') {
+      const text = String(payload?.text ?? '');
+      const origin = String(payload?.originSessionId ?? '');
+      if (origin && text) injectChat(origin, from, text);
       return;
     }
     if (type === 'task.claim' || type === 'task.progress' || type === 'task.result' || type === 'task.question') {

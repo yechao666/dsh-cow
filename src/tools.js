@@ -324,6 +324,36 @@ export function createToolDefinitions({ instance, channel, peers, tasks, current
       },
     },
     {
+      name: 'cow_send',
+      description: '给直接下级的 DSH 会话发一条消息，不等待回复；子 DSH 在自己的会话里排队处理，完成后自动把回复带到当前会话。适合持续对话、追加修改。',
+      parameters: {
+        type: 'object',
+        properties: {
+          peer: { type: 'string', description: '目标子 DSH：cow_peers 里的 peer 名称' },
+          message: { type: 'string', description: '消息正文' },
+        },
+        required: ['peer', 'message'],
+        additionalProperties: false,
+      },
+      output: output(),
+      timeoutMs: 15_000,
+      async execute(args, exec) {
+        const target = String(args?.peer ?? '').trim();
+        const peer = peers.list().find((item) => item.label === target || item.instanceId === target);
+        if (!peer) throw new Error(`未知节点：${target}，先用 cow_peers 查看已连接节点`);
+        if (peer.relation === 'parent') throw new Error('只能给直接下级发消息');
+        const text = String(args?.message ?? '');
+        if (!text.trim()) throw new Error('消息不能为空');
+        const id = `msg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+        const sent = channel.send(peer.label, {
+          type: 'chat.message',
+          payload: { id, text, originSessionId: sessionIdOf(exec) },
+        });
+        if (!sent.delivered) throw new Error('消息未送达，子 DSH 当前不在线');
+        return { id, peer: peer.label, status: 'sent' };
+      },
+    },
+    {
       name: 'cow_delegate',
       description:
         '把任务通过 WebSocket 派给直接下级。远端用一个独立会话真正执行，完成后回传结论；' +

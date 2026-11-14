@@ -12,7 +12,7 @@ const deps = {
 
 test('工具清单：status/peers/delegate/task/cancel/notify', () => {
   const names = createToolDefinitions(deps).map((tool) => tool.name);
-  assert.deepEqual(names, ['cow_set_file_policy', 'cow_answer', 'cow_claim', 'cow_status', 'cow_peers', 'cow_delegate', 'cow_task', 'cow_cancel', 'cow_notify', 'cow_retry']);
+  assert.deepEqual(names, ['cow_set_file_policy', 'cow_answer', 'cow_claim', 'cow_status', 'cow_peers', 'cow_send', 'cow_delegate', 'cow_task', 'cow_cancel', 'cow_notify', 'cow_retry']);
 });
 
 test('cow_delegate 拒绝未知节点与上级；离线节点交给队列', async () => {

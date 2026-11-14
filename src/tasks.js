@@ -235,7 +235,7 @@ export class TaskManager {
       createdAt: new Date().toISOString(),
       startedAt: null,
       finishedAt: null,
-      sessionId: null,
+      sessionId: validated.sessionId ?? null,
       summary: '',
       error: null,
       needsInput: null,
