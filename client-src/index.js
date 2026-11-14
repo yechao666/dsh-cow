@@ -70,9 +70,13 @@ function PeerRow({ peer, onRemove }) {
         peer.version ? h('span', { style: S.meta }, `v${peer.version}`) : null,
         peer.encrypted ? h('span', { style: S.badge }, 'E2E') : null,
       ),
-      peer.description ? h('div', { style: S.meta }, String(peer.description).slice(0, 160)) : null,
+      peer.description
+        ? h('div', { style: { ...S.meta, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' } }, String(peer.description))
+        : null,
     ),
-    onRemove ? h('button', { type: 'button', style: S.danger, onClick: () => onRemove(peer.label) }, '移除') : null,
+    onRemove
+      ? h('button', { type: 'button', style: { ...S.danger, flexShrink: 0, whiteSpace: 'nowrap' }, onClick: () => onRemove(peer.label) }, '移除')
+      : null,
   );
 }
 
