@@ -412,8 +412,14 @@ export function apply(ctx, rawConfig = {}) {
       chatQuestionSessions.delete(questionId);
       if (sessionId) {
         try {
-          const agent = ctx.get?.('agents', false)?.get?.(sessionId);
-          agent?.followup?.({ id: randomBytes(8).toString('hex'), role: 'user', content: [{ type: 'text', text: `[COW 回复] ${String(payload?.answer ?? '')}` }], source: { kind: 'cow-reply' } });
+          const local = [...manager.tasks.values()].find((task) => task.sessionId === sessionId);
+          const agent = local?.agent ?? ctx.get?.('agents', false)?.get?.(sessionId);
+          if (agent && typeof agent.followup === 'function') {
+            agent.followup({ id: randomBytes(8).toString('hex'), role: 'user', content: [{ type: 'text', text: `[COW 回复] ${String(payload?.answer ?? '')}` }], source: { kind: 'cow-reply' } });
+            logger.info?.(`[dsh-cow] 已把回复注入会话 ${sessionId}，开启新一轮`);
+          } else {
+            logger.warn?.(`[dsh-cow] 找不到可继续的会话 agent：${sessionId}`);
+          }
         } catch (error) {
           logger.warn?.(`[dsh-cow] 注入回复失败：${error?.message ?? error}`);
         }
