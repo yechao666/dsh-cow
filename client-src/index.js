@@ -1390,7 +1390,7 @@ function CoCowSettingsPage() {
   const tabButton = (id, label) => h('button', {
     type: 'button', role: 'tab', 'aria-selected': tab === id,
     style: tab === id ? S.tabActive : S.tab,
-    onClick: () => setTab(id),
+    onClick: () => { setTab(id); setMessage(''); setError(''); },
   }, label);
 
   return h('div', { style: S.wrap },
