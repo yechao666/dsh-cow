@@ -802,7 +802,7 @@ function CowActivityPanel() {
       ['连接方向', peer.direction === 'out' ? '本机 → 对端' : peer.direction === 'in' ? '对端 → 本机' : '', false],
       ['连接时间', conn?.since ? new Date(conn.since).toLocaleString('zh-CN', { hour12: false }) : '', false],
       ['最近心跳', conn?.lastSeenAt ? new Date(conn.lastSeenAt).toLocaleString('zh-CN', { hour12: false }) : '', false],
-      ['当前任务', peer.currentTask ? `${peer.currentTask.title || peer.currentTask.taskId}（${taskStatusLabel(peer.currentTask.status)}）` : '', false],
+      ['当前对话', peer.currentTask ? `${peer.currentTask.title || peer.currentTask.taskId}（${taskStatusLabel(peer.currentTask.status)}）` : '', false],
     ].filter(([, value]) => value);
     return h('div', { key: `${role}:${peer.label}`, style: { ...PANEL.card, padding: '12px 14px', marginBottom: 0, background: tone.background, borderColor: tone.border } },
       h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 9 } },
@@ -938,14 +938,14 @@ function CowActivityPanel() {
         ),
       ),
       h('div', { style: { ...PANEL.card, marginBottom: 0 } },
-        h('div', { style: PANEL.cardHead }, h('h3', { style: PANEL.cardTitle }, '任务状态'), h(PanelChip, null, `${tasks.length + inbound.length} 条`)),
+        h('div', { style: PANEL.cardHead }, h('h3', { style: PANEL.cardTitle }, '对话状态'), h(PanelChip, null, `${tasks.length + inbound.length} 条`)),
         h(PanelTaskBars, { rows: taskCounts.map((row) => ({ label: taskLabels[row.status], value: row.value, color: taskColors[row.status] })) }),
       ),
     ),
     h('div', { style: { display: 'flex', gap: 20, marginBottom: 14, padding: 0, borderBottom: '1px solid var(--dsw-alias-border-l2)', width: '100%', maxWidth: '100%', overflowX: 'auto' } },
       tab('overview', '概览', null, 'network'),
       tab('nodes', '节点', peers.length, 'users'),
-      tab('tasks', '任务', activeOutbound.length + activeInbound.length, 'activity'),
+      tab('tasks', '对话', activeOutbound.length + activeInbound.length, 'activity'),
       tab('approvals', '审批/提问', pendingTotal, 'alert'),
       tab('activity', '活动', items.length, 'clock'),
     ),
@@ -959,7 +959,7 @@ function CowActivityPanel() {
                 ['唯一标识', h('span', { style: S.mono }, instance.uuid || instance.instanceId || '-')],
                 ['WebSocket', endpoint],
                 ['工作区根目录', config.allowedRoots || '-'],
-                ['当前任务', state.currentInbound ? `${state.currentInbound.remoteTaskId}（${state.currentInbound.from}）` : '空闲'],
+                ['当前对话', state.currentInbound ? `${state.currentInbound.remoteTaskId}（${state.currentInbound.from}）` : '空闲'],
               ] }),
             ),
             h('div', { style: { ...PANEL.card, marginBottom: 0 } },
@@ -1015,13 +1015,13 @@ function CowActivityPanel() {
           ),
           h('div', { style: { display: 'grid', gap: 12, gridTemplateColumns: incomingVisible ? 'repeat(auto-fit, minmax(320px, 1fr))' : '1fr' } },
             h('div', { style: { ...PANEL.card, marginBottom: 0 } },
-              h('div', { style: PANEL.cardHead }, h('h3', { style: PANEL.cardTitle }, '我派出的任务'), h(PanelChip, null, `${visibleTasks.length} 条`)),
-              visibleTasks.length ? h('div', null, visibleTasks.slice(0, 10).map((task) => h(TaskLine, { key: task.taskId, task, extra: task.peer }))) : h('div', { style: PANEL.empty }, '没有符合筛选的任务'),
+              h('div', { style: PANEL.cardHead }, h('h3', { style: PANEL.cardTitle }, '我发起的对话'), h(PanelChip, null, `${visibleTasks.length} 条`)),
+              visibleTasks.length ? h('div', null, visibleTasks.slice(0, 10).map((task) => h(TaskLine, { key: task.taskId, task, extra: task.peer }))) : h('div', { style: PANEL.empty }, '没有对话'),
             ),
             incomingVisible
               ? h('div', { style: { ...PANEL.card, marginBottom: 0 } },
                   h('div', { style: PANEL.cardHead }, h('h3', { style: PANEL.cardTitle }, '本机执行 / 排队'), h(PanelChip, null, `${visibleInbound.length} 条`)),
-                  visibleInbound.length ? visibleInbound.slice(0, 10).map((task) => h(TaskLine, { key: task.taskId, task, extra: task.from })) : h('div', { style: PANEL.empty }, '没有符合筛选的任务'),
+                  visibleInbound.length ? visibleInbound.slice(0, 10).map((task) => h(TaskLine, { key: task.taskId, task, extra: task.from })) : h('div', { style: PANEL.empty }, '没有对话'),
                 )
               : null,
           ),
@@ -1356,7 +1356,7 @@ function CoCowSettingsPage() {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload?.error?.message || `HTTP ${response.status}`);
       apply(payload);
-      setMessage('已取消任务');
+      setMessage('已取消对话');
     } catch (cancelError) {
       setError(cancelError.message);
     } finally {
@@ -1537,7 +1537,7 @@ function CoCowSettingsPage() {
             parent.node?.description
               ? h(Row, { label: '上级说明' }, h('div', { style: { ...S.meta, flex: '1 1 auto', whiteSpace: 'pre-wrap', lineHeight: 1.7, paddingTop: 6 } }, String(parent.node.description).slice(0, 400)))
               : null,
-            h(Row, { label: '当前任务' },
+            h(Row, { label: '当前对话' },
               h('span', { style: { ...S.meta, paddingTop: 7 } }, data.currentInbound ? `${data.currentInbound.remoteTaskId}（执行中）` : '空闲'),
             ),
             h('div', { style: { gridColumn: '2', display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'space-between', marginTop: 4 } },

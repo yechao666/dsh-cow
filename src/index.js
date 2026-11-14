@@ -482,6 +482,7 @@ export function apply(ctx, rawConfig = {}) {
       const text = String(payload?.text ?? '');
       const origin = String(payload?.originSessionId ?? '');
       if (origin && text) injectChat(origin, from, text);
+      activity.add({ kind: 'chat', text: `${from} 回复：${text.slice(0, 160)}`, peer: from, status: 'replied' });
       return;
     }
     if (type === 'task.claim' || type === 'task.progress' || type === 'task.result' || type === 'task.question') {
