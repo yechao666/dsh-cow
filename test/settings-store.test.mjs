@@ -61,6 +61,15 @@ test('覆盖层合并到 resolveConfig 后生效', () => {
   assert.equal(cfg.channelEnabled, true);
 });
 
+test('询问设置可保存并读取', () => {
+  const home = tempHome();
+  writeSettings(home, { askFullTakeover: true, askConcurrency: 3, autoContinueOnReconnect: false });
+  const saved = readSettings(home);
+  assert.equal(saved.askFullTakeover, true);
+  assert.equal(saved.askConcurrency, 3);
+  assert.equal(saved.autoContinueOnReconnect, false);
+});
+
 test('设置页可改字段清单是显式白名单', () => {
   assert.ok(EDITABLE_KEYS.includes('displayName'));
   assert.ok(EDITABLE_KEYS.includes('declaredCapabilities'));
