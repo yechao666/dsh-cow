@@ -34,3 +34,14 @@ test('同一工作区+会话复用子会话，不同会话分开', async () => {
   assert.equal(a.sessionId, b.sessionId);
   assert.notEqual(a.sessionId, c.sessionId);
 });
+
+test('answer 注入同一子会话', async () => {
+  const input = [];
+  const agent = { session: { seq: 0 }, followup: (m) => input.push(m), whenIdle: async () => {} };
+  const bridge = new MessageBridge({ channel: { send() {} }, agents: { get: () => null, create: async ({ sessionId }) => ({ sessionId, agent }) }, workspacePath: (w) => w.id });
+  const envelope = { ...fakeEnv('w1'), kind: 'answer', messageId: 'r1', text: '允许一次' };
+  const result = await bridge.answer(envelope, 'F');
+  assert.equal(result.status, 'sent');
+  assert.equal(input.length, 1);
+  assert.match(input[0].content[0].text, /允许一次/);
+});
