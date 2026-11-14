@@ -74,8 +74,12 @@ test('拓扑：任务只布置给直接下级，不跨层', async () => {
     home: homeB, instance: instB, peers: peersB,
     authorize: (password) => (password === 'pw' ? { kind: 'join', label: '' } : null),
     onEvent: ({ from, event }) => {
+      if (event.type === 'task.offer') {
+        chB.send(from, { type: 'task.claim', payload: { taskId: event.payload.taskId } });
+        return;
+      }
       // B 直接执行 A 下发的任务（不向自己的下级转发）。
-      if (event.type === 'task.assign') {
+      if (event.type === 'task.body') {
         chB.send(from, { type: 'task.result', payload: { taskId: event.payload.taskId, status: 'succeeded', summary: 'done at B' } });
       }
     },
@@ -88,7 +92,11 @@ test('拓扑：任务只布置给直接下级，不跨层', async () => {
   chC = makeChannel({
     home: homeC, instance: instC, peers: peersC,
     onEvent: ({ from, event }) => {
-      if (event.type !== 'task.assign') return;
+      if (event.type === 'task.offer') {
+        chC.send(from, { type: 'task.claim', payload: { taskId: event.payload.taskId } });
+        return;
+      }
+      if (event.type !== 'task.body') return;
       chC.send(from, { type: 'task.result', payload: { taskId: event.payload.taskId, status: 'succeeded', summary: 'done at C' } });
     },
   });

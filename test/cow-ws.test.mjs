@@ -47,7 +47,11 @@ async function makePair() {
     ctx: {}, resolveConfig: () => ({ channelEnabled: true, serverEnabled: true }), peers: peersB, instance: instanceB,
     authorize: () => null,
     onEvent: ({ from, event }) => {
-      if (event.type !== 'task.assign') return;
+      if (event.type === 'task.offer') {
+        channelB.send(from, { type: 'task.claim', payload: { taskId: event.payload.taskId } });
+        return;
+      }
+      if (event.type !== 'task.body') return;
       setTimeout(() => channelB.send(from, { type: 'task.result', payload: { taskId: event.payload.taskId, status: 'succeeded', summary: 'done over ws' } }), 20);
     },
     logger: silent, home: homeB,

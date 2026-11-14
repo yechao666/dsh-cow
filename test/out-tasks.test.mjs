@@ -28,7 +28,7 @@ test('出站任务落盘；重启后未完成任务标记为中断，可 retry',
 
   const retried = second.retry(created.taskId);
   assert.equal(retried.status, 'running');
-  assert.equal(channel.sent.filter((item) => item.frame.type === 'task.assign').length, 2);
+  assert.equal(channel.sent.filter((item) => item.frame.type === 'task.offer').length, 2);
 });
 
 test('升级任务在子端以目标版本重连后自动完成', () => {
@@ -122,7 +122,7 @@ test('对端离线时任务进入队列，上线后 flushQueue 自动下发', ()
   const flushed = tasks.flushQueue('子 B');
   assert.equal(flushed.sent, 1);
   assert.equal(tasks.get(created.taskId).status, 'running');
-  assert.equal(channel.sent.filter((item) => item.frame.type === 'task.assign').length, 2);
+  assert.equal(channel.sent.filter((item) => item.frame.type === 'task.offer').length, 2);
 
   // 重复冲刷不会重发运行中的任务。
   assert.equal(tasks.flushQueue('子 B').sent, 0);
@@ -143,7 +143,7 @@ test('离线队列超时判失败；取消后不再下发', () => {
   assert.equal(tasks.get(first.taskId).status, 'failed');
   assert.match(tasks.get(first.taskId).error, /超时/);
   assert.equal(tasks.get(second.taskId).status, 'canceled');
-  assert.equal(channel.sent.filter((item) => item.frame.type === 'task.assign').length, 2); // 首次两次，取消/过期都不再发
+  assert.equal(channel.sent.filter((item) => item.frame.type === 'task.offer').length, 2); // 首次两次，取消/过期都不再发
 });
 
 test('远端提问进入 pendingQuestion，回答后回传 task.answer 并清空', () => {

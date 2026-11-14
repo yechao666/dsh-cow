@@ -186,16 +186,10 @@ export class CowTasks {
   /** 发一次 task.assign；未送达返回 false（调用方决定排队还是失败）。 */
   #dispatch(task) {
     const sent = this.channel.send(task.peer, {
-      type: 'task.assign',
+      type: 'task.offer',
       payload: {
         taskId: task.taskId,
-        prompt: task.prompt,
         title: task.title,
-        cwd: task.cwd,
-        workspaceName: task.workspaceName ?? '',
-        timeoutSec: task.timeoutSec ?? 3600,
-        caller: this.instance.instanceId,
-        callerLabel: this.instance.displayName ?? '',
       },
     });
     if (!sent.delivered) return false;
@@ -336,6 +330,10 @@ export class CowTasks {
   /** 处理来自 WebSocket 的 task.progress / task.result 帧。 */
   onEvent({ from, event, payload }) {
     const taskId = String(payload?.taskId ?? '');
+    if (event === 'task.claim') {
+      this.#handleClaim(taskId, from);
+      return;
+    }
     const task = this.get(taskId);
     if (!task) {
       // 未绑定出站任务的审批/提问（子端本地会话也接管）：存为待人工问题。
@@ -448,6 +446,46 @@ export class CowTasks {
       }
       this.#persist(task);
     }
+  }
+
+  #sendBody(task) {
+    return this.channel.send(task.peer, {
+      type: 'task.body',
+      payload: {
+        taskId: task.taskId,
+        prompt: task.prompt,
+        title: task.title,
+        cwd: task.cwd,
+        workspaceName: task.workspaceName ?? '',
+        timeoutSec: task.timeoutSec ?? 3600,
+        caller: this.instance.instanceId,
+        callerLabel: this.instance.displayName ?? '',
+      },
+    });
+  }
+
+  /** 子端执行前认领；消息不存在/已结束则拒绝，避免做无用功。 */
+  #handleClaim(taskId, from) {
+    const task = this.get(taskId);
+    if (!task) {
+      this.channel.send(from, { type: 'task.claim.abort', payload: { taskId, reason: '消息不存在或已被删除' } });
+      return;
+    }
+    if (from && task.peer !== from) {
+      this.channel.send(from, { type: 'task.claim.abort', payload: { taskId, reason: '该消息不属于当前子节点' } });
+      return;
+    }
+    if (TERMINAL.has(task.status)) {
+      this.channel.send(from, { type: 'task.claim.abort', payload: { taskId, reason: `消息已${task.status === 'succeeded' ? '完成' : '结束'}` } });
+      return;
+    }
+    task.status = 'running';
+    task.claimedAt = nowIso();
+    task.startedAt = task.startedAt ?? task.claimedAt;
+    this.#persist(task);
+    const target = from || task.peer;
+    this.channel.send(target, { type: 'task.claim.ok', payload: { taskId } });
+    this.#sendBody(task);
   }
 
   setAskPolicy({ concurrency, fullTakeover, decider } = {}) {

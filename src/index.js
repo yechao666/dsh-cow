@@ -99,6 +99,7 @@ export function apply(ctx, rawConfig = {}) {
     }
   }
   const inboundFrom = new Map(); // localTaskId -> 对端 peer
+  const offeredTasks = new Set();
   const manager = new TaskManager({
     ctx,
     resolveConfig: () => ({ ...resolve(), maxConcurrentTasks: 1 }),
@@ -322,6 +323,24 @@ export function apply(ctx, rawConfig = {}) {
   const onEvent = ({ from, event }) => {
     const type = String(event?.type ?? '');
     const payload = event?.payload ?? {};
+    if (type === 'task.offer') {
+      const taskId = String(payload?.taskId ?? '');
+      if (!taskId) return;
+      offeredTasks.add(taskId);
+      channel.send(from, { type: 'task.claim', payload: { taskId } });
+      return;
+    }
+    if (type === 'task.claim.abort') {
+      offeredTasks.delete(String(payload?.taskId ?? ''));
+      logger.info?.(`[dsh-cow] 任务认领被拒绝：${String(payload?.reason ?? '')}`);
+      return;
+    }
+    if (type === 'task.body') {
+      const taskId = String(payload?.taskId ?? '');
+      if (taskId) offeredTasks.delete(taskId);
+      void handleInboundTask(payload, from);
+      return;
+    }
     if (type === 'task.assign') {
       void handleInboundTask(payload, from);
       return;
