@@ -1463,7 +1463,7 @@ function CoCowSettingsPage() {
                   h('span', { style: S.meta }, '个（超出直接拒绝）'),
                 ),
               ),
-              h(Row, { label: '任务默认超时' },
+              h(Row, { label: '默认超时' },
                 h('div', { style: S.row },
                   h('input', { type: 'number', style: { ...S.inputFlex, flex: '0 0 120px', minWidth: 90 }, placeholder: '默认 60', value: String(form.maxTaskMinutes ?? 60), onChange: (e) => update('maxTaskMinutes', Number(e.target.value) || 60) }),
                   h('span', { style: S.meta }, '分钟（普通任务与升级任务统一使用）'),

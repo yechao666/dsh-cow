@@ -316,7 +316,7 @@ export function createToolDefinitions({ instance, channel, peers, tasks, current
           prompt: { type: 'string', description: '任务说明（必填）：目标、验收标准、期望产出、必要背景' },
           cwd: { type: 'string', description: '远端工作目录（绝对路径，必须在远端 allowedRoots 内）' },
           title: { type: 'string', description: '任务短标题' },
-          timeoutSec: { type: 'number', description: '远端执行超时（秒），默认使用「任务默认超时」' },
+          timeoutSec: { type: 'number', description: '远端执行超时（秒），默认使用「默认超时」' },
           waitSeconds: { type: 'number', description: '本次最多等待秒数，0 表示只提交' },
           taskId: { type: 'string', description: '可选：幂等任务 ID（重复提交返回同一任务）' },
         },
@@ -430,7 +430,7 @@ export function createToolDefinitions({ instance, channel, peers, tasks, current
         type: 'object',
         properties: {
           taskId: { type: 'string', description: '原任务 ID' },
-          timeoutSec: { type: 'number', description: '超时秒数（默认使用「任务默认超时」）' },
+          timeoutSec: { type: 'number', description: '超时秒数（默认使用「默认超时」）' },
         },
         required: ['taskId'],
         additionalProperties: false,
