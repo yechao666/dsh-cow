@@ -432,7 +432,7 @@ export function apply(ctx, rawConfig = {}) {
       const origin = String(payload?.originSessionId ?? '');
       if (!questionId || !text) return;
       outgoingChatQuestions.set(questionId, from);
-      injectChat(origin, from, `${text}\n\n请用 cow_reply(questionId="${questionId}", answer="...") 回答。`);
+      injectChat(origin, from, `${text}\n\n请用 cow_send(peer="${from}", message="...", replyTo="${questionId}") 回答。`);
       return;
     }
     if (type === 'chat.message') {
@@ -786,7 +786,7 @@ export function apply(ctx, rawConfig = {}) {
       return `- ${status.state === 'connected' ? '[在线]' : '[离线]'} ${peer.label}（${peer.relation === 'parent' ? '上级' : '下级'}）${status.node?.description ? `：${String(status.node.description).slice(0, 160)}` : ''}`;
     });
     lines.push(...(conns.length ? ['已连接的节点：', ...conns] : ['当前没有已连接的节点。']));
-    lines.push('派任务用 cow_delegate（写清 peer、prompt、cwd），只能发给**直接下级**，不会继续转发；用 cow_task 观察结果，cow_cancel 取消，cow_notify 发消息。文件交换用 cow_send_file / cow_receive_file（同样只限直接下级，落在对方 allowedRoots 内，sha256 校验，支持断点续传与 cow_cancel_file 取消）；任务失败/中断可用 cow_retry 重试；文件策略用 cow_set_file_policy 调整。');
+    lines.push('派消息用 cow_send（写清 peer、message）；子 DSH 用 cow_send(kind="question") 提问，主 DSH 用 cow_send(replyTo=...) 回答。文件交换用 cow_send_file / cow_receive_file / cow_pull_dir（只限直接下级，允许根目录内 sha256 校验）；文件策略用 cow_set_file_policy 调整。');
     return lines.join('\n');
   };
 
