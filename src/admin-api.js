@@ -113,7 +113,7 @@ export function createAdminHandlers(deps) {
         taskRetentionDays: Number.isFinite(cfg.taskRetentionDays) ? cfg.taskRetentionDays : 3,
         autoContinueOnReconnect: cfg.autoContinueOnReconnect !== false,
         askConcurrency: Number.isFinite(cfg.askConcurrency) ? cfg.askConcurrency : 2,
-        askFullTakeover: cfg.askFullTakeover === true,
+        askFullTakeover: cfg.askFullTakeover !== false,
       },
       pluginVersion: deps.pluginVersion ?? '',
       defaultAllowedRoot: DEFAULT_ALLOWED_ROOT,

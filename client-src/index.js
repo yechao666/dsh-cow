@@ -1073,7 +1073,7 @@ function CoCowSettingsPage() {
       taskRetentionDays: next?.config?.taskRetentionDays ?? 3,
       autoContinueOnReconnect: next?.config?.autoContinueOnReconnect !== false,
       askConcurrency: next?.config?.askConcurrency ?? 2,
-      askFullTakeover: next?.config?.askFullTakeover === true,
+      askFullTakeover: next?.config?.askFullTakeover !== false,
     });
   }, []);
 
@@ -1501,7 +1501,7 @@ function CoCowSettingsPage() {
               ),
               h(Row, { label: '完全接管' },
                 h('div', { style: S.row },
-                  h('input', { type: 'checkbox', checked: form.askFullTakeover === true, onChange: (e) => update('askFullTakeover', e.target.checked) }),
+                  h('input', { type: 'checkbox', checked: form.askFullTakeover !== false, onChange: (e) => update('askFullTakeover', e.target.checked) }),
                   h('span', { style: S.meta }, '把审批与提问注入主 DSH 当前对话，由主 DSH 思考后回答；关闭后进入人工队列'),
                 ),
               ),
