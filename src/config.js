@@ -60,6 +60,8 @@ export const Config = z.object({
   maxConcurrentFiles: z.number().default(4).volatile().description('同时进行的文件传输上限'),
   taskRetentionDays: z.number().default(3).volatile().description('任务记录保留天数'),
   autoContinueOnReconnect: z.boolean().default(true).volatile().description('子端重连后自动发送继续指令'),
+  askConcurrency: z.number().default(2).volatile().description('主 DSH 同时处理的询问数量（审批/提问）'),
+  askFullTakeover: z.boolean().default(false).volatile().description('完全接管子 DSH 的审批与提问，由主 DSH 自动决定'),
   agentPreset: z
     .string()
     .default('')
@@ -152,6 +154,8 @@ export function resolveConfig(input = {}) {
     queueTtlMinutes: positive(raw(input, 'queueTtlMinutes', 120), 120),
     taskRetentionDays: positive(raw(input, 'taskRetentionDays', 3), 3),
     autoContinueOnReconnect: raw(input, 'autoContinueOnReconnect', true) !== false,
+    askConcurrency: positive(raw(input, 'askConcurrency', 2), 2),
+    askFullTakeover: raw(input, 'askFullTakeover', false) === true,
     agentPreset: String(raw(input, 'agentPreset', '')).trim(),
     transport: ['auto', 'p2p', 'haos'].includes(String(raw(input, 'transport', 'auto')))
       ? String(raw(input, 'transport', 'auto'))

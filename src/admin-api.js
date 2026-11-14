@@ -112,6 +112,8 @@ export function createAdminHandlers(deps) {
         queueTtlMinutes: Number.isFinite(cfg.queueTtlMinutes) ? cfg.queueTtlMinutes : 120,
         taskRetentionDays: Number.isFinite(cfg.taskRetentionDays) ? cfg.taskRetentionDays : 3,
         autoContinueOnReconnect: cfg.autoContinueOnReconnect !== false,
+        askConcurrency: Number.isFinite(cfg.askConcurrency) ? cfg.askConcurrency : 2,
+        askFullTakeover: cfg.askFullTakeover === true,
       },
       pluginVersion: deps.pluginVersion ?? '',
       defaultAllowedRoot: DEFAULT_ALLOWED_ROOT,

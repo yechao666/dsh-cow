@@ -71,6 +71,19 @@ test('校验父端 taskId 并沿用到子端任务', () => {
   assert.equal(validateCreateTask({ taskId: '../bad', prompt: 'hello' }).ok, false);
 });
 
+test('完全接管询问时按并发上限自动回答', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'cow-out-ask-'));
+  const sent = [];
+  const channel = { send: (peer, frame) => { sent.push({ peer, frame }); return { delivered: true }; } };
+  const tasks = new CowTasks({ channel, instance: { instanceId: 'cow_a' }, logger: silent, home, askConcurrency: 1, askFullTakeover: true });
+  const created = tasks.assign({ peer: '子 B', prompt: '执行', cwd: '/tmp' });
+  tasks.setAskPolicy({ concurrency: 1, fullTakeover: true, decider: async () => '允许一次' });
+  tasks.onEvent({ from: '子 B', event: 'task.question', payload: { taskId: created.taskId, questionId: 'q_1', question: '子 DSH 请求审批：bash' } });
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  const answer = sent.find((item) => item.frame.type === 'task.answer' && item.frame.payload.questionId === 'q_1');
+  assert.equal(answer?.frame.payload.answer, '允许一次');
+});
+
 test('taskId 幂等：重复 assign 返回同一任务且只发送一次', () => {
   const home = mkdtempSync(join(tmpdir(), 'cow-out-idem-'));
   const channel = makeChannel();

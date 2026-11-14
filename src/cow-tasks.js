@@ -16,7 +16,7 @@ function nowIso() {
 }
 
 export class CowTasks {
-  constructor({ channel, instance, logger, now, home, queueTtlMs, retentionDays, autoContinueOnReconnect, files, activity }) {
+  constructor({ channel, instance, logger, now, home, queueTtlMs, retentionDays, autoContinueOnReconnect, askConcurrency, askFullTakeover, files, activity }) {
     this.channel = channel;
     this.instance = instance;
     this.logger = logger ?? console;
@@ -24,6 +24,11 @@ export class CowTasks {
     this.queueTtlMs = Number(queueTtlMs) > 0 ? Number(queueTtlMs) : 2 * 3600_000;
     this.retentionDays = Number(retentionDays) > 0 ? Number(retentionDays) : 3;
     this.autoContinueOnReconnect = autoContinueOnReconnect !== false;
+    this.askConcurrency = Number(askConcurrency) > 0 ? Math.min(20, Math.round(Number(askConcurrency))) : 2;
+    this.askFullTakeover = askFullTakeover === true;
+    this.askDecider = null;
+    this.askQueue = [];
+    this.askActive = 0;
     this.tasks = new Map();
     this.unboundQuestions = new Map();
     this.dir = home ? join(coDshDir(home), 'out-tasks') : null;
@@ -341,6 +346,7 @@ export class CowTasks {
           askedAt: nowIso(),
         });
         this.activity?.add({ kind: 'question', text: `子 DSH 待处理：${String(payload?.question ?? '').slice(0, 160)}`, peer: String(from ?? ''), taskId });
+        this.#enqueueAsk({ kind: 'unbound', questionId: String(payload.questionId), from: String(from ?? ''), taskId, question: String(payload?.question ?? ''), options: Array.isArray(payload?.options) ? payload.options.map(String) : [] });
       }
       return;
     }
@@ -378,6 +384,7 @@ export class CowTasks {
       task.progress.push({ at: nowIso(), kind: 'question', text: `等待回答：${task.pendingQuestion.question.slice(0, 200)}` });
       this.activity?.add({ kind: 'question', text: `远端提问：${task.pendingQuestion.question}`, peer: task.peer, taskId });
       this.#persist(task);
+      if (!task.upgrade) this.#enqueueAsk({ kind: 'task', taskId, from: task.peer, question: task.pendingQuestion.question, options: task.pendingQuestion.options });
       // 升级任务：只自动放行 plugin_manager 的 install_bundle，其它审批仍回到人工。
       if (task.upgrade && /plugin_manager/i.test(task.pendingQuestion.question) && /install_bundle/i.test(task.pendingQuestion.question)) {
         setImmediate(() => {
@@ -438,6 +445,42 @@ export class CowTasks {
     }
   }
 
+  setAskPolicy({ concurrency, fullTakeover, decider } = {}) {
+    if (Number.isFinite(Number(concurrency)) && Number(concurrency) > 0) {
+      this.askConcurrency = Math.min(20, Math.max(1, Math.round(Number(concurrency))));
+    }
+    if (typeof fullTakeover === 'boolean') this.askFullTakeover = fullTakeover;
+    if (typeof decider === 'function') this.askDecider = decider;
+    this.#pumpAsk();
+  }
+
+  #enqueueAsk(item) {
+    this.askQueue.push(item);
+    this.#pumpAsk();
+  }
+
+  #pumpAsk() {
+    if (!this.askFullTakeover || !this.askDecider) return;
+    while (this.askActive < this.askConcurrency && this.askQueue.length > 0) {
+      const item = this.askQueue.shift();
+      this.askActive += 1;
+      Promise.resolve()
+        .then(() => this.askDecider(item))
+        .then((answer) => {
+          if (!answer) return;
+          if (item.kind === 'unbound') this.answerQuestion(item.questionId, answer);
+          else this.answer(item.taskId, answer);
+        })
+        .catch((error) => {
+          this.logger.warn?.(`[dsh-cow] 自动处理询问失败：${error?.message ?? error}`);
+        })
+        .finally(() => {
+          this.askActive = Math.max(0, this.askActive - 1);
+          this.#pumpAsk();
+        });
+    }
+  }
+
   /** 未绑定任务的待回答问题（本地会话审批等）。 */
   pendingQuestions() {
     return [...this.unboundQuestions.values()];
@@ -445,6 +488,7 @@ export class CowTasks {
 
   /** 回答未绑定任务的提问（按 questionId）。 */
   answerQuestion(questionId, answer) {
+    this.askQueue = this.askQueue.filter((item) => item.questionId !== String(questionId));
     const question = this.unboundQuestions.get(String(questionId));
     if (!question) throw new Error('该问题已处理或不存在');
     this.channel.send(question.from, {
@@ -458,6 +502,7 @@ export class CowTasks {
 
   /** 回答远端任务提出的问题。 */
   answer(taskId, answer) {
+    this.askQueue = this.askQueue.filter((item) => !(item.kind === 'task' && item.taskId === taskId));
     const task = this.get(taskId);
     if (!task) throw new Error(`任务不存在：${taskId}`);
     const question = task.pendingQuestion;
