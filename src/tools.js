@@ -63,7 +63,7 @@ function sessionIdOf(exec) {
   return String(exec?.agent?.session?.id ?? exec?.agent?.session?.sessionId ?? '') || '';
 }
 
-export function createToolDefinitions({ instance, channel, peers, tasks, currentInbound, files, upgrade, workspaceTitleForSession, askQuestion, askMessage, answerChatQuestion, taskIdForSession, claimTask, doctor, taskTimeoutSec = 3600 }) {
+export function createToolDefinitions({ instance, channel, peers, tasks, currentInbound, files, upgrade, workspaceTitleForSession, askQuestion, askMessage, postChatQuestion, answerChatQuestion, taskIdForSession, claimTask, doctor, taskTimeoutSec = 3600 }) {
   return [
     ...(files ? [
       {
@@ -341,12 +341,15 @@ export function createToolDefinitions({ instance, channel, peers, tasks, current
     },
     {
       name: 'cow_send',
-      description: '给直接下级的 DSH 会话发一条消息，不等待回复；子 DSH 在自己的会话里排队处理，完成后自动把回复带到当前会话。适合持续对话、追加修改。',
+      description: '发送一条 dsh-cow 消息。普通消息不等待；kind=question/approval 发送提问；带 replyTo 时作为对某条提问的回复。',
       parameters: {
         type: 'object',
         properties: {
-          peer: { type: 'string', description: '目标子 DSH：cow_peers 里的 peer 名称' },
+          peer: { type: 'string', description: '目标节点：cow_peers 里的名称' },
           message: { type: 'string', description: '消息正文' },
+          kind: { type: 'string', description: '消息类型：message / question / approval / result' },
+          replyTo: { type: 'string', description: '回复哪条消息的 ID' },
+          options: { type: 'array', items: { type: 'string' }, description: '提问/审批的可选回答' },
         },
         required: ['peer', 'message'],
         additionalProperties: false,
@@ -357,16 +360,25 @@ export function createToolDefinitions({ instance, channel, peers, tasks, current
         const target = String(args?.peer ?? '').trim();
         const peer = peers.list().find((item) => item.label === target || item.instanceId === target);
         if (!peer) throw new Error(`未知节点：${target}，先用 cow_peers 查看已连接节点`);
-        if (peer.relation === 'parent') throw new Error('只能给直接下级发消息');
         const text = String(args?.message ?? '');
         if (!text.trim()) throw new Error('消息不能为空');
+        const replyTo = String(args?.replyTo ?? '').trim();
+        if (replyTo) {
+          if (typeof answerChatQuestion !== 'function') throw new Error('当前节点不能回答提问');
+          return answerChatQuestion(replyTo, text);
+        }
+        const kind = String(args?.kind ?? 'message');
+        if (kind === 'question' || kind === 'approval') {
+          if (typeof postChatQuestion !== 'function') throw new Error('当前节点不能发起提问');
+          return postChatQuestion({ question: text, options: Array.isArray(args?.options) ? args.options.map(String) : [] }, sessionIdOf(exec));
+        }
         const id = `msg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
         const sent = channel.send(peer.label, {
           type: 'chat.message',
           payload: { id, text, originSessionId: sessionIdOf(exec) },
         });
-        if (!sent.delivered) throw new Error('消息未送达，子 DSH 当前不在线');
-        return { id, peer: peer.label, status: 'sent' };
+        if (!sent.delivered) throw new Error('消息未送达，目标节点当前不在线');
+        return { id, peer: peer.label, status: 'sent', kind };
       },
     },
     {
@@ -508,5 +520,5 @@ export function createToolDefinitions({ instance, channel, peers, tasks, current
         return tasks.retry(String(args?.taskId ?? '').trim(), { timeoutSec: Number(args?.timeoutSec) || taskTimeoutSec });
       },
     },
-  ].filter((tool) => !['cow_delegate', 'cow_task', 'cow_cancel', 'cow_claim', 'cow_answer', 'cow_retry'].includes(tool.name));
+  ].filter((tool) => !['cow_delegate', 'cow_task', 'cow_cancel', 'cow_claim', 'cow_answer', 'cow_retry', 'cow_ask', 'cow_reply', 'cow_notify'].includes(tool.name));
 }

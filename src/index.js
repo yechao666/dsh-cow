@@ -104,6 +104,7 @@ export function apply(ctx, rawConfig = {}) {
   const chatSessions = new Map(); // peer -> { sessionId }
   const chatOrigins = new Map(); // peer -> originSessionId
   const pendingChatQuestions = new Map(); // questionId -> {resolve,timer}
+  const chatQuestionSessions = new Map(); // questionId -> child session
   const outgoingChatQuestions = new Map(); // questionId -> peer
   let chatSeq = 0;
   const manager = new TaskManager({
@@ -235,6 +236,17 @@ export function apply(ctx, rawConfig = {}) {
       pendingClaims.set(taskId, { resolve, reject, timer });
       logger.info?.(`[dsh-cow] 已发送任务认领 ${taskId}，等待正文`);
     });
+  };
+
+  const postChatQuestion = ({ question, options = [] } = {}, sessionId = '') => {
+    const parent = peers.list().find((peer) => peer.relation === 'parent');
+    if (!parent) throw new Error('本机没有可直接询问的上级');
+    const id = `q_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    const originSessionId = [...chatOrigins.values()][0] ?? '';
+    const sent = channel.send(parent.label, { type: 'chat.question', payload: { id, question, options, originSessionId } });
+    if (!sent.delivered) throw new Error('提问未送达主 DSH');
+    if (sessionId) chatQuestionSessions.set(id, sessionId);
+    return { id, status: 'sent', question, options };
   };
 
   const askMessage = ({ question, options = [], timeoutSec = 300 } = {}) => {
@@ -395,6 +407,16 @@ export function apply(ctx, rawConfig = {}) {
         clearTimeout(pending.timer);
         pendingChatQuestions.delete(questionId);
         pending.resolve({ questionId, answer: String(payload?.answer ?? '') });
+      }
+      const sessionId = chatQuestionSessions.get(questionId);
+      chatQuestionSessions.delete(questionId);
+      if (sessionId) {
+        try {
+          const agent = ctx.get?.('agents', false)?.get?.(sessionId);
+          agent?.followup?.({ id: randomBytes(8).toString('hex'), role: 'user', content: [{ type: 'text', text: `[COW 回复] ${String(payload?.answer ?? '')}` }], source: { kind: 'cow-reply' } });
+        } catch (error) {
+          logger.warn?.(`[dsh-cow] 注入回复失败：${error?.message ?? error}`);
+        }
       }
       return;
     }
@@ -728,6 +750,7 @@ export function apply(ctx, rawConfig = {}) {
       upgrade,
       askQuestion,
       askMessage,
+      postChatQuestion,
       answerChatQuestion,
       taskIdForSession,
       claimTask,

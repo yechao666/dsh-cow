@@ -12,7 +12,7 @@ const deps = {
 
 test('工具清单：status/peers/delegate/task/cancel/notify', () => {
   const names = createToolDefinitions(deps).map((tool) => tool.name);
-  assert.deepEqual(names, ['cow_set_file_policy', 'cow_reply', 'cow_status', 'cow_peers', 'cow_send', 'cow_notify']);
+  assert.deepEqual(names, ['cow_set_file_policy', 'cow_status', 'cow_peers', 'cow_send']);
 });
 
 test.skip('cow_delegate 已移除', () => {});
