@@ -208,7 +208,12 @@ export function mountCarrier({ ctx, handler, upgrade, config, logger }) {
     /** 设置页改了开放端口 / 仅本机监听时重建独立监听。 */
     restart(next = {}) {
       if (disposed) return;
+      const nextHost = next.listenHost ?? settings.listenHost;
+      const nextPort = next.listenPort ?? settings.listenPort;
+      const changed = nextHost !== settings.listenHost || Number(nextPort) !== Number(settings.listenPort);
       settings = { ...settings, ...next };
+      // 只有监听地址/端口真的变了才重建监听；保存密码、任务、询问等设置不踢掉现有连接。
+      if (!changed) return;
       stopOwn();
       startOwn();
     },
