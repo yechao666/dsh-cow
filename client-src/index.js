@@ -1453,7 +1453,7 @@ function CoCowSettingsPage() {
               h(Row, { label: '连接地址' },
                 h('span', { style: { ...S.meta, paddingTop: 7 } }, instance.endpoint ? `${instance.endpoint.replace(/^http/, 'ws')}/channel` : '（未就绪）'),
               ),
-              h(Row, { label: '' }, h('span', { style: S.hint }, '子 DSH 在「上级地址」中填上面的连接地址，密码就是上面的连接密码。每个节点各自设置密码：本节点的下级用这个密码，中间节点的下级用中间节点自己的密码。密码只保存摘要，不回显。')),
+              h(Row, { label: '' }, h('span', { style: S.hint }, '复制这个地址，填入子 DSH 的「上级地址」即可；密码使用上方连接密码。')),
             ),
           ),
           h('div', { style: S.card },
