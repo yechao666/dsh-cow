@@ -1555,7 +1555,7 @@ function CoCowSettingsPage() {
 }
 
 export const name = 'dsh-cow-client';
-export const inject = ['slots', 'sidebarRightTabs', 'sidebarRight', 'betterSidebar'];
+export const inject = ['slots', 'sidebarRightTabs', 'sidebarRight'];
 const COW_RIGHT_KIND = 'cow-status';
 const COW_RIGHT_ID = 'dsh-cow/status';
 let cowRightbar = null;
@@ -1569,22 +1569,6 @@ function openCowRight() {
 }
 export function apply(ctx) {
   cowRightbar = ctx.sidebarRight ?? null;
-  try {
-    if (ctx.betterSidebar?.registerTab) {
-      const registerBetter = () => ctx.betterSidebar.registerTab({
-        id: 'dsh-cow:status',
-        title: 'COW状态',
-        description: '节点、对话与连接状态',
-        order: 5,
-        icon: (size) => h(CowActivityIcon, { size }),
-        component: CowRightStatus,
-      });
-      if (typeof ctx.effect === 'function') ctx.effect(registerBetter, 'dsh-cow: better sidebar status tab');
-      else registerBetter();
-    }
-  } catch (error) {
-    console.error('[dsh-cow] better sidebar tab failed', error);
-  }
   try {
     const registerTab = () => ctx.sidebarRightTabs.register({
       id: COW_RIGHT_ID,
