@@ -63,7 +63,7 @@ function sessionIdOf(exec) {
   return String(exec?.agent?.session?.id ?? exec?.agent?.session?.sessionId ?? '') || '';
 }
 
-export function createToolDefinitions({ instance, channel, peers, tasks, currentInbound, files, upgrade, workspaceTitleForSession, askQuestion, taskIdForSession, doctor, taskTimeoutSec = 3600 }) {
+export function createToolDefinitions({ instance, channel, peers, tasks, currentInbound, files, upgrade, workspaceTitleForSession, askQuestion, taskIdForSession, claimTask, doctor, taskTimeoutSec = 3600 }) {
   return [
     ...(files ? [
       {
@@ -251,6 +251,23 @@ export function createToolDefinitions({ instance, channel, peers, tasks, current
         },
       },
     ] : []),
+    {
+      name: 'cow_claim',
+      description: '认领主 DSH 下发的任务邀请。收到任务邀请时先用这个工具确认；不要用其他插件的任务工具处理 dsh-cow 的任务。',
+      parameters: {
+        type: 'object',
+        properties: {
+          taskId: { type: 'string', description: '任务邀请里的任务 ID' },
+        },
+        required: ['taskId'],
+        additionalProperties: false,
+      },
+      output: output(),
+      async execute(args) {
+        if (typeof claimTask !== 'function') throw new Error('当前节点不能认领任务');
+        return claimTask(String(args?.taskId ?? '').trim());
+      },
+    },
     {
       name: 'cow_status',
       description: '查看本机 dsh-cow 状态：节点信息、监听地址、连接数、当前执行的任务。',

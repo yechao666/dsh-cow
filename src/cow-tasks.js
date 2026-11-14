@@ -190,6 +190,8 @@ export class CowTasks {
       payload: {
         taskId: task.taskId,
         title: task.title,
+        claimTool: 'cow_claim',
+        instruction: `请使用 cow_claim 工具认领任务 ${task.taskId}`,
       },
     });
     if (!sent.delivered) return false;
@@ -460,6 +462,7 @@ export class CowTasks {
         timeoutSec: task.timeoutSec ?? 3600,
         caller: this.instance.instanceId,
         callerLabel: this.instance.displayName ?? '',
+        claimTool: 'cow_claim',
       },
     });
   }

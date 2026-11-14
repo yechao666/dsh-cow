@@ -214,6 +214,16 @@ export function apply(ctx, rawConfig = {}) {
     clearTimeout(pending.timer);
     pending.resolve({ ok: true, answer: String(payload?.answer ?? ''), questionId });
   };
+  const claimTask = (taskId) => {
+    if (!taskId) throw new Error('taskId 不能为空');
+    const parent = peers.list().find((peer) => peer.relation === 'parent');
+    if (!parent) throw new Error('本机没有可直接认领的上级');
+    const sent = channel.send(parent.label, { type: 'task.claim', payload: { taskId } });
+    if (!sent.delivered) throw new Error('认领请求未送达主 DSH');
+    logger.info?.(`[dsh-cow] 已发送任务认领 ${taskId}`);
+    return { taskId, status: 'claiming', message: '已发送认领请求，等待主 DSH 下发任务正文' };
+  };
+
   const taskIdForSession = (sessionId) => {
     if (!sessionId) return '';
     for (const task of manager.tasks.values()) {
@@ -250,9 +260,12 @@ export function apply(ctx, rawConfig = {}) {
       channel.send(from, { type: 'task.progress', payload: { taskId: remoteTaskId, text: '任务已在本机排队或执行中，忽略重复下发' } });
       return;
     }
+    const promptText = payload?.claimTool
+      ? `[dsh-cow] 本任务已通过 ${payload.claimTool} 认领（任务 ID ${String(payload?.taskId ?? '')}）。不要再用其他插件的任务工具。\n\n${String(payload?.prompt ?? '')}`
+      : payload?.prompt;
     const validated = validateCreateTask({
       taskId: payload?.taskId,
-      prompt: payload?.prompt,
+      prompt: promptText,
       title: payload?.title,
       cwd: payload?.cwd,
       timeoutSec: payload?.timeoutSec,
@@ -545,6 +558,7 @@ export function apply(ctx, rawConfig = {}) {
       upgrade,
       askQuestion,
       taskIdForSession,
+      claimTask,
       doctor,
       taskTimeoutSec: resolve().maxTaskMinutes * 60,
       workspaceTitleForSession: (sessionId) => {
