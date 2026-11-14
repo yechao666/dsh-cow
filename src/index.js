@@ -295,7 +295,7 @@ export function apply(ctx, rawConfig = {}) {
     agent.followup({
       id: randomBytes(8).toString('hex'),
       role: 'user',
-      content: [{ type: 'text', text: `这条通知触发了本轮回复。\n\n[COW 对话回复] ${from}\n\n${text}` }],
+      content: [{ type: 'text', text: `[COW 对话回复] ${from}\n\n${text}` }],
       source: { kind: 'notification' },
     });
     return true;
@@ -415,7 +415,7 @@ export function apply(ctx, rawConfig = {}) {
           const local = [...manager.tasks.values()].find((task) => task.sessionId === sessionId);
           const agent = local?.agent ?? ctx.get?.('agents', false)?.get?.(sessionId);
           if (agent && typeof agent.followup === 'function') {
-            agent.followup({ id: randomBytes(8).toString('hex'), role: 'user', content: [{ type: 'text', text: `这条通知触发了本轮回复。\n\n[COW 回复] ${String(payload?.answer ?? '')}` }], source: { kind: 'notification' } });
+            agent.followup({ id: randomBytes(8).toString('hex'), role: 'user', content: [{ type: 'text', text: `[COW 回复] ${String(payload?.answer ?? '')}` }], source: { kind: 'notification' } });
             logger.info?.(`[dsh-cow] 已把回复注入会话 ${sessionId}，开启新一轮`);
           } else {
             logger.warn?.(`[dsh-cow] 找不到可继续的会话 agent：${sessionId}`);

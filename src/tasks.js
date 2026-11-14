@@ -103,7 +103,7 @@ export class TaskManager {
   async #backfillWorkspaces() {
     for (const task of this.tasks.values()) {
       if (task.sessionId && task.cwd) {
-        await this.#attachWorkspace(task.sessionId, task.cwd, task.workspaceName);
+        await this.#attachWorkspace(task.sessionId, task.cwd, task.workspaceName, { createIfMissing: false });
       }
     }
   }
@@ -749,7 +749,7 @@ export class TaskManager {
    * 同一路径可能因为并发 resolve/create 产生重复 Workspace，这里串行创建并把
    * 重复项中的会话合并到保留项后删除重复项。
    */
-  async #attachWorkspace(sessionId, cwd, workspaceName = '') {
+  async #attachWorkspace(sessionId, cwd, workspaceName = '', { createIfMissing = true } = {}) {
     return this.#queueWorkspace(async () => {
       let registry = null;
       try {
@@ -758,6 +758,8 @@ export class TaskManager {
         registry = null;
       }
       if (!registry || typeof registry.resolveByPath !== 'function') return;
+      let workspace;
+      let created = false;
       try {
         // 按 allowedRoots 归并，而不是按任务的具体子目录：同一子 DSH 的所有
         // cow 会话应落在同一个工作区，名称与主 DSH 的工作区对齐。
@@ -769,9 +771,17 @@ export class TaskManager {
         const workspaceTitle = workspaceName || (cwd === root
           ? basename(root)
           : `${basename(root)} / ${relative(root, cwd)}`);
-        let workspace = await registry.resolveByPath(workspacePath);
-        if (!workspace && typeof registry.create === 'function') {
-          workspace = await registry.create(workspacePath, workspaceTitle);
+        workspace = await registry.resolveByPath(workspacePath);
+        if (!workspace) {
+          // 启动期的历史任务补挂只负责把会话接到已存在的工作区。此时多个 DSH
+          // 实例（主进程 + 子 DSH）可能同时对同一份 workspace 存储做 backfill，
+          // 各自看到的 entities 会落后于对方刚写入的记录；若在这里 create，
+          // 就会为同一路径反复生成空工作区，累积成重复项。故补挂一律不创建。
+          if (!createIfMissing) return;
+          if (typeof registry.create === 'function') {
+            workspace = await registry.create(workspacePath, workspaceTitle);
+            created = true;
+          }
         }
         if (!workspace) return;
 
@@ -814,6 +824,15 @@ export class TaskManager {
         if (!workspace.sessionIds.includes(sessionId)) await workspace.attachSession(sessionId);
       } catch (error) {
         this.logger.warn?.(`[dsh-cow] 会话 ${sessionId} 挂到工作区失败：${error?.message ?? error}`);
+        // 本次新建却没挂上任何会话，说明与其它实例的写入撞车了。这种空记录
+        // 会在界面上表现为同名的重复工作区，直接回收注册（目录与会话日志保留）。
+        if (created && workspace && (workspace.sessionIds?.length ?? 0) === 0 && typeof registry.delete === 'function') {
+          try {
+            await registry.delete(workspace.id);
+          } catch (cleanupError) {
+            this.logger.warn?.(`[dsh-cow] 回收空工作区 ${workspace.id} 失败：${cleanupError?.message ?? cleanupError}`);
+          }
+        }
       }
     });
   }
