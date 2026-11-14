@@ -71,6 +71,21 @@ test('校验父端 taskId 并沿用到子端任务', () => {
   assert.equal(validateCreateTask({ taskId: '../bad', prompt: 'hello' }).ok, false);
 });
 
+test('完全接管时把询问注入主 DSH 会话', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'cow-out-inject-'));
+  const channel = { send: () => ({ delivered: true }) };
+  const tasks = new CowTasks({ channel, instance: { instanceId: 'cow_a' }, logger: silent, home, askConcurrency: 1, askFullTakeover: true });
+  const created = tasks.assign({ peer: '子 B', prompt: '执行', cwd: '/tmp', originSessionId: 'session-main' });
+  const injected = [];
+  tasks.setAskInjector((sessionId, text) => { injected.push({ sessionId, text }); return true; });
+  tasks.onEvent({ from: '子 B', event: 'task.question', payload: { taskId: created.taskId, questionId: 'q_inject', question: '子 DSH 请求审批：bash', options: ['允许一次', '拒绝'] } });
+  assert.equal(injected.length, 1);
+  assert.equal(injected[0].sessionId, 'session-main');
+  assert.match(injected[0].text, /COW 询问/);
+  assert.match(injected[0].text, /cow_answer/);
+  assert.equal(tasks.get(created.taskId).awaitingMain, true);
+});
+
 test('完全接管询问时按并发上限自动回答', async () => {
   const home = mkdtempSync(join(tmpdir(), 'cow-out-ask-'));
   const sent = [];

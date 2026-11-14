@@ -223,23 +223,23 @@ export function apply(ctx, rawConfig = {}) {
     return '';
   };
 
-  const decideAsk = async (item) => {
-    const question = String(item?.question ?? '');
-    const options = Array.isArray(item?.options) ? item.options.map(String) : [];
-    // 审批：明确高风险的操作拒绝，其余允许一次。
-    if (/请求审批|approval|approve/i.test(question)) {
-      if (/(danger-full-access|sudo|rm\s+-rf|del\s+|format\s|reset|delete|install_bundle|plugin_manager)/i.test(question)) return '拒绝';
-      return '允许一次';
-    }
-    // 提问：优先选择包含「继续/确认」的选项，否则选第一项；没有选项时给出继续指令。
-    if (options.length > 0) {
-      return options.find((option) => /继续|确认|同意|yes|ok/i.test(option)) ?? options[0];
-    }
-    return '继续按原任务执行；如果已经完成，请直接回报最终结果。';
-  };
+
 
   const tasks = new CowTasks({ channel: null, instance, logger, home, activity, queueTtlMs: resolve().queueTtlMinutes * 60_000, retentionDays: resolve().taskRetentionDays, autoContinueOnReconnect: resolve().autoContinueOnReconnect, askConcurrency: resolve().askConcurrency, askFullTakeover: resolve().askFullTakeover });
-  tasks.setAskPolicy({ concurrency: resolve().askConcurrency, fullTakeover: resolve().askFullTakeover, decider: decideAsk });
+  const injectAsk = (sessionId, text) => {
+    const agents = ctx.get?.('agents', false);
+    const agent = agents?.get?.(sessionId);
+    if (!agent || typeof agent.followup !== 'function') return false;
+    agent.followup({
+      id: randomBytes(8).toString('hex'),
+      role: 'user',
+      content: [{ type: 'text', text }],
+      source: { kind: 'cow-ask' },
+    });
+    return true;
+  };
+  tasks.setAskPolicy({ concurrency: resolve().askConcurrency, fullTakeover: resolve().askFullTakeover });
+  tasks.setAskInjector(injectAsk);
 
   const handleInboundTask = async (payload, from) => {
     const remoteTaskId = String(payload?.taskId ?? '');
@@ -483,7 +483,8 @@ export function apply(ctx, rawConfig = {}) {
     tasks.queueTtlMs = Math.max(60_000, cfg.queueTtlMinutes * 60_000);
     tasks.retentionDays = cfg.taskRetentionDays;
     tasks.autoContinueOnReconnect = cfg.autoContinueOnReconnect;
-    tasks.setAskPolicy({ concurrency: cfg.askConcurrency, fullTakeover: cfg.askFullTakeover, decider: decideAsk });
+    tasks.setAskPolicy({ concurrency: cfg.askConcurrency, fullTakeover: cfg.askFullTakeover });
+    tasks.setAskInjector(injectAsk);
     tasks.prune?.();
     upgrade?.setTimeoutMs?.(cfg.maxTaskMinutes * 60_000);
   };

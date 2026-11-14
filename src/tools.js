@@ -212,18 +212,21 @@ export function createToolDefinitions({ instance, channel, peers, tasks, current
     ] : []),
     {
       name: 'cow_answer',
-      description: '回答某个远端任务提出的问题（问题会出现在 cow_task 的 pendingQuestion 字段）。',
+      description: '回答某个远端任务提出的问题（问题会出现在 cow_task 的 pendingQuestion 字段）；也可用 questionId 回答未绑定任务的询问。',
       parameters: {
         type: 'object',
         properties: {
           taskId: { type: 'string', description: '任务 ID' },
+          questionId: { type: 'string', description: '未绑定任务的询问 ID' },
           answer: { type: 'string', description: '回答内容' },
         },
-        required: ['taskId', 'answer'],
+        required: ['answer'],
         additionalProperties: false,
       },
       output: output(),
       async execute(args) {
+        const questionId = String(args?.questionId ?? '');
+        if (questionId) return tasks.answerQuestion(questionId, String(args?.answer ?? ''));
         return tasks.answer(String(args?.taskId ?? ''), String(args?.answer ?? ''));
       },
     },
@@ -337,6 +340,7 @@ export function createToolDefinitions({ instance, channel, peers, tasks, current
           title: String(args?.title ?? ''),
           timeoutSec: Number(args?.timeoutSec) || taskTimeoutSec,
           taskId: String(args?.taskId ?? '').trim(),
+          originSessionId: sessionIdOf(exec),
           workspaceName: typeof workspaceTitleForSession === 'function'
             ? workspaceTitleForSession(sessionIdOf(exec)) ?? ''
             : '',

@@ -1502,7 +1502,7 @@ function CoCowSettingsPage() {
               h(Row, { label: '完全接管' },
                 h('div', { style: S.row },
                   h('input', { type: 'checkbox', checked: form.askFullTakeover === true, onChange: (e) => update('askFullTakeover', e.target.checked) }),
-                  h('span', { style: S.meta }, '由主 DSH 自动决定子 DSH 的审批与提问；关闭后进入人工队列'),
+                  h('span', { style: S.meta }, '把审批与提问注入主 DSH 当前对话，由主 DSH 思考后回答；关闭后进入人工队列'),
                 ),
               ),
               h(Row, { label: '' },

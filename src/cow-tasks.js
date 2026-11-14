@@ -27,6 +27,7 @@ export class CowTasks {
     this.askConcurrency = Number(askConcurrency) > 0 ? Math.min(20, Math.round(Number(askConcurrency))) : 2;
     this.askFullTakeover = askFullTakeover === true;
     this.askDecider = null;
+    this.askInjector = null;
     this.askQueue = [];
     this.askActive = 0;
     this.tasks = new Map();
@@ -123,6 +124,7 @@ export class CowTasks {
       startedAt: task.startedAt,
       finishedAt: task.finishedAt,
       cwd: task.cwd,
+      originSessionId: task.originSessionId ?? '',
       summary: task.summary ?? '',
       error: task.error ?? null,
       queuedAt: task.queuedAt ?? null,
@@ -146,7 +148,7 @@ export class CowTasks {
       .map((task) => this.snapshot(task));
   }
 
-  assign({ peer, prompt, cwd = '', title = '', timeoutSec = 3600, workspaceName = '', taskId: requestedId = '' }) {
+  assign({ peer, prompt, cwd = '', title = '', timeoutSec = 3600, workspaceName = '', taskId: requestedId = '', originSessionId = '' }) {
     if (requestedId) {
       const existing = this.get(requestedId);
       if (existing) return this.snapshot(existing);
@@ -159,6 +161,7 @@ export class CowTasks {
       prompt,
       cwd,
       workspaceName,
+      originSessionId: String(originSessionId ?? ''),
       status: 'running',
       createdAt: nowIso(),
       startedAt: nowIso(),
@@ -384,7 +387,9 @@ export class CowTasks {
       task.progress.push({ at: nowIso(), kind: 'question', text: `等待回答：${task.pendingQuestion.question.slice(0, 200)}` });
       this.activity?.add({ kind: 'question', text: `远端提问：${task.pendingQuestion.question}`, peer: task.peer, taskId });
       this.#persist(task);
-      if (!task.upgrade) this.#enqueueAsk({ kind: 'task', taskId, from: task.peer, question: task.pendingQuestion.question, options: task.pendingQuestion.options });
+      if (!task.upgrade && !this.#injectAsk(task)) {
+        this.#enqueueAsk({ kind: 'task', taskId, from: task.peer, question: task.pendingQuestion.question, options: task.pendingQuestion.options });
+      }
       // 升级任务：只自动放行 plugin_manager 的 install_bundle，其它审批仍回到人工。
       if (task.upgrade && /plugin_manager/i.test(task.pendingQuestion.question) && /install_bundle/i.test(task.pendingQuestion.question)) {
         setImmediate(() => {
@@ -454,6 +459,43 @@ export class CowTasks {
     this.#pumpAsk();
   }
 
+  setAskInjector(injector) {
+    if (typeof injector === 'function') this.askInjector = injector;
+  }
+
+  /** 把询问作为特殊消息注入主 DSH 的原始会话。 */
+  #injectAsk(task) {
+    if (!this.askFullTakeover || !this.askInjector || !task.originSessionId) return false;
+    const question = task.pendingQuestion;
+    if (!question) return false;
+    const options = Array.isArray(question.options) && question.options.length
+      ? `\n选项：${question.options.join(' / ')}`
+      : '';
+    const text = [
+      '**[COW 询问]**',
+      `- 子节点：${task.peer}`,
+      `- 任务：${task.title || task.taskId}`,
+      `- 任务 ID：${task.taskId}`,
+      `- 问题：${question.question}`,
+      options.trim() ? `- 选项：${question.options.join(' / ')}` : '',
+      '',
+      '请根据任务目标决定，并调用：',
+      `\`cow_answer(taskId="${task.taskId}", answer="允许一次" 或 "拒绝" 或具体回答)\``,
+    ].filter(Boolean).join('\n');
+    try {
+      const ok = this.askInjector(task.originSessionId, text);
+      if (ok) {
+        task.awaitingMain = true;
+        task.progress = [...(task.progress ?? []), { at: nowIso(), kind: 'ask', text: '已注入主 DSH 会话等待决定' }].slice(-20);
+        this.#persist(task);
+      }
+      return Boolean(ok);
+    } catch (error) {
+      this.logger.warn?.(`[dsh-cow] 询问注入主会话失败：${error?.message ?? error}`);
+      return false;
+    }
+  }
+
   #enqueueAsk(item) {
     this.askQueue.push(item);
     this.#pumpAsk();
@@ -507,6 +549,7 @@ export class CowTasks {
     if (!task) throw new Error(`任务不存在：${taskId}`);
     const question = task.pendingQuestion;
     if (!question) throw new Error('该任务当前没有待回答的问题');
+    task.awaitingMain = false;
     this.channel.send(task.peer, {
       type: 'task.answer',
       payload: { taskId: task.taskId, questionId: question.questionId, answer: String(answer ?? '') },
