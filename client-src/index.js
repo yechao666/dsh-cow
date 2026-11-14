@@ -1549,7 +1549,7 @@ export function apply(ctx) {
   try {
     ctx.slots.inject('settings.section', () => {
       const unregister = ctx.slots.register(
-        { name: 'settings.section', id: 'dsh-cow', order: 23, label: () => 'dsh-cow', inject: () => ({}) },
+        { name: 'settings.section', id: 'dsh-cow', order: 23, label: () => 'COW协同', inject: () => ({}) },
         () => h(SettingsBoundary, null, h(CoCowSettingsPage)),
       );
       return () => unregister();
