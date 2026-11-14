@@ -4,6 +4,7 @@ import { existsSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CowTasks } from '../src/cow-tasks.js';
+import { validateCreateTask } from '../src/protocol.js';
 
 const silent = { info() {}, warn() {}, error() {}, debug() {} };
 
@@ -44,6 +45,29 @@ test('升级任务在子端以目标版本重连后自动完成', () => {
   assert.equal(tasks.reconcileUpgrade('子 B', '1.18.9'), 1);
   assert.equal(tasks.get(created.taskId).status, 'succeeded');
   assert.match(tasks.get(created.taskId).summary, /1.18.9/);
+});
+
+test('子端掉线后任务进入等待并可用同一 taskId 重发', () => {
+  const home = mkdtempSync(join(tmpdir(), 'cow-out-offline-'));
+  const channel = makeChannel();
+  const tasks = new CowTasks({ channel, instance: { instanceId: 'cow_a' }, logger: silent, home });
+  const created = tasks.assign({ peer: '子 B', prompt: '离线续跑', cwd: '/tmp' });
+  assert.equal(created.status, 'running');
+
+  assert.equal(tasks.peerOffline('子 B'), 1);
+  assert.equal(tasks.get(created.taskId).status, 'awaiting_peer');
+  assert.equal(tasks.flushQueue('子 B').sent, 1);
+  assert.equal(tasks.get(created.taskId).status, 'running');
+  const assigns = channel.sent.filter((item) => item.frame.type === 'task.assign');
+  assert.equal(assigns.length, 2);
+  assert.equal(assigns[1].frame.payload.taskId, created.taskId);
+});
+
+test('校验父端 taskId 并沿用到子端任务', () => {
+  const validated = validateCreateTask({ taskId: 'cowtask_abc123', prompt: 'hello' });
+  assert.equal(validated.ok, true);
+  assert.equal(validated.value.taskId, 'cowtask_abc123');
+  assert.equal(validateCreateTask({ taskId: '../bad', prompt: 'hello' }).ok, false);
 });
 
 test('taskId 幂等：重复 assign 返回同一任务且只发送一次', () => {

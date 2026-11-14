@@ -114,13 +114,20 @@ export function validateCreateTask(body) {
     chain = [...body.chain];
   }
 
+  let taskId = '';
+  if (body.taskId !== undefined && body.taskId !== null) {
+    const checked = validateTaskId(body.taskId);
+    if (!checked.ok) return checked;
+    taskId = checked.value;
+  }
+
   let caller = null;
   if (body.caller && typeof body.caller === 'object') {
     const read = (key) => (typeof body.caller[key] === 'string' ? body.caller[key].slice(0, LIMITS.callerField) : '');
     caller = { instanceId: read('instanceId'), displayName: read('displayName'), sessionId: read('sessionId') };
   }
 
-  return { ok: true, value: { prompt: prompt.value, title, cwd, workspaceName, context, mode, timeoutSec, caller, chain } };
+  return { ok: true, value: { taskId, prompt: prompt.value, title, cwd, workspaceName, context, mode, timeoutSec, caller, chain } };
 }
 
 /** 校验 POST /tasks/:id/messages 的请求体。 */

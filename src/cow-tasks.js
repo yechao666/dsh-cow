@@ -201,7 +201,7 @@ export class CowTasks {
     let failed = 0;
     let remaining = 0;
     for (const task of this.tasks.values()) {
-      if (task.status !== 'queued') continue;
+      if (task.status !== 'queued' && task.status !== 'awaiting_peer') continue;
       if (peer && task.peer !== peer) {
         remaining += 1;
         continue;
@@ -214,7 +214,10 @@ export class CowTasks {
         failed += 1;
         continue;
       }
-      if (this.#dispatch(task)) sent += 1;
+      if (this.#dispatch(task)) {
+        sent += 1;
+        if (task.status === 'running') task.status = 'running';
+      }
       else remaining += 1;
     }
     if (sent || failed) this.logger.info?.(`[dsh-cow] 离线队列冲刷：发送 ${sent}，过期 ${failed}，剩余 ${remaining}`);
@@ -239,6 +242,27 @@ export class CowTasks {
       task.finishedAt = nowIso();
       task.progress = [...(task.progress ?? []), { at: nowIso(), kind: 'done', text: `子端已上报 ${target}` }].slice(-20);
       this.#persist(task);
+      changed += 1;
+    }
+    return changed;
+  }
+
+  /**
+   * 子端掉线：把执行中的任务改为「等待节点上线」，不判失败。
+   * 子端重连后 flushQueue 会用同一 taskId 重发；子端按 taskId 幂等处理。
+   */
+  peerOffline(peer) {
+    let changed = 0;
+    for (const task of this.tasks.values()) {
+      if (String(task.peer ?? '') !== String(peer ?? '')) continue;
+      if (task.status !== 'running') continue;
+      if (task.timer) clearTimeout(task.timer);
+      task.timer = null;
+      task.status = 'awaiting_peer';
+      task.error = null;
+      task.progress = [...(task.progress ?? []), { at: nowIso(), kind: 'peer', text: '子端离线，等待重新上线' }].slice(-20);
+      this.#persist(task);
+      this.activity?.add({ kind: 'queue', text: `子端离线，任务等待重连：${task.title}`, peer, taskId: task.taskId, status: 'awaiting_peer' });
       changed += 1;
     }
     return changed;

@@ -46,7 +46,7 @@ function backoffMs(attempts) {
  * }} deps
  */
 export class Channel {
-  constructor({ ctx, resolveConfig, peers, instance, authorize, onEvent, onPeer, logger, home, now }) {
+  constructor({ ctx, resolveConfig, peers, instance, authorize, onEvent, onPeer, onOffline, logger, home, now }) {
     this.ctx = ctx;
     this.resolveConfig = resolveConfig;
     this.peers = peers;
@@ -54,6 +54,7 @@ export class Channel {
     this.authorize = authorize;
     this.onEvent = onEvent;
     this.onPeer = onPeer;
+    this.onOffline = onOffline;
     this.logger = logger ?? console;
     this.now = now ?? (() => Date.now());
     this.home = home;
@@ -426,6 +427,9 @@ export class Channel {
 
   #onClosed(state) {
     if (this.conns.get(state.label) === state) this.conns.delete(state.label);
+    if (state.ready) {
+      try { this.onOffline?.(state.label); } catch (error) { this.logger.warn?.(`[dsh-cow] 处理对端离线失败：${error?.message ?? error}`); }
+    }
     this.#saveState(true);
   }
 

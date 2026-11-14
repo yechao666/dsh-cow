@@ -232,6 +232,7 @@ const TASK_STATUS_LABELS = {
   canceled: '已取消',
   interrupted: '已中断',
   waiting: '等待中',
+  awaiting_peer: '等待节点上线',
 };
 
 function taskStatusLabel(status) {
@@ -246,6 +247,7 @@ function panelStatusStyle(status) {
     failed: { color: '#c53030', background: 'rgba(197, 48, 48, 0.1)', border: 'rgba(197, 48, 48, 0.3)' },
     interrupted: { color: '#c53030', background: 'rgba(197, 48, 48, 0.1)', border: 'rgba(197, 48, 48, 0.3)' },
     canceled: { color: 'var(--dsw-alias-label-secondary)', background: 'var(--dsw-alias-bg-l2)', border: 'var(--dsw-alias-border-l2)' },
+    awaiting_peer: { color: '#b7791f', background: 'rgba(183, 121, 31, 0.12)', border: 'rgba(183, 121, 31, 0.35)' },
   };
   return map[status] ?? map.canceled;
 }

@@ -199,6 +199,13 @@ export class TaskManager {
     const cfg = this.resolveConfig();
     if (!cfg.enabled) throw new ProtocolError('unavailable', 'dsh-cow 已禁用');
 
+    // 父端重连后可能用同一 taskId 重发；已存在时直接复用，保证幂等。
+    const existingId = String(validated.taskId ?? '');
+    if (existingId) {
+      const existing = this.get(existingId);
+      if (existing) return this.#snapshot(existing, { after: 0 });
+    }
+
     const workspace = resolveWorkspace(validated.cwd, this.roots());
     if (!workspace.ok) {
       throw new ProtocolError(
@@ -213,7 +220,7 @@ export class TaskManager {
       throw new ProtocolError('too_many_tasks', `远端任务已满（运行 ${this.active}，上限 ${cfg.maxConcurrentTasks + cfg.maxQueuedTasks}）`);
     }
 
-    const taskId = newTaskId();
+    const taskId = existingId || newTaskId();
     const task = {
       taskId,
       title: validated.title || validated.prompt.slice(0, 60).replace(/\s+/g, ' '),

@@ -234,6 +234,7 @@ export function apply(ctx, rawConfig = {}) {
       return;
     }
     const validated = validateCreateTask({
+      taskId: payload?.taskId,
       prompt: payload?.prompt,
       title: payload?.title,
       cwd: payload?.cwd,
@@ -365,6 +366,7 @@ export function apply(ctx, rawConfig = {}) {
     home,
   });
   tasks.channel = channel;
+  channel.onOffline = (label) => { tasks.peerOffline(label); };
   const files = new FileExchange({ instance, channel, peers, resolveConfig: resolve, logger, activity });
   const upgrade = createUpgradeService({
     root: fileURLToPath(new URL('..', import.meta.url)),
