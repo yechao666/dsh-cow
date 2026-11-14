@@ -158,7 +158,7 @@ export class TaskManager {
 
   prune() {
     const cfg = this.resolveConfig();
-    const cutoff = Date.now() - cfg.taskRetentionHours * 3600_000;
+    const cutoff = Date.now() - (cfg.taskRetentionDays ?? 3) * 86_400_000;
     for (const [taskId, task] of this.tasks) {
       if (!TERMINAL.has(task.status)) continue;
       const at = Date.parse(task.finishedAt ?? task.createdAt ?? 0);
@@ -289,6 +289,29 @@ export class TaskManager {
         this.#pump();
       }
     })();
+    return this.#snapshot(task, { after: 0 });
+  }
+
+  /**
+   * 父端在子端重连后发来「继续」指令：给仍在执行的任务补充一轮输入。
+   * 不改任务 ID，也不新建任务；若任务已结束则直接返回快照。
+   */
+  continueTask(taskId, text = '继续完成当前任务。') {
+    const task = this.get(taskId);
+    if (!task) throw new ProtocolError('not_found', `任务不存在：${taskId}`);
+    if (TERMINAL.has(task.status)) return this.#snapshot(task, { after: 0 });
+    if (!task.agent || typeof task.agent.followup !== 'function') {
+      throw new ProtocolError('conflict', '任务还没有可续跑的 Agent，请等待它启动');
+    }
+    task.turns += 1;
+    task.status = 'running';
+    task.startedAt = task.startedAt ?? new Date().toISOString();
+    task.finishedAt = null;
+    task.error = null;
+    this.#record(task, { phase: 'user', message: String(text).slice(0, 280) });
+    this.#persist(task);
+    task.agent.followup(messageObject(String(text)));
+    this.#notify(task);
     return this.#snapshot(task, { after: 0 });
   }
 

@@ -223,7 +223,7 @@ export function apply(ctx, rawConfig = {}) {
     return '';
   };
 
-  const tasks = new CowTasks({ channel: null, instance, logger, home, activity, queueTtlMs: resolve().queueTtlMinutes * 60_000 });
+  const tasks = new CowTasks({ channel: null, instance, logger, home, activity, queueTtlMs: resolve().queueTtlMinutes * 60_000, retentionDays: resolve().taskRetentionDays, autoContinueOnReconnect: resolve().autoContinueOnReconnect });
 
   const handleInboundTask = async (payload, from) => {
     const remoteTaskId = String(payload?.taskId ?? '');
@@ -287,11 +287,31 @@ export function apply(ctx, rawConfig = {}) {
     }
   };
 
+  const handleInboundContinue = (payload, from) => {
+    const remoteTaskId = String(payload?.taskId ?? '');
+    if (!remoteTaskId) return;
+    const localTaskId = inbound.get(remoteTaskId) || (manager.get(remoteTaskId) ? remoteTaskId : '');
+    if (!localTaskId) {
+      channel.send(from, { type: 'task.result', payload: { taskId: remoteTaskId, status: 'failed', error: '子端没有找到这个任务，无法继续' } });
+      return;
+    }
+    try {
+      manager.continueTask(localTaskId, String(payload?.message ?? '继续完成当前任务。'));
+      channel.send(from, { type: 'task.progress', payload: { taskId: remoteTaskId, status: 'running', text: '已收到继续指令，正在继续执行' } });
+    } catch (error) {
+      channel.send(from, { type: 'task.progress', payload: { taskId: remoteTaskId, status: 'running', text: `继续指令未生效：${error?.message ?? error}` } });
+    }
+  };
+
   const onEvent = ({ from, event }) => {
     const type = String(event?.type ?? '');
     const payload = event?.payload ?? {};
     if (type === 'task.assign') {
       void handleInboundTask(payload, from);
+      return;
+    }
+    if (type === 'task.continue') {
+      handleInboundContinue(payload, from);
       return;
     }
     if (type === 'task.cancel') {
@@ -377,6 +397,7 @@ export function apply(ctx, rawConfig = {}) {
     channel,
     home,
     logger,
+    timeoutMs: resolve().maxTaskMinutes * 60_000,
   });
   const disposeApproval = registerApprovalTakeover({
     ctx,
@@ -444,7 +465,10 @@ export function apply(ctx, rawConfig = {}) {
     carrier?.restart({ listenHost: cfg.listenHost, listenPort: cfg.listenPort });
     channel.tick?.();
     tasks.queueTtlMs = Math.max(60_000, cfg.queueTtlMinutes * 60_000);
-    upgrade?.setTimeoutMs?.(cfg.upgradeTimeoutSeconds * 1000);
+    tasks.retentionDays = cfg.taskRetentionDays;
+    tasks.autoContinueOnReconnect = cfg.autoContinueOnReconnect;
+    tasks.prune?.();
+    upgrade?.setTimeoutMs?.(cfg.maxTaskMinutes * 60_000);
   };
 
   const adminHandlers = createAdminHandlers({
@@ -482,6 +506,7 @@ export function apply(ctx, rawConfig = {}) {
       askQuestion,
       taskIdForSession,
       doctor,
+      taskTimeoutSec: resolve().maxTaskMinutes * 60,
       workspaceTitleForSession: (sessionId) => {
         if (!sessionId) return '';
         try {

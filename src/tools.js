@@ -63,7 +63,7 @@ function sessionIdOf(exec) {
   return String(exec?.agent?.session?.id ?? exec?.agent?.session?.sessionId ?? '') || '';
 }
 
-export function createToolDefinitions({ instance, channel, peers, tasks, currentInbound, files, upgrade, workspaceTitleForSession, askQuestion, taskIdForSession, doctor }) {
+export function createToolDefinitions({ instance, channel, peers, tasks, currentInbound, files, upgrade, workspaceTitleForSession, askQuestion, taskIdForSession, doctor, taskTimeoutSec = 3600 }) {
   return [
     ...(files ? [
       {
@@ -316,7 +316,7 @@ export function createToolDefinitions({ instance, channel, peers, tasks, current
           prompt: { type: 'string', description: '任务说明（必填）：目标、验收标准、期望产出、必要背景' },
           cwd: { type: 'string', description: '远端工作目录（绝对路径，必须在远端 allowedRoots 内）' },
           title: { type: 'string', description: '任务短标题' },
-          timeoutSec: { type: 'number', description: '远端执行超时（秒），默认 3600' },
+          timeoutSec: { type: 'number', description: '远端执行超时（秒），默认使用「任务默认超时」' },
           waitSeconds: { type: 'number', description: '本次最多等待秒数，0 表示只提交' },
           taskId: { type: 'string', description: '可选：幂等任务 ID（重复提交返回同一任务）' },
         },
@@ -335,7 +335,7 @@ export function createToolDefinitions({ instance, channel, peers, tasks, current
           prompt: String(args?.prompt ?? ''),
           cwd: String(args?.cwd ?? ''),
           title: String(args?.title ?? ''),
-          timeoutSec: Number(args?.timeoutSec) || 3600,
+          timeoutSec: Number(args?.timeoutSec) || taskTimeoutSec,
           taskId: String(args?.taskId ?? '').trim(),
           workspaceName: typeof workspaceTitleForSession === 'function'
             ? workspaceTitleForSession(sessionIdOf(exec)) ?? ''
@@ -430,7 +430,7 @@ export function createToolDefinitions({ instance, channel, peers, tasks, current
         type: 'object',
         properties: {
           taskId: { type: 'string', description: '原任务 ID' },
-          timeoutSec: { type: 'number', description: '超时秒数（默认 3600）' },
+          timeoutSec: { type: 'number', description: '超时秒数（默认使用「任务默认超时」）' },
         },
         required: ['taskId'],
         additionalProperties: false,
@@ -438,7 +438,7 @@ export function createToolDefinitions({ instance, channel, peers, tasks, current
       output: output(),
       timeoutMs: 120_000,
       async execute(args) {
-        return tasks.retry(String(args?.taskId ?? '').trim(), { timeoutSec: Number(args?.timeoutSec) || 3600 });
+        return tasks.retry(String(args?.taskId ?? '').trim(), { timeoutSec: Number(args?.timeoutSec) || taskTimeoutSec });
       },
     },
   ];

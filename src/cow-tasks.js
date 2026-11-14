@@ -16,19 +16,54 @@ function nowIso() {
 }
 
 export class CowTasks {
-  constructor({ channel, instance, logger, now, home, queueTtlMs, files, activity }) {
+  constructor({ channel, instance, logger, now, home, queueTtlMs, retentionDays, autoContinueOnReconnect, files, activity }) {
     this.channel = channel;
     this.instance = instance;
     this.logger = logger ?? console;
     this.now = now ?? (() => Date.now());
     this.queueTtlMs = Number(queueTtlMs) > 0 ? Number(queueTtlMs) : 2 * 3600_000;
+    this.retentionDays = Number(retentionDays) > 0 ? Number(retentionDays) : 3;
+    this.autoContinueOnReconnect = autoContinueOnReconnect !== false;
     this.tasks = new Map();
     this.unboundQuestions = new Map();
     this.dir = home ? join(coDshDir(home), 'out-tasks') : null;
     this.artifactRoot = home ? join(coDshDir(home), 'artifacts') : null;
     this.files = files ?? null;
     this.activity = activity ?? null;
-    if (this.dir) this.#restore();
+    if (this.dir) { this.#restore(); this.prune(); }
+  }
+
+  /** 子端重连后给仍活着的任务发「继续」指令。 */
+  #continue(task) {
+    if (!this.autoContinueOnReconnect) return false;
+    const sent = this.channel.send(task.peer, {
+      type: 'task.continue',
+      payload: {
+        taskId: task.taskId,
+        message: '连接已恢复。请继续完成当前任务；如果已经完成，请直接回报最终结果。',
+      },
+    });
+    if (!sent.delivered) return false;
+    task.status = 'running';
+    task.error = null;
+    task.progress = [...(task.progress ?? []), { at: nowIso(), kind: 'continue', text: '子端已重连，自动发送继续指令' }].slice(-20);
+    this.#arm(task);
+    return true;
+  }
+
+  /** 清理超过保留天数的终态任务记录（不动运行中/排队任务）。 */
+  prune(days = this.retentionDays) {
+    const cutoff = this.now() - Math.max(1, Number(days) || 3) * 86_400_000;
+    let removed = 0;
+    for (const [taskId, task] of this.tasks) {
+      if (!TERMINAL.has(task.status)) continue;
+      const at = Date.parse(task.finishedAt ?? task.createdAt ?? 0);
+      if (!Number.isFinite(at) || at > cutoff) continue;
+      this.tasks.delete(taskId);
+      try { if (this.dir) unlinkSync(this.#file(taskId)); } catch { /* 忽略 */ }
+      removed += 1;
+    }
+    return removed;
   }
 
   #file(taskId) {
@@ -214,9 +249,11 @@ export class CowTasks {
         failed += 1;
         continue;
       }
-      if (this.#dispatch(task)) {
+      if (task.status === 'awaiting_peer') {
+        if (this.#continue(task)) sent += 1;
+        else remaining += 1;
+      } else if (this.#dispatch(task)) {
         sent += 1;
-        if (task.status === 'running') task.status = 'running';
       }
       else remaining += 1;
     }
@@ -260,6 +297,7 @@ export class CowTasks {
       task.timer = null;
       task.status = 'awaiting_peer';
       task.error = null;
+      task.expiresAt = new Date(this.now() + this.queueTtlMs).toISOString();
       task.progress = [...(task.progress ?? []), { at: nowIso(), kind: 'peer', text: '子端离线，等待重新上线' }].slice(-20);
       this.#persist(task);
       this.activity?.add({ kind: 'queue', text: `子端离线，任务等待重连：${task.title}`, peer, taskId: task.taskId, status: 'awaiting_peer' });

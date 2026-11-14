@@ -58,9 +58,10 @@ test('子端掉线后任务进入等待并可用同一 taskId 重发', () => {
   assert.equal(tasks.get(created.taskId).status, 'awaiting_peer');
   assert.equal(tasks.flushQueue('子 B').sent, 1);
   assert.equal(tasks.get(created.taskId).status, 'running');
-  const assigns = channel.sent.filter((item) => item.frame.type === 'task.assign');
-  assert.equal(assigns.length, 2);
-  assert.equal(assigns[1].frame.payload.taskId, created.taskId);
+  const continues = channel.sent.filter((item) => item.frame.type === 'task.continue');
+  assert.equal(continues.length, 1);
+  assert.equal(continues[0].frame.payload.taskId, created.taskId);
+  assert.match(continues[0].frame.payload.message, /继续/);
 });
 
 test('校验父端 taskId 并沿用到子端任务', () => {

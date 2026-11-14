@@ -53,13 +53,13 @@ export const Config = z.object({
     .volatile()
     .description('允许远端任务使用的工作目录根，换行分隔。留空自动使用用户主目录下的 dsh-cow-root（由代码按平台解析）'),
   maxConcurrentTasks: z.number().default(2).volatile().description('同时执行的远端任务上限'),
-  maxQueuedTasks: z.number().default(8).volatile().description('排队上限，超出直接拒绝'),
+  maxQueuedTasks: z.number().default(20).volatile().description('排队上限，超出直接拒绝'),
   maxTaskMinutes: z.number().default(60).volatile().description('单个远端任务最长执行时间（分钟）'),
   queueTtlMinutes: z.number().default(120).volatile().description('子端离线时任务在队列中保留的分钟数'),
-  upgradeTimeoutSeconds: z.number().default(120).volatile().description('等待子端升级重连的秒数'),
   maxFileMB: z.number().default(50).volatile().description('单个交换文件的上限（MB）'),
   maxConcurrentFiles: z.number().default(4).volatile().description('同时进行的文件传输上限'),
-  taskRetentionHours: z.number().default(72).volatile().description('任务记录保留时长（小时）'),
+  taskRetentionDays: z.number().default(3).volatile().description('任务记录保留天数'),
+  autoContinueOnReconnect: z.boolean().default(true).volatile().description('子端重连后自动发送继续指令'),
   agentPreset: z
     .string()
     .default('')
@@ -95,7 +95,6 @@ export const Config = z.object({
   notifyOnTaskComplete: z.boolean().default(true).volatile().description('远端任务完成/失败时通知发起方'),
   maxInjectionsPerMinute: z.number().default(3).volatile().description('同一会话每分钟最多注入多少条远端通知'),
   inboxRetentionHours: z.number().default(168).volatile().description('收件箱保留时长（小时）'),
-  defaultWaitSeconds: z.number().default(120).volatile().description('cow_delegate 默认等待秒数，超时则返回 taskId'),
   capabilityRefreshMinutes: z.number().default(10).volatile().description('对端能力文档缓存时长（分钟）'),
 
   // ── 能力声明 ──────────────────────────────────────────────────
@@ -148,11 +147,11 @@ export function resolveConfig(input = {}) {
     listenHost: String(raw(input, 'listenHost', '127.0.0.1')).trim() || '127.0.0.1',
     allowedRoots: String(raw(input, 'allowedRoots', DEFAULT_ALLOWED_ROOT)).trim() || DEFAULT_ALLOWED_ROOT,
     maxConcurrentTasks: 1, // 每个子 DSH 同时只执行一个任务
-    maxQueuedTasks: positive(raw(input, 'maxQueuedTasks', 8), 8),
+    maxQueuedTasks: positive(raw(input, 'maxQueuedTasks', 20), 20),
     maxTaskMinutes: positive(raw(input, 'maxTaskMinutes', 60), 60),
     queueTtlMinutes: positive(raw(input, 'queueTtlMinutes', 120), 120),
-    upgradeTimeoutSeconds: positive(raw(input, 'upgradeTimeoutSeconds', 120), 120),
-    taskRetentionHours: positive(raw(input, 'taskRetentionHours', 72), 72),
+    taskRetentionDays: positive(raw(input, 'taskRetentionDays', 3), 3),
+    autoContinueOnReconnect: raw(input, 'autoContinueOnReconnect', true) !== false,
     agentPreset: String(raw(input, 'agentPreset', '')).trim(),
     transport: ['auto', 'p2p', 'haos'].includes(String(raw(input, 'transport', 'auto')))
       ? String(raw(input, 'transport', 'auto'))
@@ -178,7 +177,6 @@ export function resolveConfig(input = {}) {
     notifyOnTaskComplete: Boolean(raw(input, 'notifyOnTaskComplete', true)),
     maxInjectionsPerMinute: positive(raw(input, 'maxInjectionsPerMinute', 3), 3),
     inboxRetentionHours: positive(raw(input, 'inboxRetentionHours', 168), 168),
-    defaultWaitSeconds: positive(raw(input, 'defaultWaitSeconds', 120), 120),
     capabilityRefreshMinutes: positive(raw(input, 'capabilityRefreshMinutes', 10), 10),
     autoDetect: Boolean(raw(input, 'autoDetect', true)),
     probes: String(raw(input, 'probes', '')),
