@@ -375,7 +375,7 @@ export function createToolDefinitions({ instance, channel, peers, tasks, current
         const id = `msg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
         const sent = channel.send(peer.label, {
           type: 'chat.message',
-          payload: { id, text, originSessionId: sessionIdOf(exec) },
+          payload: { id, text, originSessionId: sessionIdOf(exec), workspaceName: typeof workspaceTitleForSession === 'function' ? workspaceTitleForSession(sessionIdOf(exec)) ?? '' : '' },
         });
         if (!sent.delivered) throw new Error('消息未送达，目标节点当前不在线');
         return { id, peer: peer.label, status: 'sent', kind };

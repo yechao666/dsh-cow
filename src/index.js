@@ -6,7 +6,7 @@
  *  - 所有业务帧都是 JSON：hello / welcome / task.assign / task.progress /
  *    task.result / task.cancel / peer.message / ping / pong。
  */
-import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -440,17 +440,27 @@ export function apply(ctx, rawConfig = {}) {
       const text = String(payload?.text ?? '');
       const origin = String(payload?.originSessionId ?? '');
       if (!messageId || !text) return;
-      const state = chatSessions.get(from) ?? { sessionId: null };
-      chatSessions.set(from, state);
-      chatOrigins.set(from, origin);
+      const workspaceName = String(payload?.workspaceName ?? '').trim();
+      const chatKey = `${from}::${workspaceName}::${origin}`;
+      const state = chatSessions.get(chatKey) ?? { sessionId: null };
+      chatSessions.set(chatKey, state);
+      chatOrigins.set(chatKey, origin);
       chatSeq += 1;
       const taskId = `chat_${from.replace(/[^\w.-]+/g, '_')}_${Date.now().toString(36)}_${chatSeq}`;
       try {
+        let chatCwd = '';
+        if (workspaceName) {
+          const root = normalizeRoots(resolve().allowedRoots)[0];
+          if (root) {
+            chatCwd = join(root, workspaceName.replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '-').slice(0, 80));
+            try { mkdirSync(chatCwd, { recursive: true }); } catch { chatCwd = ''; }
+          }
+        }
         const local = manager.create({
           taskId,
           prompt: text,
-          title: `与 ${from} 对话`,
-          cwd: '',
+          title: `${workspaceName ? `[${workspaceName}] ` : ''}与 ${from} 对话`,
+          cwd: chatCwd,
           timeoutSec: 3600,
           rawPrompt: true,
           sessionId: state.sessionId,
