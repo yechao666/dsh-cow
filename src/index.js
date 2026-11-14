@@ -356,6 +356,7 @@ export function apply(ctx, rawConfig = {}) {
           title: `认领任务 ${taskId}`,
           cwd: '',
           timeoutSec: 3600,
+          rawPrompt: true,
         }, { callerLabel: from });
         void manager.waitTerminal(local.taskId).then((done) => {
           channel.send(from, {

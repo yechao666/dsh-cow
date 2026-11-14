@@ -225,6 +225,7 @@ export class TaskManager {
       taskId,
       title: validated.title || validated.prompt.slice(0, 60).replace(/\s+/g, ' '),
       prompt: validated.prompt,
+      rawPrompt: validated.rawPrompt === true,
       context: validated.context,
       cwd: workspace.path,
       caller: validated.caller,
@@ -464,7 +465,7 @@ export class TaskManager {
     if (this.emitEvent) {
       try { this.emitEvent({ type: 'task.started', task: { taskId: task.taskId, status: 'running' } }); } catch { /* 忽略 */ }
     }
-    const prompt = buildDelegatedPrompt({ task, caller: task.caller });
+    const prompt = task.rawPrompt ? task.prompt : buildDelegatedPrompt({ task, caller: task.caller });
     this.#persist(task);
     this.#notify(task);
     try {
