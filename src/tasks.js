@@ -722,6 +722,12 @@ export class TaskManager {
     }
     if (!agent) throw new ProtocolError('unavailable', 'agents.create 没有返回 Agent');
     task.agent = agent;
+    try {
+      const titleService = this.ctx.get?.('sessionTitle');
+      if (titleService?.rename && agent.session) titleService.rename(agent.session, task.title);
+    } catch (error) {
+      this.logger.warn?.(`[dsh-cow] 设置会话标题失败：${error?.message ?? error}`);
+    }
     this.#attachSessionEvents(task, agent);
     await this.#attachWorkspace(task.sessionId, task.cwd, task.workspaceName);
     return agent;

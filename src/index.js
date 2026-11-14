@@ -353,7 +353,7 @@ export function apply(ctx, rawConfig = {}) {
         const local = manager.create({
           taskId,
           prompt: `这是一条 dsh-cow 任务邀请，任务 ID：${taskId}。请先调用 cow_claim 工具认领该任务，然后开始执行。`,
-          title: `认领任务 ${taskId}`,
+          title: String(payload?.title ?? '').trim() || `认领任务 ${taskId}`,
           cwd: '',
           timeoutSec: 3600,
           rawPrompt: true,
