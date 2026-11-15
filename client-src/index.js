@@ -834,6 +834,7 @@ function CoCowSettingsPage() {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload?.error?.message || `HTTP ${response.status}`);
       apply(payload);
+      window.dispatchEvent(new Event('dsh-cow:state-changed'));
       setMessage('已保存。');
     } catch (saveError) {
       setError(saveError.message);
@@ -858,6 +859,7 @@ function CoCowSettingsPage() {
       if (!response.ok) throw new Error(payload?.error?.message || `HTTP ${response.status}`);
       setPwdConfigured(Boolean(payload?.configured));
       setPwdInput('');
+      window.dispatchEvent(new Event('dsh-cow:state-changed'));
       setMessage('连接密码已保存。');
     } catch (saveError) {
       setError(saveError.message);
@@ -880,6 +882,7 @@ function CoCowSettingsPage() {
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload?.error?.message || `HTTP ${response.status}`);
+      window.dispatchEvent(new Event('dsh-cow:state-changed'));
       setMessage(payload?.url ? '已保存上级地址，正在重连。' : '已清除上级地址。');
     } catch (saveError) {
       setError(saveError.message);
@@ -963,10 +966,113 @@ function CoCowSettingsPage() {
   );
 }
 
+// ── 侧边栏底部：本机节点标识 ──────────────────────────────────
+
+// 由 apply() 注入的布局服务；用于点击节点标识打开 COW 状态。
+let ctxLayout = null;
+
+function useCowNode() {
+  const [node, setNode] = React.useState(null);
+  React.useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      try {
+        const response = await fetch(stateUrl(), { credentials: 'same-origin', cache: 'no-store' });
+        if (!response.ok) throw new Error(String(response.status));
+        const data = await response.json();
+        if (alive) setNode(data);
+      } catch {
+        if (alive) setNode(null);
+      }
+    };
+    void load();
+    const timer = setInterval(() => { void load(); }, 15_000);
+    const onFocus = () => { void load(); };
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('dsh-cow:state-changed', onFocus);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('dsh-cow:state-changed', onFocus);
+    };
+  }, []);
+  return node;
+}
+
+function CowNodeBadge({ wide }) {
+  const state = useCowNode();
+  const [hover, setHover] = React.useState(false);
+  if (!state?.instance) return null;
+  const instance = state.instance;
+  const name = String(instance.displayName || state.config?.displayName || '').trim() || '未命名节点';
+  const role = instance.role === 'leader' ? '主 DSH' : instance.role === 'member' ? '子 DSH' : '节点';
+  const connected = Number(state.stats?.connected) || 0;
+  const peerId = String(instance.peerId || '');
+  const online = connected > 0;
+  const title = `本机 COW 节点：${name}\n${peerId}${online ? `\n${connected} 个连接` : '\n未连接'}`;
+  const openStatus = () => {
+    try { ctxLayout?.selectPanel?.('cow-activity'); } catch { /* 面板不可用时忽略 */ }
+  };
+
+  if (!wide) {
+    return h('button', {
+      type: 'button',
+      title,
+      'aria-label': `本机 COW 节点：${name}`,
+      onClick: openStatus,
+      onMouseEnter: () => setHover(true),
+      onMouseLeave: () => setHover(false),
+      style: {
+        width: 36, height: 36, display: 'grid', placeItems: 'center', margin: '0 auto',
+        border: 0, borderRadius: 'var(--dsw-radius-md)', cursor: 'pointer',
+        color: 'var(--dsw-alias-brand-primary)',
+        background: hover ? 'var(--dsw-alias-interactive-bg-hover)' : 'transparent',
+      },
+    },
+      h('span', { style: { position: 'relative', display: 'inline-flex' } },
+        h(CowActivityIcon, { size: 19 }),
+        h('span', { style: {
+          position: 'absolute', right: -2, bottom: -1, width: 7, height: 7, borderRadius: 999,
+          background: online ? '#34c38f' : '#94a3b8', border: '1.5px solid var(--dsw-alias-bg-base)',
+        } }),
+      ),
+    );
+  }
+
+  return h('button', {
+    type: 'button',
+    title,
+    'aria-label': `本机 COW 节点：${name}`,
+    onClick: openStatus,
+    onMouseEnter: () => setHover(true),
+    onMouseLeave: () => setHover(false),
+    style: {
+      display: 'flex', alignItems: 'center', gap: 8, width: '100%', minWidth: 0, height: 40,
+      padding: '4px 8px', boxSizing: 'border-box', border: 0, borderRadius: 'var(--dsw-radius-md)',
+      background: hover ? 'var(--dsw-alias-interactive-bg-hover)' : 'transparent',
+      color: 'var(--dsw-alias-label-primary)', cursor: 'pointer', textAlign: 'left', font: 'inherit',
+    },
+  },
+    h('span', { style: {
+      width: 26, height: 26, borderRadius: 8, display: 'grid', placeItems: 'center', flex: 'none',
+      color: 'var(--dsw-alias-brand-primary)',
+      background: 'color-mix(in srgb, var(--dsw-alias-brand-primary) 10%, transparent)',
+    } }, h(CowActivityIcon, { size: 16 })),
+    h('span', { style: { display: 'grid', gap: 1, minWidth: 0, flex: '1 1 auto' } },
+      h('span', { style: { fontSize: 12, fontWeight: 600, lineHeight: 1.35, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, name),
+      h('span', { style: { display: 'flex', alignItems: 'center', gap: 5, minWidth: 0, fontSize: 10.5, lineHeight: 1.3, color: 'var(--dsw-alias-label-tertiary)' } },
+        h('span', { style: { width: 6, height: 6, borderRadius: 999, flex: 'none', background: online ? '#34c38f' : '#94a3b8' } }),
+        h('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, `${role} · ${online ? `${connected} 连接` : '未连接'}`),
+      ),
+    ),
+  );
+}
+
 // ── 注册 ────────────────────────────────────────────────────────
 
 export const name = 'dsh-cow-client';
-export const inject = ['slots', 'sidebarRightTabs', 'sidebarRight'];
+export const inject = ['slots', 'sidebarRightTabs', 'sidebarRight', 'layout'];
 const COW_RIGHT_KIND = 'cow-status';
 const COW_RIGHT_ID = 'dsh-cow/status';
 
@@ -979,6 +1085,7 @@ function CowStatusIcon() {
 }
 
 export function apply(ctx) {
+  ctxLayout = ctx.layout ?? null;
   try {
     const registerTab = () => ctx.sidebarRightTabs.register({
       id: COW_RIGHT_ID,
@@ -1017,6 +1124,15 @@ export function apply(ctx) {
       label: 'COW状态',
     }, CowStatusIcon));
   } catch { /* 侧边栏插槽不可用时忽略 */ }
+  try {
+    ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({
+      name: 'sidebar.footer.action',
+      id: 'cow-node',
+      order: 10,
+    }, CowNodeBadge));
+  } catch (error) {
+    console.error('[dsh-cow] node badge slot failed', error);
+  }
   try {
     ctx.slots.inject('settings.section', () => {
       const unregister = ctx.slots.register(
