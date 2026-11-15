@@ -70,7 +70,7 @@ node scripts/join-child.mjs --home ~/.dsh-childA --name "子DSH-A" \
 
 - `cow_status`：本机状态、连接数、待回答询问；
 - `cow_peers`：节点列表（在线状态、版本、说明）；
-- `cow_send`：发消息。默认 `kind=dispatch` 派给直接下级并立即返回；`kind=ask` 向直接上级提问并等待回答；带 `replyTo` 时回答提问（回到子会话）；
+- `cow_send`：发消息。`peer` 优先填 `instanceId`（cow_…，显示名可能重复），也可填显示名；默认 `kind=dispatch` 派给直接下级并立即返回；`kind=ask` 向直接上级提问并等待回答；带 `replyTo` 时回答提问（回到子会话）；
 - `cow_doctor`：生成本机诊断包（版本/配置/加密状态/文件统计/活动），返回 JSON 路径；
 - `cow_send_file` / `cow_receive_file`：发/取文件（单个或目录、断点续传、sha256）；
 - `cow_pull_dir`：拉取远端整个目录；

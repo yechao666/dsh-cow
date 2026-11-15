@@ -246,25 +246,28 @@ export function createToolDefinitions({ instance, channel, peers, files, doctor,
       name: 'cow_send',
       description:
         '发送 dsh-cow 消息，主 DSH 不等待、不轮询。kind=dispatch（默认）把消息派给直接下级，异步进入对方会话输入队列，对方回合结束自动把 complete 注入本会话；' +
-        'kind=ask 向直接上级提问/审批并等待回答；带 replyTo 时作为对某条询问的回答（answer 会回到提出询问的子会话）。',
+        'kind=ask 向直接上级提问/审批并等待回答；带 replyTo 时作为对某条询问的回答（answer 会回到提出询问的子会话）。' +
+        'peer 优先填 instanceId（cow_…），显示名只用于展示。',
       parameters: {
         type: 'object',
         properties: {
-          peer: { type: 'string', description: '目标节点：cow_peers 里的名称；回答时填提问的来源节点' },
+          peer: { type: 'string', description: '目标节点：优先填 instanceId（cow_…），也可填 cow_peers 里的显示名；回答时填提问来源节点' },
+          peerId: { type: 'string', description: '可选：目标节点的 instanceId，优先于 peer 的显示名' },
           message: { type: 'string', description: '消息正文' },
           kind: { type: 'string', enum: ['dispatch', 'ask', 'answer'], description: '消息类型，默认 dispatch' },
           replyTo: { type: 'string', description: '回答哪条询问的 questionId' },
           options: { type: 'array', items: { type: 'string' }, description: '提问的可选回答' },
           timeoutSec: { type: 'number', description: 'ask 等待回答的秒数，默认 300' },
         },
-        required: ['peer', 'message'],
+        required: ['message'],
         additionalProperties: false,
       },
       output: output(),
       timeoutMs: 310_000,
       async execute(args, exec) {
-        const target = String(args?.peer ?? '').trim();
+        const target = String(args?.peerId ?? args?.peer ?? '').trim();
         const text = String(args?.message ?? '');
+        if (!target) throw new Error('缺少 peer / peerId');
         if (!text.trim()) throw new Error('消息不能为空');
         const replyTo = String(args?.replyTo ?? '').trim();
         if (replyTo) {
@@ -304,7 +307,8 @@ export function createToolDefinitions({ instance, channel, peers, files, doctor,
         });
         // 优先按 instanceId 路由：显示名可以改、可能撞名，实例 ID 不变。
         const sent = channel.send(peer.instanceId || peer.label, { type: 'msg.dispatch', payload: envelope });
-        activity?.add?.({ kind: 'message', text: `派给 ${peer.label}：${text.slice(0, 80)}`, peer: peer.label, from: instance.displayName || instance.instanceId, to: peer.label, messageId: envelope.messageId, status: sent?.delivered ? 'sent' : 'queued' });
+        const shortId = peer.instanceId ? `（${peer.instanceId}）` : '';
+        activity?.add?.({ kind: 'message', text: `派给 ${peer.label}${shortId}：${text.slice(0, 80)}`, peer: peer.label, from: instance.displayName || instance.instanceId, to: peer.label, messageId: envelope.messageId, status: sent?.delivered ? 'sent' : 'queued' });
         if (!sent?.delivered && !sent?.queued) throw new Error('消息未送达，目标节点当前不在线');
         return { messageId: envelope.messageId, peer: peer.label, peerId: peer.instanceId || '', kind: 'dispatch', status: sent.delivered ? 'sent' : 'queued' };
       },

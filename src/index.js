@@ -395,10 +395,11 @@ export function apply(ctx, rawConfig = {}) {
     lines.push(`角色：${instance.role === 'member' ? '子 DSH' : '主 DSH'}`);
     const conns = peers.list().map((peer) => {
       const status = channel.status(peer.label);
-      return `- ${status.state === 'connected' ? '[在线]' : '[离线]'} ${peer.label}（${peer.relation === 'parent' ? '上级' : '下级'}）${status.node?.description ? `：${String(status.node.description).slice(0, 160)}` : ''}`;
+      const id = peer.instanceId || '(未登记)';
+      return `- ${status.state === 'connected' ? '[在线]' : '[离线]'} ${peer.label}（${peer.relation === 'parent' ? '上级' : '下级'}，instanceId: ${id}）${status.node?.description ? `：${String(status.node.description).slice(0, 140)}` : ''}`;
     });
     lines.push(...(conns.length ? ['已连接的节点：', ...conns] : ['当前没有已连接的节点。']));
-    lines.push('派消息用 cow_send(peer, message)（peer 可填节点名称或稳定 instanceId）：消息直接进入对方会话输入队列，立即返回，不等待、不轮询；对方回合结束会把 complete 通知注入你派发时的原会话。子 DSH 用 cow_send(kind="ask") 提问/审批，主 DSH 用 cow_send(replyTo=questionId) 回答，回答会回到同一子会话。文件交换用 cow_send_file / cow_receive_file / cow_pull_dir（只限直接下级，允许根目录内 sha256 校验）；文件策略用 cow_set_file_policy 调整。');
+    lines.push('派消息用 cow_send(peer, message)：peer 必须优先填节点的 instanceId（cow_…），显示名可能重复、只用于展示；消息直接进入对方会话输入队列，立即返回，不等待、不轮询；对方回合结束会把 complete 通知注入你派发时的原会话。子 DSH 用 cow_send(kind="ask") 提问/审批，主 DSH 用 cow_send(replyTo=questionId) 回答，回答会回到同一子会话。文件交换用 cow_send_file / cow_receive_file / cow_pull_dir（只限直接下级，允许根目录内 sha256 校验）；文件策略用 cow_set_file_policy 调整。');
     return lines.join('\n');
   };
 
