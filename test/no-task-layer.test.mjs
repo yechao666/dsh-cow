@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 
-test('任务层文件已删除', () => {
+test('旧任务层文件已删除（auto-upgrade 是新的消息升级服务，不在任务层）', () => {
   for (const name of ['tasks.js', 'cow-tasks.js', 'remote-tasks.js', 'notify.js', 'inbox.js', 'prompt.js', 'upgrade.js', 'haos-transport.js', 'client.js']) {
     assert.equal(existsSync(join(root, 'src', name)), false, `src/${name} 应已删除`);
   }

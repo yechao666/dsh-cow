@@ -157,3 +157,29 @@ test('文件工具在 files 可用时注册，且只有直接下级可设策略'
   const policy = find(defs, 'cow_set_file_policy');
   assert.deepEqual(await policy.execute({ peerId: 'cow_child', peerName: '子 DSH-x', allowFiles: false }, {}), { peerId: 'cow_child', peerName: '子 DSH-x', allowFiles: false, maxFileMB: undefined });
 });
+
+test('cow_upgrade 发送带下载地址的升级消息', async () => {
+  const pack = {
+    url: 'http://main:60001/cow/v1/plugin/package?token=abc',
+    sha256: 'a'.repeat(64),
+    version: '1.31.0',
+  };
+  const { defs, sent } = deps({ packages: { issue: () => pack } });
+  const tool = find(defs, 'cow_upgrade');
+  assert.ok(tool);
+  const result = await tool.execute({ peerId: 'cow_child' }, { agent: { session: { id: 's' } } });
+  assert.equal(result.status, 'sent');
+  assert.equal(result.version, '1.31.0');
+  assert.equal(sent[0].frame.type, 'msg.upgrade');
+  assert.equal(sent[0].frame.payload.package.version, '1.31.0');
+  assert.equal(sent[0].frame.payload.package.url, pack.url);
+  assert.equal(sent[0].frame.payload.package.sha256, pack.sha256);
+  assert.equal(sent[0].frame.payload.package.action, 'install');
+});
+
+test('cow_upgrade 外部地址必须带 sha256 和 version', async () => {
+  const { defs } = deps({ packages: { issue: () => { throw new Error('should not be used'); } } });
+  const tool = find(defs, 'cow_upgrade');
+  await assert.rejects(tool.execute({ peerId: 'cow_child', url: 'https://example.com/dsh-cow.tgz' }, { agent: { session: { id: 's' } } }), /sha256/);
+  await assert.rejects(tool.execute({ peerId: 'cow_child', url: 'https://example.com/dsh-cow.tgz', sha256: 'b'.repeat(64) }, { agent: { session: { id: 's' } } }), /version/);
+});

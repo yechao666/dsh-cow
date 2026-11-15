@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
  *
  *   cow_status / cow_peers / cow_send / cow_doctor + 文件交换工具
  */
-import { buildEnvelope } from './message-core.js';
+import { buildEnvelope, newMessageId } from './message-core.js';
 
 function textOutput(value) {
   return [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) }];
@@ -34,6 +34,15 @@ export function registerTools(ctx, definitions) {
   });
 }
 
+function versionLess(a, b) {
+  const pa = String(a ?? '').replace(/^v/, '').split('.').map((part) => Number.parseInt(part, 10) || 0);
+  const pb = String(b ?? '').replace(/^v/, '').split('.').map((part) => Number.parseInt(part, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i += 1) {
+    if ((pa[i] ?? 0) !== (pb[i] ?? 0)) return (pa[i] ?? 0) < (pb[i] ?? 0);
+  }
+  return false;
+}
+
 function installedVersion() {
   try {
     return String(JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version ?? '');
@@ -56,7 +65,7 @@ const PEER_NAME_PARAM = {
   description: '可选：目标节点的显示名提示；名称可能随时变化，不参与路由与校验，实际以 peerId 为准',
 };
 
-export function createToolDefinitions({ instance, channel, peers, files, doctor, bridge, router, activity, sessionInfoFor }) {
+export function createToolDefinitions({ instance, channel, peers, files, doctor, bridge, router, activity, packages, sessionInfoFor }) {
   const peerById = (id) => {
     const needle = String(id ?? '').trim();
     if (!needle) return null;
@@ -218,6 +227,75 @@ export function createToolDefinitions({ instance, channel, peers, files, doctor,
         };
       },
     },
+    ...(packages ? [{
+      name: 'cow_upgrade',
+      description:
+        '向一个直接下级发送 msg.upgrade 控制消息：主端把当前插件包暴露为短期下载地址，' +
+        '消息里带下载 URL、sha256 和版本；子端插件自动下载、校验并安装，然后重连。' +
+        '只发一条消息，不推送文件、不建任务、不等待安装完成。',
+      parameters: {
+        type: 'object',
+        properties: {
+          peerId: PEER_ID_PARAM,
+          peerName: PEER_NAME_PARAM,
+          url: { type: 'string', description: '可选：外部插件包 http(s) 下载地址；不传则使用本机当前插件包' },
+          sha256: { type: 'string', description: '外部 url 必填：插件包 sha256（64 位十六进制）' },
+          version: { type: 'string', description: '目标版本；不传则使用本机当前版本 / 外部包由调用方声明' },
+        },
+        required: ['peerId'],
+        additionalProperties: false,
+      },
+      output: output(),
+      timeoutMs: 30_000,
+      async execute(args) {
+        const target = resolvePeer(args);
+        if (target.relation === 'parent') throw new Error('只能升级直接下级');
+        const targetVersion = String(channel.status(target.label)?.node?.version ?? '');
+        if (targetVersion && versionLess(targetVersion, '1.31.0')) {
+          throw new Error(`目标版本 ${targetVersion} 不支持自动升级，请先手动升级到 1.31.0+`);
+        }
+        const explicitUrl = String(args?.url ?? '').trim();
+        const explicitSha = String(args?.sha256 ?? '').trim().toLowerCase();
+        const explicitVersion = String(args?.version ?? '').trim();
+        let pack;
+        if (explicitUrl) {
+          if (!/^https?:\/\//i.test(explicitUrl)) throw new Error('url 必须是 http(s) 下载地址');
+          if (!/^[0-9a-f]{64}$/i.test(explicitSha)) throw new Error('外部 url 必须同时提供 64 位 sha256');
+          if (!explicitVersion) throw new Error('外部 url 必须同时提供 version');
+          pack = { name: 'dsh-cow', version: explicitVersion, url: explicitUrl, sha256: explicitSha };
+        } else {
+          pack = packages.issue();
+        }
+        const messageId = newMessageId('upg');
+        const payload = {
+          messageId,
+          peerId: target.peerId || '',
+          peerName: target.label,
+          package: { ...pack, action: 'install' },
+          createdAt: new Date().toISOString(),
+        };
+        const sent = channel.send(target.peerId || target.label, { type: 'msg.upgrade', payload });
+        if (!sent?.delivered && !sent?.queued) throw new Error('升级消息未送达，目标节点当前不在线');
+        activity?.add?.({
+          kind: 'message',
+          text: `向 ${target.label} 发送升级消息：v${pack.version}`,
+          peerName: target.label,
+          from: instance.displayName || instance.peerId,
+          to: target.label,
+          messageId,
+          status: sent.delivered ? 'sent' : 'queued',
+        });
+        return {
+          messageId,
+          peerId: target.peerId || '',
+          peerName: target.label,
+          version: pack.version,
+          sha256: pack.sha256,
+          url: pack.url,
+          status: sent.delivered ? 'sent' : 'queued',
+        };
+      },
+    }] : []),
     ...(doctor ? [
       {
         name: 'cow_doctor',

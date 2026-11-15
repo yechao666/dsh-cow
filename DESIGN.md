@@ -97,6 +97,14 @@ complete/ask 仍然回到消息自己的主会话。显示名可能重复或变�
 双方握手时用共用密码 + 每次连接 nonce 派生 AES-256-GCM 会话密钥，业务帧整体加密，
 握手帧保持明文便于排障。密钥不落盘，重连即轮换。
 
+### 3.8 自动升级：控制消息 + 短期包 URL
+
+主端 `cow_upgrade` 把当前插件打成 tgz，生成 10 分钟/最多 5 次下载的 token URL，
+然后只发一条 `msg.upgrade` 控制消息（不推文件、不建任务、不等待）。子端插件收到后
+下载、校验 sha256 与 tgz 内 `package/package.json` 的 name/version，再用
+`pluginManager.removeBundle` + `installBundle` 完成升级；Hot Reload/重连后主端
+hello 上报的新版本即验收。要求子端 >= 1.31.0。
+
 ## 4. 威胁模型
 
 - 持有连接密码的一方等于被授权在本机跑 Agent；`allowedRoots` 是最后一道边界。
@@ -115,6 +123,7 @@ complete/ask 仍然回到消息自己的主会话。显示名可能重复或变�
 | `settings.json` | 设置页覆盖层（0600） |
 | `channel-state.json` / `channel-outbox.json` | 通道 ack 水位与发件箱 |
 | `http.token` / `http.json` | 本机管理接口令牌与端点 |
+| `updates/` | 自动升级下载的插件 tgz（0600） |
 
 子会话本身是正常的 DSH 会话，落在会话存储里，可在界面中查看、审计。
 

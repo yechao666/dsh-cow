@@ -5,7 +5,7 @@
  * 动态提供安装包；这里用 node:zlib + 手写 tar 头，零依赖且跨平台。
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { gzipSync } from 'node:zlib';
+import { gunzipSync, gzipSync } from 'node:zlib';
 import { join, relative, sep } from 'node:path';
 
 const INCLUDE = ['package.json', 'cordis.patch.yml', 'README.md', 'DESIGN.md', 'bin', 'src', 'lib', 'client-src', 'docs', 'scripts'];
@@ -75,4 +75,21 @@ export function buildPluginTarball(root, { name, version }) {
 
 export function tarballName({ name, version }) {
   return `${name}-${version}.tgz`;
+}
+
+/** 从插件 tgz 里读取 package/package.json；升级前校验包名/版本。 */
+export function readPackageJsonFromTarball(buffer) {
+  const tar = gunzipSync(buffer);
+  for (let offset = 0; offset + 512 <= tar.length;) {
+    const name = tar.subarray(offset, offset + 100).toString('utf8').replace(/\0.*$/, '').trim();
+    if (!name) break;
+    const sizeText = tar.subarray(offset + 124, offset + 136).toString('utf8').replace(/\0.*$/, '').trim();
+    const size = parseInt(sizeText || '0', 8) || 0;
+    const start = offset + 512;
+    if (name === 'package/package.json') {
+      return JSON.parse(tar.subarray(start, start + size).toString('utf8'));
+    }
+    offset = start + Math.ceil(size / 512) * 512;
+  }
+  throw new Error('插件包缺少 package/package.json');
 }

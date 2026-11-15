@@ -54,12 +54,15 @@ test('index 接线：只注册消息与文件工具，系统提示说明消息�
       'cow_send_file',
       'cow_set_file_policy',
       'cow_status',
+      'cow_upgrade',
     ]);
     assert.ok(!names.includes('cow_task'));
     assert.ok(!names.includes('cow_delegate'));
     const section = promptSections.find((item) => item.name === 'plugin:dsh-cow');
     assert.ok(section, '应注册系统提示段');
     assert.match(String(section.text()), /cow_send/);
+    assert.match(String(section.text()), /cow_upgrade/);
+    assert.match(String(section.text()), /msg\.upgrade/);
     assert.doesNotMatch(String(section.text()), /cow_task/);
   } finally {
     for (const dispose of disposers.reverse()) {

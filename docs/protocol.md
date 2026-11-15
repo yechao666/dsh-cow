@@ -32,7 +32,7 @@ proof = sha256(nonce + ":" + hashJoinPassword(password, salt))
   "protocol": "cow/v1",
   "peerId": "cow_…",
   "displayName": "叶超的MacMini",
-  "node": { "uuid": "…", "version": "1.30.2", "description": "…" },
+  "node": { "uuid": "…", "version": "1.31.1", "description": "…" },
   "ackSeq": 0,
   "enc": 1,
   "proof": "…"
@@ -194,6 +194,33 @@ key = HKDF-SHA256(base = passwordHash, salt = nonce, info = "cow/v1/e2e", 32)
 
 `peer.message`：`{ message }`，仅做通知，不保证被 Agent 消费。
 
+### 3.5 升级消息（msg.upgrade）
+
+主端 `cow_upgrade(peerId)` 生成当前插件包的短期下载 URL，然后发送一条控制消息：
+
+```json
+{
+  "messageId": "upg_…",
+  "peerId": "cow_6f1c…",
+  "peerName": "子 DSH-A",
+  "package": {
+    "name": "dsh-cow",
+    "version": "1.31.1",
+    "url": "http://main:60001/cow/v1/plugin/package?token=…",
+    "sha256": "…"
+  }
+}
+```
+
+子端插件收到后自动：下载 URL → 校验 sha256 与 tgz 内 `package/package.json` 的 name/version →
+通过 `pluginManager` 先 `removeBundle` 再 `installBundle` → 插件 Hot Reload/重连。
+子端还会发 `msg.upgrade.result`（`installing`/`installed`/`current`/`failed`）。
+
+升级没有独立任务、没有等待器；主端只确认消息已发送/入队，最终以 hello 上报的新版本验收。
+要求子端 **>= 1.31.0**。插件包 URL 默认指向主端
+`/cow/v1/plugin/package?token=…`，token 只存在内存（10 分钟、最多 5 次下载）。
+主端 `url` 参数可换成外部 http(s) 包，但必须同时传 `sha256` 和 `version`。
+
 ## 4. 文件交换
 
 所有文件事件都只发给直接下级；接收方写入自己的 `allowedRoots`。
@@ -228,6 +255,7 @@ key = HKDF-SHA256(base = passwordHash, salt = nonce, info = "cow/v1/e2e", 32)
 | POST | `/cow/v1/files/send` | 本机发文件/目录 |
 | POST | `/cow/v1/files/receive` | 本机取文件 |
 | GET | `/cow/v1/channel` | WebSocket 升级；普通 GET 返回 426 |
+| GET | `/cow/v1/plugin/package?token=…` | 短期插件包下载（升级消息里携带） |
 | GET | `/api/cow/state` | 设置页状态（同源） |
 | POST | `/api/cow/answer` | 程序化回答远端询问（questionId；CLI/自动化用，设置页不提供人工队列） |
 

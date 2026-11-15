@@ -35,7 +35,7 @@ function sendJson(res, status, body) {
   res.end(text);
 }
 
-export function createHandler({ channel, info, api }) {
+export function createHandler({ channel, info, api, packages }) {
   return async function handler(req, res) {
     let url;
     try {
@@ -54,6 +54,23 @@ export function createHandler({ channel, info, api }) {
         version: info?.version ?? '',
         connections: channel?.connectedCount?.() ?? 0,
       });
+      return;
+    }
+    if (pathname === `${ROUTE_PREFIX}/plugin/package` && req.method === 'GET') {
+      const item = packages?.download?.(url.searchParams.get('token') ?? '');
+      if (!item) {
+        sendJson(res, 404, { error: { code: 'package_not_found', message: '插件包不存在或下载链接已过期' } });
+        return;
+      }
+      res.writeHead(200, {
+        'content-type': 'application/octet-stream',
+        'content-length': item.buffer.length,
+        'content-disposition': `attachment; filename="${item.filename}"`,
+        'cache-control': 'no-store',
+        'x-cow-package': `${item.name}@${item.version}`,
+        'x-cow-sha256': item.sha256,
+      });
+      res.end(item.buffer);
       return;
     }
     if (pathname.startsWith(`${ROUTE_PREFIX}/files/`) || pathname === `${ROUTE_PREFIX}/status`) {

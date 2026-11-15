@@ -8,9 +8,9 @@
 - answer：主 DSH 回答。
 - 每条消息带 workspace（id/name/path）、session（id/title）、approvalMode。
 
-## 当前状态（2026-11-15，v1.30.2）
-- 分支：`main`；旧 `main` 保留为 `v1`，发布标签 `v1.30.2`。
-- 测试：136 条全通过（`npm test`），含“源码不存在 CowTasks/TaskManager/taskId 任务链”守护。
+## 当前状态（2026-11-15，v1.31.1）
+- 分支：`main`；旧 `main` 保留为 `v1`，发布标签 `v1.31.1`。
+- 测试：142 条全通过（`npm test`），含“源码不存在 CowTasks/TaskManager/taskId 任务链”守护。
 - 子会话按 `peerId + workspace.id` 复用：同一工作区只保留一个子会话，多个主会话不再各建一个；
   进程重启后用 `agents.resume` 恢复，并重新挂到对应工作区。
 - complete 按 `messageId` 从会话事件里抽取该条消息对应的一轮；多条 dispatch 若被 DSH
@@ -19,6 +19,7 @@
 - 侧边栏底部显示本机节点名称、主/子角色与连接数，点击打开 COW 状态；左侧导航不再重复放
   「COW状态」入口。右侧栏的 COW 状态 tab 仍保留为辅助视图。
 - 文件收发已实测：单文件双向、目录递归、1.2MB 分块文件，两端 sha256 一致。
+- 自动升级已实测：主端 `cow_upgrade` → 子端 1.31.0 自动下载 1.31.1 tgz、校验、移除/安装、热重载并回报 1.31.1。
 
 ## 历史重构内容（1.26）
 - 最小 `src/index.js`：只装配 config/identity/peers/channel/files，
@@ -53,6 +54,8 @@
 - `src/message-bridge.js`：子端按工作区复用/恢复会话、preset/工作区、回合结束 complete、ask/answer。
 - `src/message-router.js`：主端 complete/ask 注入原会话、answer 回子端、messageId 去重。
 - `src/index.js`：装配与生命周期。
+- `src/package-service.js` / `src/tarball.js`：插件包生成、短期 token 下载。
+- `src/auto-upgrade.js`：子端接收 `msg.upgrade`，下载/校验并调用 `pluginManager` 升级。
 - `src/tools.js`：cow_send/cow_status/cow_peers/cow_doctor + 文件工具。
 - `client-src/index.js`：侧边栏底部节点标识、COW 状态面板与设置页。
 
