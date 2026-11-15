@@ -1258,29 +1258,47 @@ function CowNodeBadge({ wide }) {
 }
 
 
-// ── 输入框 `>` 前缀：选择子 DSH 并发送 ─────────────────────────
+// ── @COW：选择子 DSH 后输入消息并发送 ─────────────────────────
 
-function CowComposerDock(props) {
-  const state = useCowNode();
+// ── @COW 子 DSH：选择目标后输入消息并发送 ──────────────────────
+
+const cowTarget = {
+  value: null,
+  listeners: new Set(),
+  set(value) {
+    this.value = value;
+    for (const listener of this.listeners) {
+      try { listener(value); } catch { /* 忽略 */ }
+    }
+  },
+  subscribe(listener) {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  },
+};
+
+function CowTargetDock(props) {
   const draft = String(props.useInput ? props.useInput((value) => value.draft) : props.input?.draft ?? '');
-  const [busy, setBusy] = React.useState('');
+  const [target, setTarget] = React.useState(cowTarget.value);
+  const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState('');
   const [notice, setNotice] = React.useState('');
-  const [index, setIndex] = React.useState(0);
-  const [dismissed, setDismissed] = React.useState('');
-  const menuRef = React.useRef(null);
-  const open = draft.startsWith('>') && draft !== dismissed;
-  const children = (state?.peers ?? [])
-    .filter((peer) => peer.relation === 'child')
-    .sort((a, b) => Number(Boolean(b.connected)) - Number(Boolean(a.connected)));
-  const message = draft.slice(1).trim();
   const sessionId = String(props.session?.sessionId ?? props.session?.id ?? '');
-  const activeIndex = children.length ? Math.min(index, children.length - 1) : 0;
-  const activePeer = children[activeIndex] ?? null;
+
+  React.useEffect(() => cowTarget.subscribe(setTarget), []);
 
   React.useEffect(() => {
-    if (open) { setError(''); setNotice(''); setIndex(0); }
-  }, [open]);
+    cowTarget.set(null);
+    setTarget(null);
+  }, [sessionId]);
+
+  React.useEffect(() => () => cowTarget.set(null), []);
+
+  React.useEffect(() => {
+    if (!target) return;
+    try { props.inputActions?.setDraft?.(''); } catch { /* 忽略 */ }
+    setError('');
+  }, [target?.peerId]);
 
   React.useEffect(() => {
     if (!notice) return undefined;
@@ -1289,135 +1307,141 @@ function CowComposerDock(props) {
   }, [notice]);
 
   const close = () => {
-    setDismissed(draft);
+    cowTarget.set(null);
+    setTarget(null);
     setError('');
   };
 
-  const send = async (peer) => {
+  const send = async () => {
+    if (!target || busy) return;
+    const message = draft.trim();
     if (!message) { setError('先输入要发送的消息'); return; }
     if (!sessionId) { setError('找不到当前会话'); return; }
-    setBusy(peer.peerId || peer.peerName || peer.label || '');
+    setBusy(true);
     setError('');
-    setNotice('');
     try {
       const response = await fetch(api('send'), {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ peerId: peer.peerId || '', message, sessionId }),
+        body: JSON.stringify({ peerId: target.peerId, message, sessionId }),
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload?.error?.message || `HTTP ${response.status}`);
       try { props.inputActions?.setDraft?.(''); } catch { /* 忽略 */ }
-      setNotice(`已发送给 ${payload?.peerName || peer.peerName || '子 DSH'}`);
-      setDismissed('');
+      setNotice(`已发送给 ${payload?.peerName || target.peerName || '子 DSH'}`);
+      cowTarget.set(null);
+      setTarget(null);
       window.dispatchEvent(new Event('dsh-cow:state-changed'));
     } catch (sendError) {
       setError(sendError.message);
     } finally {
-      setBusy('');
+      setBusy(false);
     }
   };
 
   React.useEffect(() => {
-    if (!open) return undefined;
+    if (!target) return undefined;
     const onKeyDown = (event) => {
       const active = document.activeElement;
       const editing = Boolean(active?.isContentEditable || active?.closest?.('[contenteditable="true"]'));
       if (!editing) return;
-      if (event.key === 'ArrowDown') {
-        event.preventDefault(); event.stopPropagation();
-        setIndex((value) => (children.length ? (value + 1) % children.length : 0));
-        return;
-      }
-      if (event.key === 'ArrowUp') {
-        event.preventDefault(); event.stopPropagation();
-        setIndex((value) => (children.length ? (value - 1 + children.length) % children.length : 0));
-        return;
-      }
       if (event.key === 'Escape') {
         event.preventDefault(); event.stopPropagation(); close(); return;
       }
-      if (event.key === 'Tab' && children.length && message) {
-        event.preventDefault(); event.stopPropagation();
-        if (activePeer) void send(activePeer);
-        return;
-      }
       if (event.key === 'Enter' && !event.shiftKey) {
-        event.preventDefault(); event.stopPropagation();
-        if (!children.length) { setError('当前没有直接下级节点'); return; }
-        if (!message) { setError('先输入要发送的消息'); return; }
-        if (activePeer) void send(activePeer);
+        event.preventDefault(); event.stopPropagation(); void send();
       }
     };
     document.addEventListener('keydown', onKeyDown, true);
     return () => document.removeEventListener('keydown', onKeyDown, true);
-  }, [open, children.length, message, activeIndex, activePeer, busy]);
+  }, [target, draft, busy, sessionId]);
 
-  React.useEffect(() => {
-    if (!open) return undefined;
-    const onPointerDown = (event) => {
-      if (menuRef.current?.contains(event.target)) return;
-      if (event.target?.closest?.('[contenteditable="true"]')) return;
-      close();
-    };
-    document.addEventListener('mousedown', onPointerDown, true);
-    return () => document.removeEventListener('mousedown', onPointerDown, true);
-  }, [open, draft]);
-
-  if (!open) {
+  if (!target) {
     return notice
       ? h('div', { style: { margin: '0 0 8px', padding: '7px 11px', border: '1px solid rgba(52,199,89,.35)', borderRadius: 9, background: 'rgba(52,199,89,.1)', color: '#2ea043', fontSize: 12 } }, notice)
       : null;
   }
 
-  return h('div', { ref: menuRef, style: {
-    display: 'grid', gap: 2, margin: '0 0 8px', padding: '6px',
-    border: '1px solid var(--dsw-alias-border-l1, var(--dsw-alias-border-l2))', borderRadius: 12,
-    background: 'var(--dsw-alias-bg-l1)', boxShadow: '0 10px 30px rgba(0,0,0,0.14)',
-    maxHeight: 300, overflowY: 'auto',
-  } },
-    h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px 6px' } },
-      h('span', { style: { fontSize: 11, fontWeight: 650, color: 'var(--dsw-alias-label-secondary)' } }, '发送给子 DSH'),
-      h('span', { style: { ...S.hint, marginLeft: 'auto' } }, message ? '选择目标后立即发送' : '先输入消息'),
+  return h('div', {
+    style: {
+      display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap', margin: '0 0 8px',
+      padding: '8px 11px', border: '1px solid color-mix(in srgb, var(--dsw-alias-brand-primary) 35%, var(--dsw-alias-border-l2))',
+      borderRadius: 10, background: 'color-mix(in srgb, var(--dsw-alias-brand-primary) 8%, var(--dsw-alias-bg-l1))',
+    },
+  },
+    h('span', { style: { ...S.meta, fontSize: 11, fontWeight: 650 } }, '发送给'),
+    h('span', { style: {
+      display: 'inline-flex', alignItems: 'center', gap: 6, padding: '2px 8px',
+      borderRadius: 999, background: 'var(--dsw-alias-bg-l2)', border: '1px solid var(--dsw-alias-border-l2)',
+      fontSize: 12, fontWeight: 600,
+    } },
+      h('span', { style: { width: 7, height: 7, borderRadius: 999, background: target.connected ? '#34c38f' : '#94a3b8' } }),
+      `COW ${target.peerName}`,
     ),
-    children.length
-      ? children.map((peer, rowIndex) => {
-          const active = rowIndex === activeIndex;
-          const key = peer.peerId || peer.peerName || peer.label || String(rowIndex);
-          return h('button', {
-            key,
-            type: 'button',
-            role: 'option',
-            'aria-selected': active,
-            disabled: Boolean(busy) || !message,
-            onMouseDown: (event) => event.preventDefault(),
-            onMouseEnter: () => setIndex(rowIndex),
-            onClick: () => void send(peer),
-            style: {
-              display: 'flex', alignItems: 'center', gap: 8, width: '100%', minHeight: 36,
-              padding: '6px 8px', border: 0, borderRadius: 8, textAlign: 'left', font: 'inherit',
-              cursor: busy || !message ? 'not-allowed' : 'pointer',
-              background: active ? 'var(--dsw-alias-interactive-bg-hover)' : 'transparent',
-              color: 'var(--dsw-alias-label-primary)', opacity: busy || !message ? 0.55 : 1,
-            },
-          },
-            h('span', { style: { width: 7, height: 7, borderRadius: 999, flex: 'none', background: peer.connected ? '#34c38f' : '#94a3b8' } }),
-            h('span', { style: { minWidth: 0, flex: '1 1 auto', display: 'grid', gap: 1 } },
-              h('span', { style: { fontSize: 12.5, fontWeight: active ? 650 : 550, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, peer.peerName || peer.label || '未命名'),
-              h('span', { style: { ...S.meta, fontSize: 10.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } },
-                `${peer.connected ? '在线' : '离线'}${peer.version ? ` · v${peer.version}` : ''}`,
-              ),
-            ),
-            h('span', { style: { ...S.meta, fontSize: 10.5, flex: 'none' } }, busy === key ? '发送中…' : active ? 'Enter' : ''),
-          );
-        })
-      : h('div', { style: { ...S.hint, padding: '10px 8px' } }, '当前没有直接下级节点。'),
-    h('div', { style: { display: 'flex', gap: 10, alignItems: 'center', padding: '5px 8px 2px', borderTop: '1px solid var(--dsw-alias-border-l2)', marginTop: 4 } },
-      h('span', { style: S.hint }, '↑↓ 选择 · Enter 发送 · Esc 关闭'),
-      error ? h('span', { style: { ...S.err, marginLeft: 'auto' } }, error) : null,
-    ),
+    h('span', { style: S.hint }, '输入消息后按 Enter 发送；Esc 取消'),
+    error ? h('span', { style: { ...S.err, marginLeft: 'auto' } }, error) : null,
+    notice ? h('span', { style: { ...S.ok, marginLeft: 'auto' } }, notice) : null,
+    h('button', {
+      type: 'button',
+      title: '取消发送',
+      'aria-label': '取消发送',
+      onClick: close,
+      style: { ...S.secondary, marginLeft: 'auto', padding: '3px 8px', fontSize: 11 },
+    }, '取消'),
+    h('button', {
+      type: 'button',
+      disabled: busy || !draft.trim(),
+      onClick: () => void send(),
+      style: { ...S.button, padding: '4px 12px', opacity: busy || !draft.trim() ? 0.55 : 1, cursor: busy || !draft.trim() ? 'not-allowed' : 'pointer' },
+    }, busy ? '发送中…' : '发送'),
   );
+}
+
+
+function CowMentionIcon({ size = 16 }) {
+  return h(CowActivityIcon, { size });
+}
+
+function cowMentionSource() {
+  return {
+    trigger: '@',
+    name: 'COW 子 DSH',
+    order: -100,
+    showGroupTitle: true,
+    async candidates(_session, request) {
+      const response = await fetch(stateUrl(), { credentials: 'same-origin', cache: 'no-store' });
+      if (!response.ok) return [];
+      const data = await response.json();
+      const query = String(request?.query ?? '').trim().toLowerCase();
+      return (data?.peers ?? [])
+        .filter((peer) => peer.relation === 'child')
+        .map((peer) => {
+          const peerName = String(peer.peerName || peer.label || '未命名');
+          return {
+            peer,
+            name: `COW ${peerName}`,
+            label: `COW ${peerName}`,
+            description: `${peer.connected ? '在线' : '离线'}${peer.version ? ` · v${peer.version}` : ''} · 发送给子 DSH`,
+            value: JSON.stringify({ peerId: peer.peerId || '', peerName, version: peer.version || '', connected: Boolean(peer.connected) }),
+            icon: CowMentionIcon,
+          };
+        })
+        .filter((item) => !query || item.name.toLowerCase().includes(query) || item.label.toLowerCase().includes(query))
+        .sort((a, b) => Number(Boolean(b.peer.connected)) - Number(Boolean(a.peer.connected)))
+        .map(({ peer: _peer, ...candidate }) => candidate);
+    },
+    onPick(pick) {
+      try {
+        const target = JSON.parse(pick?.candidate?.value ?? '');
+        if (!target.peerId) return undefined;
+        cowTarget.set(target);
+        return 'handled';
+      } catch {
+        return undefined;
+      }
+    },
+  };
 }
 
 export const name = 'dsh-cow-client';
@@ -1462,11 +1486,20 @@ export function apply(ctx) {
     }, CowActivityPanel));
   } catch { /* 主面板插槽不可用时忽略 */ }
   try {
+    ctx.inject(['inputTriggers'], (sctx) => {
+      const triggers = sctx.get('inputTriggers', false);
+      if (!triggers?.registerSource) return;
+      sctx.effect(() => triggers.registerSource(cowMentionSource()), 'dsh-cow: @ COW 子 DSH');
+    });
+  } catch (error) {
+    console.error('[dsh-cow] @ COW source failed', error);
+  }
+  try {
     ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
       name: 'conversation.input.dock',
-      id: 'cow-composer',
+      id: 'cow-target',
       order: 50,
-    }, CowComposerDock));
+    }, CowTargetDock));
   } catch (error) {
     console.error('[dsh-cow] composer dock slot failed', error);
   }
