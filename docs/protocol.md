@@ -32,7 +32,7 @@ proof = sha256(nonce + ":" + hashJoinPassword(password, salt))
   "protocol": "cow/v1",
   "peerId": "cow_…",
   "displayName": "叶超的MacMini",
-  "node": { "uuid": "…", "version": "1.31.10", "description": "…" },
+  "node": { "uuid": "…", "version": "1.31.11", "description": "…" },
   "ackSeq": 0,
   "enc": 1,
   "proof": "…"
@@ -108,7 +108,7 @@ key = HKDF-SHA256(base = passwordHash, salt = nonce, info = "cow/v1/e2e", 32)
 
 ### 3.1 dispatch（主 → 子）
 
-主 DSH 用 `cow_send(peerId, message, peerName?)` 发送，`peerId` 是稳定节点标识；
+主 DSH 用 `cow_send(peerId, message, peerName?)` 发送，`peerId` 是稳定节点标识；dispatch 是异步的：返回只代表已入队/送达，模型不应等待或轮询，complete 会自动注入原会话；
 `peerName` 是可选的显示名提示，名称可能随时变化，不参与校验。消息**只入队、立即返回**，不等结果：
 
 ```json
@@ -205,7 +205,7 @@ key = HKDF-SHA256(base = passwordHash, salt = nonce, info = "cow/v1/e2e", 32)
   "peerName": "子 DSH-A",
   "package": {
     "name": "dsh-cow",
-    "version": "1.31.10",
+    "version": "1.31.11",
     "url": "http://main:60001/cow/v1/plugin/package",
     "sha256": "…"
   }

@@ -38,7 +38,7 @@ DSH 自己的 Agent 输入队列已经能做排队，会话日志已经能做审
 
 ### 3.1 dispatch 立即返回，不轮询
 
-`cow_send` 只把 `msg.dispatch` 交给通道就返回 `{ messageId, status: "sent" }`。
+`cow_send` 只把 `msg.dispatch` 交给通道就返回 `{ messageId, status: "sent", async: true }`；模型不应等待或轮询，complete 会自动注入原会话。
 对端离线时消息进通道发件箱，重连后按 ack 续传。排队由 DSH Agent 输入队列负责，
 dsh-cow 不维护第二套队列。
 

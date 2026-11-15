@@ -2,14 +2,14 @@
 
 ## 目标（已达成）
 彻底删除任务层，只保留消息：
-- dispatch：主 DSH 发消息到子 DSH 会话输入队列，不等待、不轮询。
+- dispatch：主 DSH 发消息到子 DSH 会话输入队列，不等待、不轮询；模型收到返回后继续其它工作，complete 自动注入原会话。
 - complete：子 DSH 回合结束自动通知主 DSH 原会话。
 - ask：子 DSH 向主 DSH 提问/审批。
 - answer：主 DSH 回答。
 - 每条消息带 workspace（id/name/path）、session（id/title）、approvalMode。
 
-## 当前状态（2026-11-15，v1.31.10）
-- 分支：`main`；旧 `main` 保留为 `v1`，发布标签 `v1.31.10`。
+## 当前状态（2026-11-15，v1.31.11）
+- 分支：`main`；旧 `main` 保留为 `v1`，发布标签 `v1.31.11`。
 - 测试：145 条全通过（`npm test`），含“源码不存在 CowTasks/TaskManager/taskId 任务链”守护。
 - 子会话按 `peerId + workspace.id` 复用：同一工作区只保留一个子会话，多个主会话不再各建一个；
   进程重启后用 `agents.resume` 恢复，并重新挂到对应工作区。
@@ -38,7 +38,7 @@
   - 子：DSH_HOME=`/tmp/dsh-cow-child`，由 `scripts/join-child.mjs` 生成，连主 60001。
   - 主密码：临时开发密码，不写入文档；需要时在设置页重置。
 - dispatch → complete：
-  - 主 Agent 调用 `cow_send` 后立即结束回合（turn/end completed）。
+  - 主 Agent 调用 `cow_send` 后立即结束回合（turn/end completed）；工具结果带 `async: true` 并提示不要等待/轮询。
   - 子端按工作区创建/复用 `session-cow-*` 会话并真实执行，回复后 `msg.complete` 回到主端。
   - 主会话出现 `user/message { source: { kind: "notification" } }`：
     `[COW 完成] 来自 子 DSH-Dev（回复消息 msg_…）`，并触发新一轮回复。

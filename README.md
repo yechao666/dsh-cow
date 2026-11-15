@@ -5,7 +5,7 @@ WebSocket 长连接做全双工 JSON 通讯。**只有消息，没有任务层**
 
 - 主 DSH：监听端口、设置一个共用连接密码，用 `cow_send(peerId, message)` 把消息派给直接下级；`peerId` 是稳定节点标识，`peerName` 是可选显示名；
 - 子 DSH：填写主 DSH 地址 + 密码，主动建立并维持长连接，消息直接进入会话输入队列执行；
-- **dispatch**：主 DSH 派消息后立即返回，不等待、不轮询；排队交给 DSH Agent 输入队列；
+- **dispatch（异步）**：主 DSH 派消息后立即返回，不等待、不轮询；排队交给 DSH Agent 输入队列。模型收到返回后应继续做别的事，不要 sleep/轮询，对方完成后 complete 会自动注入原会话；
 - **complete**：子 DSH 回合结束时插件自动把本轮结论发回，主端以通知注入**派发时的原会话**，
   显示「这条通知触发了本轮回复。」并继续这一轮；
 - **ask / answer**：子 DSH 用 `cow_send(kind="ask")` 向直接上级提问/审批，主 DSH 用
@@ -78,7 +78,7 @@ node scripts/join-child.mjs --home ~/.dsh-childA --name "子DSH-A" \
 
 - `cow_status`：本机状态、连接数、待回答询问；
 - `cow_peers`：节点列表（在线状态、版本、说明）；
-- `cow_send`：发消息。目标节点用 `peerId`（稳定节点标识，cow_…）指定；`peerName` 可选，仅作显示名提示（名称可能随时变化，不参与路由/校验）；默认 `kind=dispatch` 派给直接下级并立即返回；`kind=ask` 向直接上级提问并等待回答；带 `replyTo` 时回答提问（回到子会话）；
+- `cow_send`：发消息。目标节点用 `peerId`（稳定节点标识，cow_…）指定；`peerName` 可选，仅作显示名提示（名称可能随时变化，不参与路由/校验）；默认 `kind=dispatch` 派给直接下级并立即返回（异步，不要等待/轮询；complete 会自动注入原会话）；`kind=ask` 向直接上级提问并等待回答；带 `replyTo` 时回答提问（回到子会话）；
 - `cow_doctor`：生成本机诊断包（版本/配置/加密状态/文件统计/活动），返回 JSON 路径；
 - `cow_send_file` / `cow_receive_file`：发/取文件（单个或目录、断点续传、sha256），用 `peerId` 指定节点；
 - `cow_pull_dir`：拉取远端整个目录（`peerId`）；

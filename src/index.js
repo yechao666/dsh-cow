@@ -451,7 +451,7 @@ export function apply(ctx, rawConfig = {}) {
       return `- ${status.state === 'connected' ? '[在线]' : '[离线]'} ${peer.label}（${peer.relation === 'parent' ? '上级' : '下级'}，peerId: ${id}）${status.node?.description ? `：${String(status.node.description).slice(0, 140)}` : ''}`;
     });
     lines.push(...(conns.length ? ['已连接的节点：', ...conns] : ['当前没有已连接的节点。']));
-    lines.push('派消息用 cow_send(peerId, message, peerName?)：peerId 是节点稳定标识（cow_…），必须用它；peerName 是可选的显示名提示，名称可能随时变化，不参与路由与校验。消息直接进入对方会话输入队列，立即返回，不等待、不轮询；对方回合结束会把 complete 通知注入你派发时的原会话。子 DSH 用 cow_send(kind="ask") 提问/审批，主 DSH 用 cow_send(replyTo=questionId) 回答，回答会回到同一子会话。文件交换用 cow_send_file / cow_receive_file / cow_pull_dir（只限直接下级，参数同样用 peerId）；文件策略用 cow_set_file_policy 调整。升级直接下级用 cow_upgrade(peerId)：主端暴露插件包下载地址，发一条 msg.upgrade；子端插件自动下载安装并重连。');
+    lines.push('派消息用 cow_send(peerId, message, peerName?)：peerId 是节点稳定标识（cow_…），必须用它；peerName 是可选的显示名提示，名称可能随时变化，不参与路由与校验。cow_send(kind="dispatch") 是异步的：返回只代表已入队/送达，不代表对方已完成；不要立刻等待、sleep 或轮询，继续处理其它事情即可，对方回合结束会把 complete 通知自动注入你派发时的原会话。子 DSH 用 cow_send(kind="ask") 提问/审批，主 DSH 用 cow_send(replyTo=questionId) 回答，回答会回到同一子会话。文件交换用 cow_send_file / cow_receive_file / cow_pull_dir（只限直接下级，参数同样用 peerId）；文件策略用 cow_set_file_policy 调整。升级直接下级用 cow_upgrade(peerId)：主端暴露插件包下载地址，发一条 msg.upgrade；子端插件自动下载安装并重连。');
     return lines.join('\n');
   };
 

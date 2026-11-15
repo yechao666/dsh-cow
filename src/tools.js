@@ -374,8 +374,8 @@ export function createToolDefinitions({ instance, channel, peers, files, doctor,
     {
       name: 'cow_send',
       description:
-        '发送 dsh-cow 消息，主 DSH 不等待、不轮询。kind=dispatch（默认）把消息派给直接下级，异步进入对方会话输入队列，对方回合结束自动把 complete 注入本会话；' +
-        'kind=ask 向直接上级提问/审批并等待回答；带 replyTo 时作为对某条询问的回答（answer 会回到提出询问的子会话）。' +
+        '发送 dsh-cow 消息。kind=dispatch（默认）是异步的：消息进入对方会话输入队列后立即返回，返回只代表已入队/送达，不代表对方已完成；不要立刻等待、sleep 或轮询，继续处理其它事情即可，对方回合结束会自动把 complete 通知注入你派发时的原会话。' +
+        'kind=ask 向直接上级提问/审批并等待回答（只有 ask 会等待）；带 replyTo 时作为对某条询问的回答（answer 会回到提出询问的子会话）。' +
         '目标节点只用 peerId（稳定 peerId）路由；peerName 是可选的显示名提示，名称可能随时变化，不参与校验。',
       parameters: {
         type: 'object',
@@ -475,6 +475,8 @@ export function createToolDefinitions({ instance, channel, peers, files, doctor,
           peerName: target.label,
           kind: 'dispatch',
           status: sent.delivered ? 'sent' : 'queued',
+          async: true,
+          note: 'dispatch 已入队/送达；不要等待或轮询，对方完成后 complete 会自动注入当前会话。',
         };
       },
     },

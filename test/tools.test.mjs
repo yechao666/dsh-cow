@@ -65,6 +65,9 @@ test('cow_send 默认派 dispatch，立即返回消息 ID，不等待', async ()
   assert.ok(result.messageId);
   assert.equal(result.peerId, 'cow_child');
   assert.equal(result.peerName, '子 DSH-x');
+  assert.equal(result.async, true);
+  assert.match(result.note, /不要等待或轮询/);
+  assert.match(tool.description, /异步/);
   assert.equal(sent[0].peer, 'cow_child', '按 peerId 路由，而不是显示名');
   assert.equal(sent[0].frame.type, 'msg.dispatch');
   assert.equal(sent[0].frame.payload.peerId, 'cow_child');
