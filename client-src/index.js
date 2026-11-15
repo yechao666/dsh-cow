@@ -643,7 +643,21 @@ function CowActivityPanel() {
     error ? h('div', { style: { ...S.err, marginBottom: 12, padding: '8px 10px', borderRadius: 8, background: 'rgba(197,48,48,0.08)' } }, `加载失败：${error}`) : null,
     toolMessage ? h('div', { style: { ...S.meta, marginBottom: 10, wordBreak: 'break-all' } }, toolMessage) : null,
     h('div', { style: PANEL.statGrid },
-      h(StatCard, { label: '本机版本', value: instance.version ? `v${instance.version}` : '-', sub: 'dsh-cow', accent: PANEL_ACCENTS[0], icon: 'cube' }),
+      h(StatCard, {
+        label: '本机版本',
+        value: instance.version
+          ? h('a', {
+              href: api('package'),
+              download: `dsh-cow-${instance.version}.tgz`,
+              title: '下载本机 dsh-cow 插件包',
+              'aria-label': `下载 dsh-cow ${instance.version} 插件包`,
+              style: { color: 'inherit', textDecoration: 'underline', textDecorationThickness: '1px', textUnderlineOffset: 3, cursor: 'pointer' },
+            }, `v${instance.version}`)
+          : '-',
+        sub: 'dsh-cow · 点击下载插件包',
+        accent: PANEL_ACCENTS[0],
+        icon: 'cube',
+      }),
       h(StatCard, { label: '在线节点', value: `${connectedCount}/${peers.length}`, sub: `共 ${peers.length} 个节点`, accent: PANEL_ACCENTS[1], icon: 'network' }),
       h(StatCard, { label: '在线子 DSH', value: children.filter((child) => child.connected).length, sub: `${children.length} 个直接下级`, accent: PANEL_ACCENTS[2], icon: 'users' }),
       h(StatCard, { label: '询问中', value: pending.length, sub: '由被询问节点 Agent 处理', accent: PANEL_ACCENTS[3], icon: 'alert' }),

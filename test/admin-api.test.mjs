@@ -111,3 +111,28 @@ test('admin answer 只接受 questionId，并回子端', async () => {
   assert.equal(res.status, 200);
   assert.deepEqual(answered, { questionId: 'q1', answer: '允许一次' });
 });
+
+test('admin package 返回当前插件包，供版本号下载链接使用', async () => {
+  const deps = fakeDeps();
+  deps.packages = {
+    build: () => ({
+      buffer: Buffer.from('tgz-bytes'),
+      name: 'dsh-cow',
+      version: '1.31.1',
+      filename: 'dsh-cow-1.31.1.tgz',
+      sha256: 'b'.repeat(64),
+    }),
+  };
+  const handlers = createAdminHandlers(deps);
+  const res = {
+    status: 0,
+    headers: {},
+    writeHead(status, headers) { this.status = status; this.headers = headers; },
+    end(body) { this.body = body; },
+  };
+  await handlers['/api/cow/package']({ method: 'GET', url: '/api/cow/package' }, res);
+  assert.equal(res.status, 200);
+  assert.equal(res.headers['x-cow-package'], 'dsh-cow@1.31.1');
+  assert.match(res.headers['content-disposition'], /dsh-cow-1\.31\.1\.tgz/);
+  assert.equal(Buffer.from(res.body).toString(), 'tgz-bytes');
+});

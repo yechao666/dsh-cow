@@ -32,7 +32,7 @@ proof = sha256(nonce + ":" + hashJoinPassword(password, salt))
   "protocol": "cow/v1",
   "peerId": "cow_…",
   "displayName": "叶超的MacMini",
-  "node": { "uuid": "…", "version": "1.31.1", "description": "…" },
+  "node": { "uuid": "…", "version": "1.31.2", "description": "…" },
   "ackSeq": 0,
   "enc": 1,
   "proof": "…"
@@ -205,7 +205,7 @@ key = HKDF-SHA256(base = passwordHash, salt = nonce, info = "cow/v1/e2e", 32)
   "peerName": "子 DSH-A",
   "package": {
     "name": "dsh-cow",
-    "version": "1.31.1",
+    "version": "1.31.2",
     "url": "http://main:60001/cow/v1/plugin/package?token=…",
     "sha256": "…"
   }
@@ -256,6 +256,7 @@ key = HKDF-SHA256(base = passwordHash, salt = nonce, info = "cow/v1/e2e", 32)
 | POST | `/cow/v1/files/receive` | 本机取文件 |
 | GET | `/cow/v1/channel` | WebSocket 升级；普通 GET 返回 426 |
 | GET | `/cow/v1/plugin/package?token=…` | 短期插件包下载（升级消息里携带） |
+| GET | `/api/cow/package` | 同源浏览器下载当前插件包（COW 状态「本机版本」链接） |
 | GET | `/api/cow/state` | 设置页状态（同源） |
 | POST | `/api/cow/answer` | 程序化回答远端询问（questionId；CLI/自动化用，设置页不提供人工队列） |
 

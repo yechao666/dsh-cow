@@ -211,6 +211,26 @@ export function createAdminHandlers(deps) {
       }
     }),
 
+    '/api/cow/package': wrap(async (req, res) => {
+      if (req.method !== 'GET') {
+        sendJson(res, 405, { error: { code: 'method_not_allowed', message: '只支持 GET' } });
+        return;
+      }
+      const item = deps.packages?.build?.();
+      if (!item) {
+        sendJson(res, 404, { error: { code: 'package_not_found', message: '当前没有可下载的插件包' } });
+        return;
+      }
+      res.writeHead(200, {
+        'content-type': 'application/octet-stream',
+        'content-length': item.buffer.length,
+        'content-disposition': `attachment; filename="dsh-cow-${item.version}.tgz"`,
+        'cache-control': 'no-store',
+        'x-cow-package': `${item.name}@${item.version}`,
+        'x-cow-sha256': item.sha256,
+      });
+      res.end(item.buffer);
+    }),
     '/api/cow/doctor': wrap(async (req, res) => {
       if (req.method !== 'GET') return sendJson(res, 405, { error: { code: 'method_not_allowed', message: '只支持 GET' } });
       if (!deps.doctor) return sendJson(res, 503, { error: { code: 'unavailable', message: '诊断不可用' } });

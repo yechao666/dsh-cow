@@ -393,6 +393,14 @@ export function apply(ctx, rawConfig = {}) {
     logger,
   });
 
+  // ── 插件包分发（升级消息里的下载地址） ─────────────────────
+  const packages = createPackageService({
+    root: fileURLToPath(new URL('..', import.meta.url)),
+    pkg: { name: PACKAGE.name, version: currentPackageVersion() },
+    baseUrl: () => carrier?.endpoint() || '',
+    logger,
+  });
+
   const adminHandlers = createAdminHandlers({
     instance,
     resolveConfig: resolve,
@@ -410,14 +418,7 @@ export function apply(ctx, rawConfig = {}) {
     applySettings,
     getEndpoint: () => carrier?.endpoint() ?? '',
     pluginVersion: currentPackageVersion(),
-  });
-
-  // ── 插件包分发（升级消息里的下载地址） ─────────────────────
-  const packages = createPackageService({
-    root: fileURLToPath(new URL('..', import.meta.url)),
-    pkg: { name: PACKAGE.name, version: currentPackageVersion() },
-    baseUrl: () => carrier?.endpoint() || '',
-    logger,
+    packages,
   });
 
   // ── 工具 ─────────────────────────────────────────────────────
