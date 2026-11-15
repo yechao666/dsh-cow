@@ -479,6 +479,9 @@ function CowActivityPanel() {
 
   const state = data?.state ?? {};
   const instance = state.instance ?? {};
+  const installedVersion = String(state.installedVersion || instance.installedVersion || instance.version || '');
+  const runningVersion = String(instance.version || '');
+  const versionMismatch = Boolean(installedVersion && runningVersion && installedVersion !== runningVersion);
   const config = state.config ?? {};
   const peers = state.peers ?? [];
   const children = peers.filter((peer) => peer.relation !== 'parent');
@@ -648,13 +651,13 @@ function CowActivityPanel() {
         value: instance.version
           ? h('a', {
               href: api('package'),
-              download: `dsh-cow-${instance.version}.tgz`,
-              title: '下载本机 dsh-cow 插件包',
-              'aria-label': `下载 dsh-cow ${instance.version} 插件包`,
+              download: `dsh-cow-${installedVersion || instance.version}.tgz`,
+              title: versionMismatch ? `下载已安装的 dsh-cow ${installedVersion} 插件包（运行中仍是 ${runningVersion}）` : '下载本机 dsh-cow 插件包',
+              'aria-label': `下载 dsh-cow ${installedVersion || instance.version} 插件包`,
               style: { color: 'inherit', textDecoration: 'underline', textDecorationThickness: '1px', textUnderlineOffset: 3, cursor: 'pointer' },
             }, `v${instance.version}`)
           : '-',
-        sub: 'dsh-cow · 点击下载插件包',
+        sub: versionMismatch ? `已安装 v${installedVersion} · 重启后生效 · 点击下载` : 'dsh-cow · 点击下载插件包',
         accent: PANEL_ACCENTS[0],
         icon: 'cube',
       }),

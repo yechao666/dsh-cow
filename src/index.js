@@ -41,7 +41,7 @@ const PACKAGE = (() => {
   }
 })();
 
-/** 插件热重载时 ESM 模块会缓存 PACKAGE，这里每次重新读磁盘版本。 */
+/** 磁盘上已安装的版本；只用于升级包/诊断，不代表内存里正在跑的代码。 */
 function currentPackageVersion() {
   try {
     return JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
@@ -85,7 +85,7 @@ export function apply(ctx, rawConfig = {}) {
     logger.warn(`无法写入实例身份（${home}）：${error?.message ?? error}`);
     instance = { peerId: `cow_mem_${Math.random().toString(16).slice(2, 10)}`, displayName: '', role: 'leader', parent: null, createdAt: new Date().toISOString() };
   }
-  instance.version = currentPackageVersion();
+  instance.version = PACKAGE.version;
   if (!instance.uuid) instance.uuid = '';
   const configuredName = resolve().displayName;
   if (configuredName) instance.displayName = configuredName;
@@ -359,7 +359,7 @@ export function apply(ctx, rawConfig = {}) {
   const setPassword = (password) => {
     setJoinPassword(home, password);
     Object.assign(instance, loadIdentity({ home }));
-    instance.version = currentPackageVersion();
+    instance.version = PACKAGE.version;
     if (!instance.uuid) instance.uuid = '';
   };
 
@@ -417,7 +417,8 @@ export function apply(ctx, rawConfig = {}) {
     saveSettings: (patch) => writeSettings(home, patch),
     applySettings,
     getEndpoint: () => carrier?.endpoint() ?? '',
-    pluginVersion: currentPackageVersion(),
+    pluginVersion: PACKAGE.version,
+    installedVersion: () => currentPackageVersion(),
     packages,
   });
 

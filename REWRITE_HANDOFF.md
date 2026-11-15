@@ -8,9 +8,9 @@
 - answer：主 DSH 回答。
 - 每条消息带 workspace（id/name/path）、session（id/title）、approvalMode。
 
-## 当前状态（2026-11-15，v1.31.3）
-- 分支：`main`；旧 `main` 保留为 `v1`，发布标签 `v1.31.3`。
-- 测试：143 条全通过（`npm test`），含“源码不存在 CowTasks/TaskManager/taskId 任务链”守护。
+## 当前状态（2026-11-15，v1.31.5）
+- 分支：`main`；旧 `main` 保留为 `v1`，发布标签 `v1.31.5`。
+- 测试：144 条全通过（`npm test`），含“源码不存在 CowTasks/TaskManager/taskId 任务链”守护。
 - 子会话按 `peerId + workspace.id` 复用：同一工作区只保留一个子会话，多个主会话不再各建一个；
   进程重启后用 `agents.resume` 恢复，并重新挂到对应工作区。
 - complete 按 `messageId` 从会话事件里抽取该条消息对应的一轮；多条 dispatch 若被 DSH

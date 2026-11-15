@@ -91,6 +91,8 @@ test('admin state 返回节点、待回答询问，不含任务队列', async ()
   assert.equal(body.stats.pendingAsks, 1);
   assert.equal(body.peers[0].peerName, '子 B');
   assert.equal(body.passwordConfigured, true);
+  assert.equal(body.instance.version, '1.26.0');
+  assert.equal(body.installedVersion, '1.26.0');
 });
 
 test('admin answer 只接受 questionId，并回子端', async () => {
@@ -135,4 +137,22 @@ test('admin package 返回当前插件包，供版本号下载链接使用', asy
   assert.equal(res.headers['x-cow-package'], 'dsh-cow@1.31.1');
   assert.match(res.headers['content-disposition'], /dsh-cow-1\.31\.1\.tgz/);
   assert.equal(Buffer.from(res.body).toString(), 'tgz-bytes');
+});
+
+test('admin state 区分运行中版本与磁盘已安装版本', async () => {
+  const deps = fakeDeps();
+  deps.pluginVersion = '1.31.2';
+  deps.installedVersion = '1.31.3';
+  const handlers = createAdminHandlers(deps);
+  const res = {
+    status: 0,
+    headers: {},
+    writeHead(status, headers) { this.status = status; this.headers = headers; },
+    end(body) { this.body = body; },
+  };
+  await handlers['/api/cow/state']({ method: 'GET', url: '/api/cow/state' }, res);
+  const body = JSON.parse(res.body);
+  assert.equal(body.instance.version, '1.31.2');
+  assert.equal(body.pluginVersion, '1.31.2');
+  assert.equal(body.installedVersion, '1.31.3');
 });

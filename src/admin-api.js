@@ -65,7 +65,8 @@ function wrap(fn) {
 export function createAdminHandlers(deps) {
   const state = () => {
     const cfg = deps.resolveConfig();
-    const currentVersion = String(deps.pluginVersion ?? '');
+    const installedVersion = String(typeof deps.installedVersion === 'function' ? deps.installedVersion() : deps.installedVersion ?? deps.pluginVersion ?? '');
+    const currentVersion = installedVersion;
     const connections = deps.channel?.connections?.() ?? [];
     const peerList = deps.peers.list().map((peer) => {
       const status = deps.channel?.status?.(peer.label) ?? { state: 'offline' };
@@ -93,6 +94,7 @@ export function createAdminHandlers(deps) {
         uuid: deps.instance.uuid ?? '',
         displayName: cfg.displayName || deps.instance.displayName || '',
         version: deps.pluginVersion ?? '',
+        installedVersion,
         description: deps.instance.description ?? '',
         role: deps.instance.role ?? 'leader',
         parent: deps.instance.parent ?? null,
@@ -109,6 +111,7 @@ export function createAdminHandlers(deps) {
         agentPreset: cfg.agentPreset ?? '',
       },
       pluginVersion: deps.pluginVersion ?? '',
+      installedVersion,
       defaultAllowedRoot: DEFAULT_ALLOWED_ROOT,
       passwordConfigured: deps.passwordConfigured?.() ?? false,
       peers: peerList,
