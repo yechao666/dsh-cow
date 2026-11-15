@@ -28,6 +28,9 @@ test('workspaceKey 按 peerId + 工作区复用，不带主会话', () => {
     workspaceKey({ peerId: 'cow_peer', workspace: { id: 'w1' } }),
     workspaceKey({ peerId: 'cow_peer', workspace: { id: 'w1', name: 'renamed' } }),
   );
+  // peerName 只作显示名，不参与复用键；旧节点的 peer 别名仍可回退。
+  assert.throws(() => workspaceKey({ peerName: '主 DSH', workspace: { id: 'w1' } }), /peerId/);
+  assert.equal(workspaceKey({ peer: 'legacy-peer', workspace: { id: 'w1' } }), 'legacy-peer::w1');
 });
 
 test('summarizeTurn 只取指定 messageId 那一轮', () => {

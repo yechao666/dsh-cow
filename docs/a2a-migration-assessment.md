@@ -1,6 +1,6 @@
 # 改成 A2A：可行性评估与迁移方案
 
-> 评审对象：dsh-cow v1.29.0（纯消息架构）
+> 评审对象：dsh-cow v1.30.2（纯消息架构）
 > 日期：2026-11-15
 > 结论：**可行，但建议做「A2A 适配层 + 双栈」，不建议把 dsh-cow 的内部协议整体替换成 A2A。**
 > 如果你的目标只是自家 DSH 机群互连，A2A 的收益有限；如果目标是接入外部 Agent 生态（LangGraph/CrewAI/ADK/第三方 Agent），A2A 适配层值得做。
@@ -86,7 +86,7 @@ A2A 的 `GetTask`、`ListTasks`、`CancelTask`、`SubscribeToTask` 都建立在*
 | dsh-cow | A2A | 备注 |
 |---|---|---|
 | `peerId` | Agent Card 身份 / `AgentInterface` | Agent Card 需暴露 peerId、版本、能力、认证 |
-| `workspace.id + session.id` | `contextId` | 一个 A2A context 可映射到 DSH 工作区；session 作为扩展 metadata |
+| `peerId + workspace.id` | `contextId` | 一个 A2A context 可映射到 DSH 工作区；主端 `session.id` 作为扩展 metadata |
 | `msg.dispatch` | `SendMessage`（新 Task） | `messageId` 可作为 A2A messageId；`taskId` 可由 dispatch messageId 派生 |
 | `msg.complete` | `TaskStatusUpdateEvent` / `Task.state=COMPLETED` + Artifacts | 需要 `FAILED/CANCELED` 与 `error` |
 | `msg.ask` | `Task.state=INPUT_REQUIRED` + Message | 需要客户端继续 `SendMessage` |

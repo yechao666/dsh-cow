@@ -1,8 +1,8 @@
 /**
- * dsh-cow 客户端：侧边栏「COW状态」详细面板 + 简洁的设置页。
+ * dsh-cow 客户端：侧边栏底部节点标识 + COW 状态面板 + 简洁的设置页。
  *
  * 纯消息架构：面板展示节点拓扑、连接明细与活动时间线；询问由被询问节点的 Agent 处理；
- * 设置页只保留节点名称、工作区根、连接密码、作为子 DSH 与折叠的高级项。
+ * 设置页保留节点名称、子会话 preset、工作区根、连接密码、作为子 DSH 与折叠的高级项。
  */
 import * as React from 'react';
 
@@ -898,7 +898,7 @@ function CoCowSettingsPage() {
   const instance = data.instance ?? {};
 
   return h('div', { style: S.wrap },
-    h('p', { style: S.lead }, 'dsh-cow 让多台 DSH 通过一条 WebSocket 长连接协同：主 DSH 派消息，子 DSH 回合结束自动回报，ask/answer 回到同一会话。详细状态在侧边栏「COW状态」。'),
+    h('p', { style: S.lead }, 'dsh-cow 让多台 DSH 通过一条 WebSocket 长连接协同：主 DSH 派消息，子 DSH 回合结束自动回报，ask/answer 回到同一会话。详细状态点侧边栏底部的节点按钮打开。'),
 
     error ? h('div', { style: { ...S.err, marginBottom: 10 } }, error) : null,
     message ? h('div', { style: { ...S.ok, marginBottom: 10 } }, message) : null,

@@ -7,7 +7,7 @@ dsh-cow 的所有协同业务都走 **一条 WebSocket 双工长连接**，没�
 - 路径：`/cow/v1/channel`
 - 鉴权：挑战—应答（见下节）；兼容 `Authorization: Bearer <password>` 头
 - 编码：UTF-8 JSON；时间戳为 ISO 8601 字符串
-- 对端：只允许**直接上级 / 直接下级**；消息与文件都只发给直接下级
+- 对端：只允许**直接上级 / 直接下级**；dispatch 与文件只发给直接下级，ask 只发给直接上级
 
 ## 1. 连接与鉴权
 
@@ -17,9 +17,10 @@ dsh-cow 的所有协同业务都走 **一条 WebSocket 双工长连接**，没�
 { "type": "auth.challenge", "nonce": "base64url", "salt": "base64url" }
 ```
 
-拨号方用共用密码计算证明（`hashJoinPassword` 为 scrypt 派生，`sha256` 为十六进制摘要）：
+拨号方用共用密码计算证明（`hashJoinPassword` 为加盐 SHA-256，`sha256` 为十六进制摘要）：
 
 ```text
+hashJoinPassword(password, salt) = sha256(salt + ":" + password)
 proof = sha256(nonce + ":" + hashJoinPassword(password, salt))
 ```
 
@@ -29,10 +30,9 @@ proof = sha256(nonce + ":" + hashJoinPassword(password, salt))
 {
   "type": "hello",
   "protocol": "cow/v1",
-  "peerId": "cods_…",
+  "peerId": "cow_…",
   "displayName": "叶超的MacMini",
-  "uuid": "…",
-  "parent": "cods_parent…",
+  "node": { "uuid": "…", "version": "1.30.2", "description": "…" },
   "ackSeq": 0,
   "enc": 1,
   "proof": "…"
@@ -40,11 +40,12 @@ proof = sha256(nonce + ":" + hashJoinPassword(password, salt))
 ```
 
 `enc: 1` 表示支持帧级加密；`welcome` 同样携带该字段。只有双方都声明支持时才加密，
-否则回落明文（兼容旧客户端）。
+否则回落明文（兼容旧客户端）。`hello`/`welcome` 还会带一个只读的 `instanceId` 别名给 1.27 以前的旧节点；
+新代码只读 `peerId`。
 
 接受方校验 proof（或旧的 Bearer 头），回 `welcome`（同样带自己的 proof 与 ack 水位）。
-任一侧 10 秒内未完成认证即关闭。已登记 peer 的入站连接按 `peer.label` 归位；
-若对方声称的上级正是自己，拒绝把上级当子节点接入。
+任一侧 10 秒内未完成认证即关闭。已登记 peer 的入站连接按 `peerId` 归位（内部 `label` 仅用于展示）；
+若连入的 peerId 正是本节点的直接上级，拒绝把它当子节点接入。
 
 ## 2. 帧封套
 
@@ -52,7 +53,7 @@ proof = sha256(nonce + ":" + hashJoinPassword(password, salt))
 
 | type | 方向 | 字段 | 说明 |
 |---|---|---|---|
-| `hello` / `welcome` | 双向 | `protocol, peerId, displayName, uuid, ackSeq, proof` | 握手 |
+| `hello` / `welcome` | 双向 | `protocol, peerId, instanceId（旧别名）, displayName, node{uuid,version,description}, ackSeq, enc, proof` | 握手 |
 | `auth.challenge` | 接受方 → 拨号方 | `nonce, salt` | 挑战 |
 | `event` | 双向 | `seq, msgId, at, event, payload` | 业务事件 |
 | `ack` | 双向 | `seq` | 累计确认 ≤ seq 已收到 |
@@ -74,20 +75,19 @@ key = HKDF-SHA256(base = passwordHash, salt = nonce, info = "cow/v1/e2e", 32)
 启用加密时，`event` 帧变为：
 
 ```json
-{ "type": "event", "seq": 12, "msgId": "cods_a:12", "at": "…", "enc": { "v": 1, "iv": "…", "tag": "…", "data": "…" } }
+{ "type": "event", "seq": 12, "msgId": "cow_a:12", "at": "…", "enc": { "v": 1, "iv": "…", "tag": "…", "data": "…" } }
 ```
 
 `data` 是 `{"event":"msg.dispatch","payload":{…}}` 的 AES-256-GCM 密文，AAD 为 `cow/v1/e2e`；
 文件分块也在 `payload` 内，因此同样被加密。`hello` / `welcome` / `auth.challenge` / `ack` / `ping`
 保持明文，便于握手与排障。任一侧未声明 `enc` 时该连接回落明文（升级过渡期）。
 
-`event` 是业务类型字符串，`payload` 见下节。发件箱按 peer 保留最近 300 条，
+`event` 是业务类型字符串，`payload` 见下节。发件箱按节点保留最近 300 条，
 收到 ack 后丢弃；接收方按 `msgId` 去重（内存窗口 512 条）。
 
 ## 3. 消息信封
 
-四条消息共用同一个信封。`peer` 是这条会话所属的**子节点标签**（主端视角），
-子端按 `peerId + workspace.id` 复用本地子会话（同一工作区一个）；每条消息里的 `session.id` 记录主端原会话，complete/ask 据此回到对应会话。`peerName` 只是显示名。
+四条消息共用同一个信封。`peerId` 是稳定节点标识，`peerName` 是显示名；新代码只读 `peerName`，信封里的 `peer` 是给旧节点的只读别名。子端按 `peerId + workspace.id` 复用本地子会话（同一工作区一个）；每条消息里的 `session.id` 记录主端原会话，complete/ask 据此回到对应会话。
 
 ```json
 {
@@ -99,8 +99,8 @@ key = HKDF-SHA256(base = passwordHash, salt = nonce, info = "cow/v1/e2e", 32)
   "peerName": "子 DSH-A",
   "text": "…",
   "options": [],
-  "workspace": { "id": "cods_workspace…", "name": "项目名", "path": "/abs/path" },
-  "session": { "id": "cods_session…", "title": "主会话" },
+  "workspace": { "id": "w_…", "name": "项目名", "path": "/abs/path" },
+  "session": { "id": "session_…", "title": "主会话" },
   "approvalMode": "follow",
   "createdAt": "2026-11-15T00:00:00.000Z"
 }
@@ -126,6 +126,8 @@ key = HKDF-SHA256(base = passwordHash, salt = nonce, info = "cow/v1/e2e", 32)
 
 子端按工作区键（`peerId + workspace.id`）找到/新建子会话，把 `text` 作为一条用户消息交给 Agent；
 同一工作区复用同一会话，子会话标题为 `[COW] <工作区名>`。显示名重名时主端会自动追加实例后缀，peerId 始终不变。
+实现上 dispatch 以普通 `user` 消息注入，模型不会从 `source.kind` 区分本地用户输入与远端 dispatch；
+插件靠 `messageId` 归属，不依赖模型判断来源。
 子端工作目录取 `workspace.path`（必须在本机 `allowedRoots` 内），不可用时落到第一个根目录下的
 `workspace.name` 同名目录。
 
@@ -227,7 +229,7 @@ key = HKDF-SHA256(base = passwordHash, salt = nonce, info = "cow/v1/e2e", 32)
 | POST | `/cow/v1/files/receive` | 本机取文件 |
 | GET | `/cow/v1/channel` | WebSocket 升级；普通 GET 返回 426 |
 | GET | `/api/cow/state` | 设置页状态（同源） |
-| POST | `/api/cow/answer` | 设置页回答远端询问（questionId） |
+| POST | `/api/cow/answer` | 程序化回答远端询问（questionId；CLI/自动化用，设置页不提供人工队列） |
 
 跨实例的消息、提问、文件块全部走 WebSocket，不走上表接口。
 

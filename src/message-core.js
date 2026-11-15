@@ -11,8 +11,8 @@ export function newMessageId(prefix = 'msg') {
 }
 
 /** 子端会话的复用键：同一 peer + 工作区共用一个子会话，不再按主会话分裂。 */
-export function workspaceKey({ peerId, peerName, peer, workspace }) {
-  const node = String(peerId || peerName || peer || '').trim();
+export function workspaceKey({ peerId, peer, workspace }) {
+  const node = String(peerId || peer || '').trim();
   const ws = String(workspace?.id ?? workspace?.name ?? '').trim();
   if (!node || !ws) throw new Error('缺少 peerId/workspace.id，无法定位子会话');
   return `${node}::${ws}`;

@@ -3,7 +3,7 @@ import test from 'node:test';
 import { MessageBridge } from '../src/message-bridge.js';
 
 function fakeEnv(id = 'w1', seq = 1) {
-  return { kind: 'dispatch', messageId: `m_${id}_${seq}`, peerName: 'F', text: 'hello', workspace: { id, name: 'A', path: '/a' }, session: { id: 's1', title: 'T' }, approvalMode: 'follow' };
+  return { kind: 'dispatch', messageId: `m_${id}_${seq}`, peerId: 'cow_f', peerName: 'F', text: 'hello', workspace: { id, name: 'A', path: '/a' }, session: { id: 's1', title: 'T' }, approvalMode: 'follow' };
 }
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));

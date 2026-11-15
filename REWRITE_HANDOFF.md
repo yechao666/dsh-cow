@@ -8,42 +8,53 @@
 - answer：主 DSH 回答。
 - 每条消息带 workspace（id/name/path）、session（id/title）、approvalMode。
 
-## 当前状态（2026-11-15，v1.26.0）
-- 分支：`rewrite/message-only`。
-- 已完成：
-  - 最小 `src/index.js`：只装配 config/identity/peers/channel/files，
-    接 `MessageBridge`/`MessageRouter`，注册消息与文件工具（无任务工具）。
-  - 删除 `src/tasks.js`、`src/cow-tasks.js`、`src/remote-tasks.js`、`src/notify.js`、
-    `src/inbox.js`、`src/prompt.js`、`src/upgrade.js`、`src/haos-transport.js`、`src/client.js`。
-  - 删除任务 Admin 接口与设置页/侧边栏任务 UI；设置页只保留节点、连接、询问与活动。
-  - 新增 `src/session-info.js`（workspace/session 信封 + 子端 cwd 白名单）。
-  - 测试：125 条全通过（`npm test`），含“源码不存在 CowTasks/TaskManager/taskId 任务链”守护。
-- 删除的旧测试：tasks/out-tasks/task-notify/notify/cascade/cow-ws/upgrade/prompt/haos-transport，
+## 当前状态（2026-11-15，v1.30.2）
+- 分支：`main`；旧 `main` 保留为 `v1`，发布标签 `v1.30.2`。
+- 测试：136 条全通过（`npm test`），含“源码不存在 CowTasks/TaskManager/taskId 任务链”守护。
+- 子会话按 `peerId + workspace.id` 复用：同一工作区只保留一个子会话，多个主会话不再各建一个；
+  进程重启后用 `agents.resume` 恢复，并重新挂到对应工作区。
+- complete 按 `messageId` 从会话事件里抽取该条消息对应的一轮；多条 dispatch 若被 DSH
+  合并进同一轮，无法再按消息切分。
+- 询问由被询问节点的 Agent 处理；设置页不提供人工回答/审批队列，状态面板只显示「询问中」计数。
+- 侧边栏底部显示本机节点名称、主/子角色与连接数，点击打开 COW 状态；左侧导航不再重复放
+  「COW状态」入口。右侧栏的 COW 状态 tab 仍保留为辅助视图。
+- 文件收发已实测：单文件双向、目录递归、1.2MB 分块文件，两端 sha256 一致。
+
+## 历史重构内容（1.26）
+- 最小 `src/index.js`：只装配 config/identity/peers/channel/files，
+  接 `MessageBridge`/`MessageRouter`，注册消息与文件工具（无任务工具）。
+- 删除 `src/tasks.js`、`src/cow-tasks.js`、`src/remote-tasks.js`、`src/notify.js`、
+  `src/inbox.js`、`src/prompt.js`、`src/upgrade.js`、`src/haos-transport.js`、`src/client.js`。
+- 删除任务 Admin 接口与设置页/侧边栏任务 UI。
+- 新增 `src/session-info.js`（workspace/session 信封 + 子端 cwd 白名单）。
+- 删除的旧测试：tasks/out-tasks/task-notify/notify/cascade/cow-ws/upgrade/prompt/haos-transport；
   新增 message-core/bridge/router/e2e/index/no-task-layer/session-info 测试。
 
-## 隔离环境验证（/tmp/dsh-cow-dev + /tmp/dsh-cow-child）
+## 隔离环境验证
 - 环境：
   - 主：DSH_HOME=`/tmp/dsh-cow-dev`，web 端口随机，COW 60001。
   - 子：DSH_HOME=`/tmp/dsh-cow-child`，由 `scripts/join-child.mjs` 生成，连主 60001。
   - 主密码：`cow-dev-shared-password-2026`（仅本机临时环境）。
-- dispatch → complete（session-manual-test-2/4）：
+- dispatch → complete：
   - 主 Agent 调用 `cow_send` 后立即结束回合（turn/end completed）。
-  - 子端创建 `session-cow-*` 会话并真实执行，回复 `COMPLETE-OK…` / `SMOKE-OK`。
-  - 主会话随后出现 `user/message { source: { kind: "notification" } }`：
+  - 子端按工作区创建/复用 `session-cow-*` 会话并真实执行，回复后 `msg.complete` 回到主端。
+  - 主会话出现 `user/message { source: { kind: "notification" } }`：
     `[COW 完成] 来自 子 DSH-Dev（回复消息 msg_…）`，并触发新一轮回复。
-- ask → answer（session-manual-test-3）：
+- ask → answer：
   - 子端 `cow_send(kind="ask")` → 主会话注入 `[COW 询问]`（带 questionId）。
   - 主端 `cow_send(replyTo=questionId, message="A")` → 子会话工具返回 A，
     子端继续并回 `ASK-RESULT-A`，complete 再注入主会话。
 - 子会话工作目录：`workspace.path` 不在本机 allowedRoots 时落到根下同名目录；
   同名根目录直接复用，不再产生 `workspace/workspace` 嵌套。
+- 文件：主→子单文件、子→主单文件、子→主目录、主→子目录（含 1.2MB 分块文件）全部成功。
 
 ## 关键文件
-- `src/message-core.js`：信封、隔离键、complete/ask/answer 信封、`summarizeSession`。
-- `src/message-bridge.js`：子端会话创建、preset/工作区、回合结束 complete、ask/answer。
+- `src/message-core.js`：信封、复用键、complete/ask/answer 信封、`summarizeSession`/`summarizeTurn`。
+- `src/message-bridge.js`：子端按工作区复用/恢复会话、preset/工作区、回合结束 complete、ask/answer。
 - `src/message-router.js`：主端 complete/ask 注入原会话、answer 回子端、messageId 去重。
 - `src/index.js`：装配与生命周期。
 - `src/tools.js`：cow_send/cow_status/cow_peers/cow_doctor + 文件工具。
+- `client-src/index.js`：侧边栏底部节点标识、COW 状态面板与设置页。
 
 ## 验证命令
 ```bash
