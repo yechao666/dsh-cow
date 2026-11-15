@@ -3,7 +3,7 @@ import test from 'node:test';
 import { MessageBridge } from '../src/message-bridge.js';
 
 function fakeEnv(id = 'w1', seq = 1) {
-  return { kind: 'dispatch', messageId: `m_${id}_${seq}`, peer: 'F', text: 'hello', workspace: { id, name: 'A', path: '/a' }, session: { id: 's1', title: 'T' }, approvalMode: 'follow' };
+  return { kind: 'dispatch', messageId: `m_${id}_${seq}`, peerName: 'F', text: 'hello', workspace: { id, name: 'A', path: '/a' }, session: { id: 's1', title: 'T' }, approvalMode: 'follow' };
 }
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -42,7 +42,7 @@ test('answer 注入同一子会话', async () => {
   const input = [];
   const agent = { session: { seq: 0 }, followup: (m) => input.push(m), whenIdle: async () => {} };
   const bridge = new MessageBridge({ channel: { send() {} }, agents: { get: () => null, create: async ({ sessionId }) => ({ sessionId, agent }) }, workspacePath: (w) => w.id });
-  const envelope = { ...fakeEnv('w1'), kind: 'answer', messageId: 'r1', text: '允许一次' };
+  const envelope = { ...fakeEnv('w1'), kind: 'answer', messageId: 'r1', peerName: 'F', text: '允许一次' };
   const result = await bridge.answer(envelope, 'F');
   assert.equal(result.status, 'sent');
   assert.equal(input.length, 1);

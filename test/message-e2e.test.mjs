@@ -24,7 +24,7 @@ test('dispatch → 子会话 → complete → 原会话注入', async () => {
     workspacePath: () => '/tmp/ws',
   });
   const envelope = {
-    kind: 'dispatch', messageId: 'm1', peer: 'F', text: '做一件事',
+    kind: 'dispatch', messageId: 'm1', peerName: 'F', peerId: 'cow_f', text: '做一件事',
     workspace: { id: 'w1', name: 'A', path: '/a' },
     session: { id: 'main-s1', title: '主会话' },
     approvalMode: 'follow',
@@ -64,7 +64,7 @@ test('ask → answer 往返同一 workspace+session', async () => {
     workspacePath: () => '/tmp/ws',
   });
   const dispatch = await bridge.dispatch({
-    kind: 'dispatch', messageId: 'm1', peer: 'F', text: '开始',
+    kind: 'dispatch', messageId: 'm1', peerName: 'F', peerId: 'cow_f', text: '开始',
     workspace: { id: 'w1', name: 'A', path: '/a' },
     session: { id: 'main-s1', title: '主会话' },
     approvalMode: 'follow',

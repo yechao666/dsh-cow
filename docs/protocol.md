@@ -87,7 +87,7 @@ key = HKDF-SHA256(base = passwordHash, salt = nonce, info = "cow/v1/e2e", 32)
 ## 3. 消息信封
 
 四条消息共用同一个信封。`peer` 是这条会话所属的**子节点标签**（主端视角），
-子端按 `peerId（instanceId）+ workspace.id + session.id` 隔离本地会话；`peer` 只是显示名。
+子端按 `peerId（instanceId）+ workspace.id + session.id` 隔离本地会话；`peerName` 只是显示名。
 
 ```json
 {
@@ -95,8 +95,8 @@ key = HKDF-SHA256(base = passwordHash, salt = nonce, info = "cow/v1/e2e", 32)
   "messageId": "msg_…",
   "questionId": "",
   "replyTo": "",
-  "peer": "子 DSH-A",
   "peerId": "cow_6f1c…",
+  "peerName": "子 DSH-A",
   "text": "…",
   "options": [],
   "workspace": { "id": "cods_workspace…", "name": "项目名", "path": "/abs/path" },
@@ -108,15 +108,15 @@ key = HKDF-SHA256(base = passwordHash, salt = nonce, info = "cow/v1/e2e", 32)
 
 ### 3.1 dispatch（主 → 子）
 
-主 DSH 用 `cow_send(peer, message)` 发送，`peer` 可填显示名或稳定的 `instanceId`。
-消息**只入队、立即返回**，不等结果：
+主 DSH 用 `cow_send(peerId, message, peerName?)` 发送，`peerId` 是稳定的 `instanceId`；
+`peerName` 是可选的显示名，仅用于核对。消息**只入队、立即返回**，不等结果：
 
 ```json
 {
   "kind": "dispatch",
   "messageId": "msg_…",
-  "peer": "子 DSH-A",
   "peerId": "cow_6f1c…",
+  "peerName": "子 DSH-A",
   "text": "把周报整理成 markdown",
   "workspace": { "id": "…", "name": "docs", "path": "/Users/yechao/work/docs" },
   "session": { "id": "…", "title": "周报" },
@@ -138,7 +138,8 @@ key = HKDF-SHA256(base = passwordHash, salt = nonce, info = "cow/v1/e2e", 32)
   "kind": "complete",
   "messageId": "msg_…",
   "replyTo": "msg_dispatch…",
-  "peer": "子 DSH-A",
+  "peerId": "cow_6f1c…",
+  "peerName": "子 DSH-A",
   "text": "周报已生成：…",
   "workspace": { … },
   "session": { … },
@@ -153,14 +154,15 @@ key = HKDF-SHA256(base = passwordHash, salt = nonce, info = "cow/v1/e2e", 32)
 ### 3.3 ask / answer（子 ↔ 主）
 
 子端在派发会话里用 `cow_send(kind="ask")` 提问，信封复用原 dispatch 的
-`peer/workspace/session`，并带 `questionId`（默认等于 messageId）与 `options[]`：
+`peerId/peerName/workspace/session`，并带 `questionId`（默认等于 messageId）与 `options[]`：
 
 ```json
 {
   "kind": "ask",
   "messageId": "q_…",
   "questionId": "q_…",
-  "peer": "子 DSH-A",
+  "peerId": "cow_6f1c…",
+  "peerName": "子 DSH-A",
   "text": "交付用 A 还是 B？",
   "options": ["A", "B"],
   "workspace": { … },
@@ -170,11 +172,11 @@ key = HKDF-SHA256(base = passwordHash, salt = nonce, info = "cow/v1/e2e", 32)
 
 主端把询问注入原会话，由**被询问节点的 Agent** 处理：先自行判断；需要人工决定时调用
 `ask_user_question` 在 DSH 原生界面让用户输入；需要上级拍板时继续用 `cow_send(kind="ask")`
-向上级请示。最终用 `cow_send(peer, message, replyTo=questionId)` 回答，回答以
-`msg.answer` 发回同一子节点：
+向上级请示。最终用 `cow_send(replyTo=questionId, message=…)` 回答（可带 `peerId` 核对），
+回答以 `msg.answer` 发回同一子节点：
 
 ```json
-{ "kind": "answer", "replyTo": "q_…", "peer": "子 DSH-A", "text": "A", "workspace": { … }, "session": { … } }
+{ "kind": "answer", "replyTo": "q_…", "peerId": "cow_6f1c…", "peerName": "子 DSH-A", "text": "A", "workspace": { … }, "session": { … } }
 ```
 
 子端收到 `msg.answer`：若有工具/审批正在等待该 `questionId`，直接兑现等待；

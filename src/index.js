@@ -104,6 +104,19 @@ export function apply(ctx, rawConfig = {}) {
 
   const activity = new ActivityLog();
   const selfName = () => instance.displayName || instance.instanceId;
+  const resolveApiPeer = (body) => {
+    const id = String(body?.peerId ?? '').trim();
+    const name = String(body?.peerName ?? body?.peer ?? '').trim();
+    if (id) {
+      const found = peers.list().find((peer) => peer.instanceId === id || peer.id === id);
+      if (found) return found.label;
+    }
+    if (name) {
+      const found = peers.list().find((peer) => peer.label === name);
+      return found ? found.label : name;
+    }
+    return '';
+  };
   const authorize = (password) => (verifyJoinPassword(instance, password) ? { kind: 'join', label: '' } : null);
 
   let carrier = null;
@@ -397,10 +410,10 @@ export function apply(ctx, rawConfig = {}) {
     const conns = peers.list().map((peer) => {
       const status = channel.status(peer.label);
       const id = peer.instanceId || '(未登记)';
-      return `- ${status.state === 'connected' ? '[在线]' : '[离线]'} ${peer.label}（${peer.relation === 'parent' ? '上级' : '下级'}，instanceId: ${id}）${status.node?.description ? `：${String(status.node.description).slice(0, 140)}` : ''}`;
+      return `- ${status.state === 'connected' ? '[在线]' : '[离线]'} ${peer.label}（${peer.relation === 'parent' ? '上级' : '下级'}，peerId: ${id}）${status.node?.description ? `：${String(status.node.description).slice(0, 140)}` : ''}`;
     });
     lines.push(...(conns.length ? ['已连接的节点：', ...conns] : ['当前没有已连接的节点。']));
-    lines.push('派消息用 cow_send(peer, message)：peer 必须优先填节点的 instanceId（cow_…），显示名可能重复、只用于展示；消息直接进入对方会话输入队列，立即返回，不等待、不轮询；对方回合结束会把 complete 通知注入你派发时的原会话。子 DSH 用 cow_send(kind="ask") 提问/审批，主 DSH 用 cow_send(replyTo=questionId) 回答，回答会回到同一子会话。文件交换用 cow_send_file / cow_receive_file / cow_pull_dir（只限直接下级，允许根目录内 sha256 校验）；文件策略用 cow_set_file_policy 调整。');
+    lines.push('派消息用 cow_send(peerId, message, peerName?)：peerId 是节点稳定的 instanceId（cow_…），必须用它；peerName 是可选的显示名，只用于核对。消息直接进入对方会话输入队列，立即返回，不等待、不轮询；对方回合结束会把 complete 通知注入你派发时的原会话。子 DSH 用 cow_send(kind="ask") 提问/审批，主 DSH 用 cow_send(replyTo=questionId) 回答，回答会回到同一子会话。文件交换用 cow_send_file / cow_receive_file / cow_pull_dir（只限直接下级，参数同样用 peerId）；文件策略用 cow_set_file_policy 调整。');
     return lines.join('\n');
   };
 
@@ -477,8 +490,8 @@ export function apply(ctx, rawConfig = {}) {
             peers: peers.list().map((peer) => ({ label: peer.label, relation: peer.relation, state: channel.status(peer.label).state })),
             files: files.stats(),
           }),
-          sendFile: (body) => files.sendFile({ peer: String(body?.peer ?? ''), localPath: String(body?.path ?? ''), remotePath: String(body?.remotePath ?? '') }),
-          receiveFile: (body) => files.requestFile({ peer: String(body?.peer ?? ''), remotePath: String(body?.path ?? ''), localPath: String(body?.localPath ?? '') || undefined }),
+          sendFile: (body) => files.sendFile({ peer: resolveApiPeer(body), localPath: String(body?.path ?? ''), remotePath: String(body?.remotePath ?? '') }),
+          receiveFile: (body) => files.requestFile({ peer: resolveApiPeer(body), remotePath: String(body?.path ?? ''), localPath: String(body?.localPath ?? '') || undefined }),
         };
         try {
           const urls = cfg.listenPort > 0 ? [`http://127.0.0.1:${cfg.listenPort}`] : [];

@@ -3,7 +3,7 @@
 多台 DSH 之间的协同工作插件：**主 DSH 开服务，子 DSH 主动连上来**，用一条
 WebSocket 长连接做全双工 JSON 通讯。**只有消息，没有任务层**。
 
-- 主 DSH：监听端口、设置一个共用连接密码，用 `cow_send` 把消息派给直接下级（peer 可填显示名或稳定的 instanceId）；
+- 主 DSH：监听端口、设置一个共用连接密码，用 `cow_send(peerId, message)` 把消息派给直接下级；`peerId` 是稳定的 instanceId，`peerName` 是可选显示名；
 - 子 DSH：填写主 DSH 地址 + 密码，主动建立并维持长连接，消息直接进入会话输入队列执行；
 - **dispatch**：主 DSH 派消息后立即返回，不等待、不轮询；排队交给 DSH Agent 输入队列；
 - **complete**：子 DSH 回合结束时插件自动把本轮结论发回，主端以通知注入**派发时的原会话**，
@@ -40,10 +40,10 @@ WebSocket 长连接做全双工 JSON 通讯。**只有消息，没有任务层**
 |---|---|---|
 | `auth.challenge` | 接受方 → 拨号方 | 挑战：nonce + salt |
 | `hello` / `welcome` | 双向 | instanceId、名称、版本、proof、ack 水位 |
-| `msg.dispatch` | 主 → 子 | 派消息：messageId、text、**peerId**、workspace、session、approvalMode |
-| `msg.complete` | 子 → 主 | 回合结束：replyTo、text（本轮结论）、peerId、workspace、session |
-| `msg.ask` | 子 → 主 | 提问/审批：questionId、text、options[]、peerId、workspace、session |
-| `msg.answer` | 主 → 子 | 回答：replyTo（questionId）、text、peerId |
+| `msg.dispatch` | 主 → 子 | 派消息：messageId、text、**peerId + peerName**、workspace、session、approvalMode |
+| `msg.complete` | 子 → 主 | 回合结束：replyTo、text（本轮结论）、peerId、peerName、workspace、session |
+| `msg.ask` | 子 → 主 | 提问/审批：questionId、text、options[]、peerId、peerName、workspace、session |
+| `msg.answer` | 主 → 子 | 回答：replyTo（questionId）、text、peerId、peerName |
 | `file.*` | 双向 | 文件/目录分块传输、断点续传、目录清单 |
 | `peer.message` | 双向 | 协作消息 |
 | `ping` / `pong` | 双向 | 心跳（20s），断线自动退避重连 |
@@ -70,10 +70,10 @@ node scripts/join-child.mjs --home ~/.dsh-childA --name "子DSH-A" \
 
 - `cow_status`：本机状态、连接数、待回答询问；
 - `cow_peers`：节点列表（在线状态、版本、说明）；
-- `cow_send`：发消息。`peer` 优先填 `instanceId`（cow_…，显示名可能重复），也可填显示名；默认 `kind=dispatch` 派给直接下级并立即返回；`kind=ask` 向直接上级提问并等待回答；带 `replyTo` 时回答提问（回到子会话）；
+- `cow_send`：发消息。目标节点用 `peerId`（稳定的 instanceId，cow_…）指定；`peerName` 可选，仅用于核对显示名；默认 `kind=dispatch` 派给直接下级并立即返回；`kind=ask` 向直接上级提问并等待回答；带 `replyTo` 时回答提问（回到子会话）；
 - `cow_doctor`：生成本机诊断包（版本/配置/加密状态/文件统计/活动），返回 JSON 路径；
-- `cow_send_file` / `cow_receive_file`：发/取文件（单个或目录、断点续传、sha256）；
-- `cow_pull_dir`：拉取远端整个目录；
+- `cow_send_file` / `cow_receive_file`：发/取文件（单个或目录、断点续传、sha256），用 `peerId` 指定节点；
+- `cow_pull_dir`：拉取远端整个目录（`peerId`）；
 - `cow_cancel_file` / `cow_set_file_policy`：取消传输 / 调整对端文件策略。
 
 ## 已知限制

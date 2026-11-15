@@ -10,18 +10,19 @@ export function newMessageId(prefix = 'msg') {
   return `${prefix}_${Date.now().toString(36)}_${randomBytes(4).toString('hex')}`;
 }
 
-export function childKey({ peer, peerId, workspace, session }) {
+export function childKey({ peerId, peerName, peer, workspace, session }) {
   const ws = String(workspace?.id ?? workspace?.name ?? '').trim();
   const sid = String(session?.id ?? '').trim();
-  // instanceId 是稳定身份；显示名（peer）只用于展示与回退。
-  const node = String(peerId || peer || '').trim();
-  if (!ws || !sid || !node) throw new Error('缺少 peer/workspace.id/session.id，拒绝隔离不足的消息');
+  // instanceId 是稳定身份；显示名（peerName）只用于展示与回退。
+  const node = String(peerId || peerName || peer || '').trim();
+  if (!ws || !sid || !node) throw new Error('缺少 peerId/workspace.id/session.id，拒绝隔离不足的消息');
   return `${node}::${ws}::${sid}`;
 }
 
-export function buildEnvelope({ kind, peer, peerId = '', text, workspace, session, approvalMode = 'follow', replyTo = '', questionId = '', options = [] }) {
+export function buildEnvelope({ kind, peerId = '', peerName, peer, text, workspace, session, approvalMode = 'follow', replyTo = '', questionId = '', options = [] }) {
   if (!MESSAGE_KINDS.includes(kind)) throw new Error(`未知消息类型：${kind}`);
-  if (!peer) throw new Error('缺少 peer');
+  const displayName = String(peerName ?? peer ?? '').trim();
+  if (!peerId && !displayName) throw new Error('缺少 peerId（可选 peerName）');
   if (!text) throw new Error('消息不能为空');
   const messageId = newMessageId(kind === 'ask' ? 'q' : 'msg');
   return {
@@ -29,8 +30,10 @@ export function buildEnvelope({ kind, peer, peerId = '', text, workspace, sessio
     messageId,
     questionId: questionId || (kind === 'ask' ? messageId : ''),
     replyTo,
-    peer,
     peerId: String(peerId ?? ''),
+    peerName: displayName,
+    // 兼容旧节点的只读别名；新代码一律读 peerName。等所有节点 >=1.27 后可移除。
+    peer: displayName,
     text,
     options,
     workspace: { id: String(workspace?.id ?? ''), name: String(workspace?.name ?? ''), path: String(workspace?.path ?? '') },
@@ -44,8 +47,8 @@ export function buildEnvelope({ kind, peer, peerId = '', text, workspace, sessio
 export function completeEnvelope(dispatchMessage, text) {
   return buildEnvelope({
     kind: 'complete',
-    peer: dispatchMessage.peer,
     peerId: dispatchMessage.peerId,
+    peerName: dispatchMessage.peerName ?? dispatchMessage.peer,
     text,
     workspace: dispatchMessage.workspace,
     session: dispatchMessage.session,
@@ -58,8 +61,8 @@ export function completeEnvelope(dispatchMessage, text) {
 export function askEnvelope(dispatchMessage, text, options = []) {
   return buildEnvelope({
     kind: 'ask',
-    peer: dispatchMessage.peer,
     peerId: dispatchMessage.peerId,
+    peerName: dispatchMessage.peerName ?? dispatchMessage.peer,
     text,
     options: Array.isArray(options) ? options : [],
     workspace: dispatchMessage.workspace,
@@ -72,8 +75,8 @@ export function askEnvelope(dispatchMessage, text, options = []) {
 export function answerEnvelope(askMessage, text) {
   return buildEnvelope({
     kind: 'answer',
-    peer: askMessage.peer,
     peerId: askMessage.peerId,
+    peerName: askMessage.peerName ?? askMessage.peer,
     text,
     workspace: askMessage.workspace,
     session: askMessage.session,

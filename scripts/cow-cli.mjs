@@ -5,8 +5,10 @@
  *   cow-cli enroll --url ws://主DSH/cow/v1/channel --password *** [--home DIR]
  *
  * 文件传输通过本机运行中的 DSH 暴露的 HTTP 接口完成（复用其 WS 长连接）：
- *   cow-cli send-file --peer 名称 --path 本地文件 [--remote 对方路径] [--url http://127.0.0.1:59999]
- *   cow-cli receive-file --peer 名称 --path 对方路径 [--local 本机路径] [--url ...]
+ *   cow-cli send-file --peer-id cow_… [--peer-name 名称] --path 本地文件 [--remote 对方路径] [--url http://127.0.0.1:59999]
+ *   cow-cli receive-file --peer-id cow_… [--peer-name 名称] --path 对方路径 [--local 本机路径] [--url ...]
+ *
+ * 兼容旧参数：--peer 名称（等同 --peer-name）。
  * 令牌从 $DSH_HOME/cow/http.token 读取；入口地址优先 $DSH_HOME/cow/http.json。
  */
 import { existsSync } from 'node:fs';
@@ -86,9 +88,10 @@ try {
   }
 
   if (command === 'send-file' || command === 'receive-file') {
-    const peer = String(args.peer ?? '').trim();
+    const peerId = String(args['peer-id'] ?? '').trim();
+    const peerName = String(args['peer-name'] ?? args.peer ?? '').trim();
     const path = String(args.path ?? '').trim();
-    if (!peer || !path) throw new Error(`${command} 需要 --peer 与 --path`);
+    if ((!peerId && !peerName) || !path) throw new Error(`${command} 需要 --peer-id（或 --peer-name）与 --path`);
     const tokenFile = join(home, 'cow/http.token');
     if (!existsSync(tokenFile)) throw new Error(`没有找到 ${tokenFile}，请先启动本机 DSH（cow 插件会生成管理令牌）`);
     const token = readFileSync(tokenFile, 'utf8').trim();
@@ -99,8 +102,8 @@ try {
     if (args.url) urls = [String(args.url)];
     if (!urls.length) urls = ['http://127.0.0.1:59999'];
     const body = command === 'send-file'
-      ? { peer, path, remotePath: String(args.remote ?? '') }
-      : { peer, path, localPath: String(args.local ?? '') || undefined };
+      ? { peerId: peerId || undefined, peerName: peerName || undefined, path, remotePath: String(args.remote ?? '') }
+      : { peerId: peerId || undefined, peerName: peerName || undefined, path, localPath: String(args.local ?? '') || undefined };
     let lastError = null;
     for (const base of urls) {
       try {
