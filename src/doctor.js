@@ -12,7 +12,7 @@ function recentActivity(activity, limit = 10) {
   return (activity?.list?.(limit) ?? []).map((item) => ({
     at: item.at ?? null,
     kind: item.kind ?? '',
-    peer: item.peer ?? '',
+    peerName: item.peerName ?? '',
     status: item.status ?? '',
     text: String(item.text ?? '').slice(0, 200),
   }));
@@ -39,9 +39,9 @@ export function createDoctor({ instance, channel, peers, files, activity, router
     const peerStates = peers.list().map((peer) => {
       const status = channel.status?.(peer.label) ?? {};
       return {
-        label: peer.label,
-        relation: peer.relation,
         peerId: peer.peerId ?? '',
+        peerName: peer.label,
+        relation: peer.relation,
         state: status.state ?? 'unknown',
         direction: status.direction ?? null,
         encrypted: status.e2e === true,

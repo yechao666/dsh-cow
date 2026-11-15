@@ -113,12 +113,13 @@ export function createToolDefinitions({ instance, channel, peers, files, doctor,
             ? args.paths.map((item) => String(item))
             : [String(args?.path ?? '')];
           if (list.length === 1) {
-            return files.sendPath({ peer: peerLabel, localPath: list[0], remotePath: String(args?.remotePath ?? '') });
+            const result = await files.sendPath({ peerName: peerLabel, localPath: list[0], remotePath: String(args?.remotePath ?? '') });
+            return { ...result, peerId: target.peerId || '', peerName: peerLabel };
           }
           const filesDone = [];
           let totalBytes = 0;
           for (const item of list) {
-            const sent = await files.sendPath({ peer: peerLabel, localPath: item, remotePath: String(args?.remotePath ?? '') });
+            const sent = await files.sendPath({ peerName: peerLabel, localPath: item, remotePath: String(args?.remotePath ?? '') });
             filesDone.push(...sent.files);
             totalBytes += sent.totalBytes;
           }
@@ -143,7 +144,8 @@ export function createToolDefinitions({ instance, channel, peers, files, doctor,
         timeoutMs: 120_000,
         async execute(args) {
           const target = resolvePeer(args);
-          return files.requestFile({ peer: target.label, remotePath: String(args?.path ?? ''), localPath: String(args?.localPath ?? '') || undefined });
+          const result = await files.requestFile({ peerName: target.label, remotePath: String(args?.path ?? ''), localPath: String(args?.localPath ?? '') || undefined });
+          return { ...result, peerId: target.peerId || '', peerName: target.label };
         },
       },
       {
@@ -164,7 +166,8 @@ export function createToolDefinitions({ instance, channel, peers, files, doctor,
         timeoutMs: 300_000,
         async execute(args) {
           const target = resolvePeer(args);
-          return files.pullDir({ peer: target.label, remotePath: String(args?.remotePath ?? ''), localPath: String(args?.localPath ?? '') });
+          const result = await files.pullDir({ peerName: target.label, remotePath: String(args?.remotePath ?? ''), localPath: String(args?.localPath ?? '') });
+          return { ...result, peerId: target.peerId || '', peerName: target.label };
         },
       },
       {
@@ -245,12 +248,12 @@ export function createToolDefinitions({ instance, channel, peers, files, doctor,
         const conns = channel.connections?.() ?? [];
         return {
           peerId: instance.peerId,
-          displayName: instance.displayName,
+          peerName: instance.displayName,
           version: instance.version ?? '',
           description: instance.description ?? '',
           role: instance.role ?? 'leader',
           connections: conns.length,
-          connectedPeers: conns.map((item) => ({ peerId: item.peer, peerName: item.displayName, direction: item.direction })),
+          connectedPeers: conns.map((item) => ({ peerId: item.peerId ?? '', peerName: item.peerName, direction: item.direction })),
           pendingAsks: router?.pending?.() ?? [],
           diagnostics: {
             runningVersion: instance.version ?? '',
@@ -330,13 +333,13 @@ export function createToolDefinitions({ instance, channel, peers, files, doctor,
           activity?.add?.({
             kind: 'message',
             text: `回答 ${replyTo}：${text.slice(0, 80)}`,
-            peer: to,
+            peerName: to,
             from: instance.displayName || instance.peerId,
             to,
             messageId: replyTo,
             status: answered?.status ?? 'sent',
           });
-          return answered;
+          return { ...answered, peerId: asked?.peerId || target?.peerId || '', peerName: asked?.peerName || target?.label || '' };
         }
         const kind = String(args?.kind ?? 'dispatch');
         if (kind === 'ask' || kind === 'approval') {
@@ -347,17 +350,18 @@ export function createToolDefinitions({ instance, channel, peers, files, doctor,
             options: Array.isArray(args?.options) ? args.options.map(String) : [],
             timeoutSec: Number(args?.timeoutSec) || 300,
           });
-          const targetName = parentLabel();
+          const parentPeer = peers.list().find((peer) => peer.relation === 'parent') ?? null;
+          const targetName = parentPeer?.label || parentLabel();
           activity?.add?.({
             kind: 'message',
             text: `向 ${targetName || '上级'} 询问：${text.slice(0, 80)}`,
-            peer: targetName,
+            peerName: targetName,
             from: instance.displayName || instance.peerId,
             to: targetName,
             status: result?.ok ? 'answered' : 'failed',
           });
           if (!result?.ok) throw new Error(result?.error ?? '提问失败');
-          return result;
+          return { ...result, peerId: parentPeer?.peerId || '', peerName: parentPeer?.label || '' };
         }
         if (kind === 'answer') throw new Error('回答提问请用 replyTo 指定询问 ID');
         const target = resolvePeer(args);
@@ -379,7 +383,7 @@ export function createToolDefinitions({ instance, channel, peers, files, doctor,
         activity?.add?.({
           kind: 'message',
           text: `派给 ${target.label}${shortId}：${text.slice(0, 80)}`,
-          peer: target.label,
+          peerName: target.label,
           from: instance.displayName || instance.peerId,
           to: target.label,
           messageId: envelope.messageId,

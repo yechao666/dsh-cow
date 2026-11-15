@@ -14,7 +14,7 @@ export class ActivityLog {
 
   /**
    * 追加一条活动。
-   * @param {{kind?: string, text: string, peer?: string, from?: string, to?: string, messageId?: string, status?: string, detail?: object}} entry
+   * @param {{kind?: string, text: string, peerName?: string, from?: string, to?: string, messageId?: string, status?: string, detail?: object}} entry
    */
   add(entry) {
     const item = {
@@ -22,7 +22,7 @@ export class ActivityLog {
       at: new Date(this.now()).toISOString(),
       kind: String(entry?.kind ?? 'info').slice(0, 24),
       text: String(entry?.text ?? '').slice(0, 500),
-      peer: String(entry?.peer ?? '').slice(0, 160),
+      peerName: String(entry?.peerName ?? '').slice(0, 160),
       from: String(entry?.from ?? '').slice(0, 160),
       to: String(entry?.to ?? '').slice(0, 160),
       messageId: String(entry?.messageId ?? '').slice(0, 120),

@@ -118,6 +118,8 @@ test('cow_send kind=ask 走消息桥等待回答', async () => {
   const tool = find(defs, 'cow_send');
   const result = await tool.execute({ message: '要 A 吗？', kind: 'ask', options: ['A'] }, { agent: { session: { id: 'session-child' } } });
   assert.equal(result.ok, true);
+  assert.equal(result.peerName, '主 DSH');
+  assert.equal(result.peerId, 'cow_parent');
   assert.equal(asked[0].sessionId, 'session-child');
   assert.deepEqual(asked[0].options, ['A']);
 });
@@ -125,8 +127,10 @@ test('cow_send kind=ask 走消息桥等待回答', async () => {
 test('cow_send 带 replyTo 时作为回答回到子会话', async () => {
   const { defs, answered } = deps();
   const tool = find(defs, 'cow_send');
-  await tool.execute({ peerId: 'cow_child', peerName: '子 DSH-x', message: '允许一次', replyTo: 'q1' }, { agent: { session: { id: 's' } } });
+  const result = await tool.execute({ peerId: 'cow_child', peerName: '子 DSH-x', message: '允许一次', replyTo: 'q1' }, { agent: { session: { id: 's' } } });
   assert.deepEqual(answered[0], { questionId: 'q1', text: '允许一次' });
+  assert.equal(result.peerId, 'cow_child');
+  assert.equal(result.peerName, '子 DSH-x');
 });
 
 test('cow_status 不再包含任务字段', async () => {

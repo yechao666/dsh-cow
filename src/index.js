@@ -132,7 +132,7 @@ export function apply(ctx, rawConfig = {}) {
     const agent = agentOf(sessionId);
     if (!agent || typeof agent.followup !== 'function') {
       logger.warn(`[dsh-cow] 找不到可注入的原会话 ${sessionId || '(空)'}，${kind} 消息未送达 Agent`);
-      activity.add({ kind: 'message', text: `无法把 ${from} 的 ${kind} 消息注入原会话`, peer: from, from, to: selfName(), status: 'dropped' });
+      activity.add({ kind: 'message', text: `无法把 ${from} 的 ${kind} 消息注入原会话`, peerName: from, from, to: selfName(), status: 'dropped' });
       return false;
     }
     agent.followup({
@@ -141,7 +141,7 @@ export function apply(ctx, rawConfig = {}) {
       content: [{ type: 'text', text }],
       source: { kind: 'notification' },
     });
-    activity.add({ kind: 'message', text: `收到 ${from} 的 ${kind} 消息，已注入原会话`, peer: from, from, to: selfName(), status: 'injected' });
+    activity.add({ kind: 'message', text: `收到 ${from} 的 ${kind} 消息，已注入原会话`, peerName: from, from, to: selfName(), status: 'injected' });
     return true;
   };
 
@@ -152,7 +152,7 @@ export function apply(ctx, rawConfig = {}) {
       void bridge.dispatch(payload, from, peerId).catch((error) => {
         logger.warn(`[dsh-cow] 处理 ${from} 的 dispatch 失败：${error?.message ?? error}`);
       });
-      activity.add({ kind: 'message', text: `收到 ${from} 的 dispatch：${String(payload.text ?? '').slice(0, 80)}`, peer: from, from, to: selfName(), status: 'received' });
+      activity.add({ kind: 'message', text: `收到 ${from} 的 dispatch：${String(payload.text ?? '').slice(0, 80)}`, peerName: from, from, to: selfName(), status: 'received' });
       return;
     }
     if (type === 'msg.answer') {
@@ -171,7 +171,7 @@ export function apply(ctx, rawConfig = {}) {
     }
     if (type === 'peer.message') {
       logger.info(`[dsh-cow] 收到 ${from} 的消息：${String(payload?.message ?? '').slice(0, 200)}`);
-      activity.add({ kind: 'message', text: `收到 ${from} 的协作消息`, peer: from, from, to: selfName(), status: 'received' });
+      activity.add({ kind: 'message', text: `收到 ${from} 的协作消息`, peerName: from, from, to: selfName(), status: 'received' });
     }
   };
 
@@ -180,7 +180,7 @@ export function apply(ctx, rawConfig = {}) {
     activity.add({
       kind: 'peer',
       text: `${direction === 'in' ? '节点上线' : '已连接上级'}：${label}`,
-      peer: label,
+      peerName: label,
       from: direction === 'in' ? label : selfName(),
       to: direction === 'in' ? selfName() : label,
       status: 'connected',
@@ -490,8 +490,8 @@ export function apply(ctx, rawConfig = {}) {
             peers: peers.list().map((peer) => ({ label: peer.label, relation: peer.relation, state: channel.status(peer.label).state })),
             files: files.stats(),
           }),
-          sendFile: (body) => files.sendFile({ peer: resolveApiPeer(body), localPath: String(body?.path ?? ''), remotePath: String(body?.remotePath ?? '') }),
-          receiveFile: (body) => files.requestFile({ peer: resolveApiPeer(body), remotePath: String(body?.path ?? ''), localPath: String(body?.localPath ?? '') || undefined }),
+          sendFile: (body) => files.sendFile({ peerName: resolveApiPeer(body), localPath: String(body?.path ?? ''), remotePath: String(body?.remotePath ?? '') }),
+          receiveFile: (body) => files.requestFile({ peerName: resolveApiPeer(body), remotePath: String(body?.path ?? ''), localPath: String(body?.localPath ?? '') || undefined }),
         };
         try {
           const urls = cfg.listenPort > 0 ? [`http://127.0.0.1:${cfg.listenPort}`] : [];

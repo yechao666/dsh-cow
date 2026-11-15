@@ -70,8 +70,7 @@ export function createAdminHandlers(deps) {
     const peerList = deps.peers.list().map((peer) => {
       const status = deps.channel?.status?.(peer.label) ?? { state: 'offline' };
       return {
-        label: peer.label,
-        peer: peer.label,
+        peerName: peer.label,
         peerId: peer.peerId ?? '',
         uuid: peer.uuid || status.node?.uuid || '',
         relation: peer.relation ?? 'peer',
@@ -200,7 +199,7 @@ export function createAdminHandlers(deps) {
         deps.activity?.add?.({
           kind: 'message',
           text: `回答 ${questionId}：${answer.slice(0, 80)}`,
-          peer: ask?.peer ?? '',
+          peerName: ask?.peerName ?? '',
           from: deps.instance.displayName || deps.instance.peerId,
           to: ask?.peer ?? '',
           messageId: questionId,
@@ -222,9 +221,9 @@ export function createAdminHandlers(deps) {
     '/api/cow/peers/remove': wrap(async (req, res) => {
       if (req.method !== 'POST') return sendJson(res, 405, { error: { code: 'method_not_allowed', message: '只支持 POST' } });
       const body = await readBody(req);
-      const label = String(body?.label ?? '').trim();
-      if (!label) return sendJson(res, 400, { error: { code: 'invalid_request', message: '缺少 label' } });
-      deps.peers.remove(label);
+      const peerName = String(body?.peerName ?? body?.label ?? '').trim();
+      if (!peerName) return sendJson(res, 400, { error: { code: 'invalid_request', message: '缺少 peerName' } });
+      deps.peers.remove(peerName);
       sendJson(res, 200, state());
     }),
   };

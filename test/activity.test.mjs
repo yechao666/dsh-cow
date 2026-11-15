@@ -7,7 +7,7 @@ test('活动流按时间倒序保留最近 N 条', () => {
   const log = new ActivityLog({ limit: 3, now: () => now });
   log.add({ kind: 'peer', text: '节点上线' });
   now += 1000;
-  log.add({ kind: 'message', text: '派发消息', peer: 'B', from: 'A', to: 'B', messageId: 'm1' });
+  log.add({ kind: 'message', text: '派发消息', peerName: 'B', from: 'A', to: 'B', messageId: 'm1' });
   now += 1000;
   log.add({ kind: 'result', text: '消息完成', status: 'succeeded' });
   now += 1000;

@@ -798,7 +798,7 @@ export class Channel {
   /** 供测试与排障：当前所有连接。 */
   connections() {
     return [...this.conns.entries()].map(([label, state]) => ({
-      peer: label,
+      peerName: label,
       direction: state.direction,
       ready: state.ready,
       peerId: state.peerId,

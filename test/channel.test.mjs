@@ -128,7 +128,7 @@ test('共用密码模式：入站连接按已登记 peer.label 归位（不会�
     b.start();
     await waitFor(() => channel.connectedCount() === 1);
     await waitFor(() => channel.status('b-host').state === 'connected');
-    assert.equal(channel.connections().some((item) => item.peer === 'b-host'), true);
+    assert.equal(channel.connections().some((item) => item.peerName === 'b-host'), true);
   } finally {
     b.stop();
     channel.stop();

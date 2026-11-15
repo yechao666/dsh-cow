@@ -313,8 +313,8 @@ function CowTopology({ state }) {
   const childStartX = (canvasWidth - childTotalWidth) / 2;
   const defaults = {
     self: { x: (canvasWidth - NODE_W) / 2, y: 150 },
-    ...(parent ? { [`parent:${parent.label}`]: { x: (canvasWidth - NODE_W) / 2, y: 20 } } : {}),
-    ...Object.fromEntries(children.map((child, index) => [`child:${child.label}`, { x: childStartX + index * (NODE_W + gap), y: 340 }])),
+    ...(parent ? { [`parent:${parent.peerName}`]: { x: (canvasWidth - NODE_W) / 2, y: 20 } } : {}),
+    ...Object.fromEntries(children.map((child, index) => [`child:${child.peerName}`, { x: childStartX + index * (NODE_W + gap), y: 340 }])),
   };
   const positionOf = (key) => positions[key] ?? defaults[key] ?? { x: 20, y: 20 };
   const startDrag = (event, key) => {
@@ -376,16 +376,16 @@ function CowTopology({ state }) {
 
   const edges = [];
   if (parent) {
-    const from = positionOf(`parent:${parent.label}`);
+    const from = positionOf(`parent:${parent.peerName}`);
     const to = positionOf('self');
     edges.push({ key: 'p', d: `M ${from.x + NODE_W / 2} ${from.y + 78} C ${from.x + NODE_W / 2} ${from.y + 110}, ${to.x + NODE_W / 2} ${to.y - 30}, ${to.x + NODE_W / 2} ${to.y}` });
   }
   for (const child of children) {
     const from = positionOf('self');
-    const to = positionOf(`child:${child.label}`);
+    const to = positionOf(`child:${child.peerName}`);
     const fromX = from.x + NODE_W / 2;
     const toX = to.x + NODE_W / 2;
-    edges.push({ key: child.label, d: `M ${fromX} ${from.y + 82} C ${fromX} ${from.y + 128}, ${toX} ${to.y - 48}, ${toX} ${to.y}` });
+    edges.push({ key: child.peerName, d: `M ${fromX} ${from.y + 82} C ${fromX} ${from.y + 128}, ${toX} ${to.y - 48}, ${toX} ${to.y}` });
   }
 
   return h('div', { style: { ...PANEL.card, background: 'linear-gradient(180deg, color-mix(in srgb, var(--dsw-alias-brand-primary) 4%, var(--dsw-alias-bg-l1)), var(--dsw-alias-bg-l1))' } },
@@ -417,9 +417,9 @@ function CowTopology({ state }) {
         h('svg', { width: canvasWidth, height: canvasHeight, style: { position: 'absolute', left: 0, top: 0, pointerEvents: 'none' } },
           edges.map((edge) => h('path', { key: edge.key, d: edge.d, fill: 'none', stroke: 'var(--dsw-alias-brand-primary)', strokeWidth: 1.4, strokeOpacity: 0.35, strokeDasharray: '4 5' })),
         ),
-        parent ? nodeCard(`parent:${parent.label}`, parent.label, { version: parent.version, encrypted: parent.encrypted, note: parent.description }, { connected: parent.connected, role: 'parent' }) : null,
+        parent ? nodeCard(`parent:${parent.peerName}`, parent.peerName, { version: parent.version, encrypted: parent.encrypted, note: parent.description }, { connected: parent.connected, role: 'parent' }) : null,
         nodeCard('self', instance.displayName || '本机', { version: instance.version, encrypted: (state.stats?.encrypted ?? 0) > 0, note: instance.endpoint }, { self: true, connected: true }),
-        children.map((child) => nodeCard(`child:${child.label}`, child.label, { version: child.version, encrypted: child.encrypted, note: child.description }, { connected: child.connected, role: 'child' })),
+        children.map((child) => nodeCard(`child:${child.peerName}`, child.peerName, { version: child.version, encrypted: child.encrypted, note: child.description }, { connected: child.connected, role: 'child' })),
         !parent ? h('div', { style: { position: 'absolute', left: (canvasWidth - 150) / 2, top: 18, ...PANEL.chip, color: 'var(--dsw-alias-label-tertiary)', borderStyle: 'dashed' } }, '无直接上级') : null,
         children.length === 0
           ? h('div', { style: { position: 'absolute', left: (canvasWidth - 150) / 2, top: 332, ...PANEL.chip, color: 'var(--dsw-alias-label-tertiary)', borderStyle: 'dashed' } }, '无直接下级')
@@ -500,7 +500,7 @@ function CowActivityPanel() {
     const date = new Date(iso);
     return Number.isNaN(date.getTime()) ? '' : date.toLocaleString('zh-CN', { hour12: false });
   };
-  const connectionOf = (label) => (state.connections ?? []).find((item) => item.peer === label) ?? null;
+  const connectionOf = (label) => (state.connections ?? []).find((item) => item.peerName === label) ?? null;
 
   const activityKind = (item) => ACTIVITY_KIND[item.kind] ?? ACTIVITY_KIND.info;
   const activityMatch = (item) => activityFilter === 'all'
@@ -558,7 +558,7 @@ function CowActivityPanel() {
   const nodeDetail = (peer, role = 'child') => {
     const tone = roleSurface(role);
     const roleText = role === 'parent' ? '上级节点' : role === 'self' ? '本机节点' : '下级节点';
-    const conn = connectionOf(peer.label);
+    const conn = connectionOf(peer.peerName);
     const facts = [
       ['唯一标识', peer.uuid || peer.peerId || '', true],
       ['peerId', peer.peerId || '', true],
@@ -567,10 +567,10 @@ function CowActivityPanel() {
       ['最近心跳', conn?.lastSeenAt ? dateOf(conn.lastSeenAt) : '', false],
       ['加密', peer.encrypted ? 'AES-256-GCM' : '未加密', false],
     ].filter(([, value]) => value);
-    return h('div', { key: `${role}:${peer.label}`, style: { ...PANEL.card, padding: '12px 14px', marginBottom: 0, background: tone.background, borderColor: tone.border } },
+    return h('div', { key: `${role}:${peer.peerName}`, style: { ...PANEL.card, padding: '12px 14px', marginBottom: 0, background: tone.background, borderColor: tone.border } },
       h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 9 } },
-        h('span', { style: { width: 28, height: 28, borderRadius: 8, display: 'grid', placeItems: 'center', color: '#fff', background: panelAccent(peer.label).main, fontSize: 12, fontWeight: 700, boxShadow: `0 4px 12px ${panelAccent(peer.label).border}` } }, String(peer.label || '?').slice(0, 1)),
-        h('span', { style: { fontSize: 13, fontWeight: 650 } }, peer.label),
+        h('span', { style: { width: 28, height: 28, borderRadius: 8, display: 'grid', placeItems: 'center', color: '#fff', background: panelAccent(peer.peerName).main, fontSize: 12, fontWeight: 700, boxShadow: `0 4px 12px ${panelAccent(peer.peerName).border}` } }, String(peer.peerName || '?').slice(0, 1)),
+        h('span', { style: { fontSize: 13, fontWeight: 650 } }, peer.peerName),
         h(PanelChip, { tone: peer.connected ? 'on' : 'off' }, peer.connected ? '在线' : '离线'),
         peer.version ? h(PanelChip, null, `v${peer.version}`) : null,
         peer.encrypted ? h(E2EChip, { compact: true }) : null,
@@ -615,7 +615,7 @@ function CowActivityPanel() {
                 h('span', null, timeOf(item.at)),
                 item.from || item.to
                   ? h('span', { style: { color: 'var(--dsw-alias-label-secondary)' } }, `${item.from || '?'} → ${item.to || '?'}`)
-                  : (item.peer ? h('span', null, item.peer) : null),
+                  : (item.peerName ? h('span', null, item.peerName) : null),
                 item.messageId ? h('span', { style: S.mono }, String(item.messageId).slice(-12)) : null,
                 item.status ? h('span', null, item.status) : null,
               ),

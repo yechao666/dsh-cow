@@ -94,9 +94,9 @@ export class FileExchange {
   }
 
   /** 把本地文件发给直接下级。 */
-  async sendFile({ peer, localPath, remotePath, transferId: requestedId = '' }) {
-    const target = this.peers.get(peer);
-    if (!target) throw new Error(`未知节点：${peer}`);
+  async sendFile({ peerName, localPath, remotePath, transferId: requestedId = '' }) {
+    const target = this.peers.get(peerName);
+    if (!target) throw new Error(`未知节点：${peerName}`);
     if (target.relation === 'parent') throw new Error('不能给上级发送文件（只允许直接下级）');
     if (this.#blocked(target)) throw new Error(`对端 ${target.label} 的文件接收已被禁用`);
     if (this.#busy()) throw new Error('并发文件传输已达上限，请稍后重试');
@@ -109,7 +109,7 @@ export class FileExchange {
     const digest = sha256(buffer);
     const transferId = requestedId || `file_${randomUUID()}`;
     const name = String(remotePath ?? basename(source)).trim() || basename(source);
-    this.transfers.set(transferId, { direction: 'push', peer: target.label, canceled: false });
+    this.transfers.set(transferId, { direction: 'push', peerName: target.label, canceled: false });
 
     // 先登记续传回包的等待，再发送 file.put（同步测试通道里回包可能立刻到达）。
     const resumePromise = this.#wait(`${transferId}:resume`, { kind: 'resume' }, 2000).catch(() => ({ offset: 0 }));
@@ -144,12 +144,12 @@ export class FileExchange {
     this.activity?.add({
       kind: 'file',
       text: `发送文件到 ${target.label}：${result.path}（${size} B）`,
-      peer: target.label,
+      peerName: target.label,
       from: this.instance.displayName || this.instance.peerId,
       to: target.label,
       status: 'sent',
     });
-    return { transferId, peer: target.label, direction: 'push', remotePath: result.path, bytes: size, sha256: digest, resumedFrom: offset };
+    return { transferId, peerId: target.peerId || '', peerName: target.label, direction: 'push', remotePath: result.path, bytes: size, sha256: digest, resumedFrom: offset };
   }
 
   /** 递归列出一个目录下的文件；返回相对路径与大小。 */
@@ -172,16 +172,16 @@ export class FileExchange {
    * 发送文件或整个目录（目录按相对路径铺到对方 remotePath 下）。
    * @returns {Promise<{files: Array<{path:string,bytes:number,sha256:string}>, totalBytes:number, root?:string}>}
    */
-  async sendPath({ peer, localPath, remotePath }) {
+  async sendPath({ peerName, localPath, remotePath }) {
     const source = resolve(String(localPath ?? ''));
     const stat = statSync(source);
     if (stat.isFile()) {
-      const sent = await this.sendFile({ peer, localPath: source, remotePath });
+      const sent = await this.sendFile({ peerName, localPath: source, remotePath });
       return { files: [sent], totalBytes: sent.bytes };
     }
     if (!stat.isDirectory()) throw new Error('只支持普通文件或目录');
-    const target = this.peers.get(peer);
-    if (!target) throw new Error(`未知节点：${peer}`);
+    const target = this.peers.get(peerName);
+    if (!target) throw new Error(`未知节点：${peerName}`);
     if (target.relation === 'parent') throw new Error('不能给上级发送文件（只允许直接下级）');
     const root = String(remotePath ?? basename(source)).trim() || basename(source);
     const entries = this.#collectDir(source);
@@ -189,7 +189,7 @@ export class FileExchange {
     let totalBytes = 0;
     for (const entry of entries) {
       const sent = await this.sendFile({
-        peer,
+        peerName,
         localPath: entry.abs,
         remotePath: join(root, entry.rel),
       });
@@ -200,9 +200,9 @@ export class FileExchange {
   }
 
   /** 向直接下级请求目录清单。 */
-  requestDirList({ peer, remotePath }) {
-    const target = this.peers.get(peer);
-    if (!target) throw new Error(`未知节点：${peer}`);
+  requestDirList({ peerName, remotePath }) {
+    const target = this.peers.get(peerName);
+    if (!target) throw new Error(`未知节点：${peerName}`);
     if (target.relation === 'parent') throw new Error('不能从上级取文件（只允许直接下级）');
     const transferId = `file_${randomUUID()}`;
     const done = this.#wait(transferId, { kind: 'list' }, 30_000);
@@ -211,8 +211,8 @@ export class FileExchange {
   }
 
   /** 从直接下级拉取整个目录到 localPath。 */
-  async pullDir({ peer, remotePath, localPath }) {
-    const listed = await this.requestDirList({ peer, remotePath });
+  async pullDir({ peerName, remotePath, localPath }) {
+    const listed = await this.requestDirList({ peerName, remotePath });
     const root = resolve(String(localPath ?? '.'));
     const files = [];
     let totalBytes = 0;
@@ -220,7 +220,7 @@ export class FileExchange {
       const remote = join(String(remotePath), entry.name);
       const local = join(root, entry.name);
       mkdirSync(dirname(local), { recursive: true });
-      const got = await this.requestFile({ peer, remotePath: remote, localPath: local });
+      const got = await this.requestFile({ peerName, remotePath: remote, localPath: local });
       files.push({ path: got.localPath, bytes: got.bytes, sha256: got.sha256 });
       totalBytes += got.bytes;
     }
@@ -228,14 +228,14 @@ export class FileExchange {
   }
 
   /** 从直接下级取一个文件，保存到本机。 */
-  async requestFile({ peer, remotePath, localPath }) {
-    const target = this.peers.get(peer);
-    if (!target) throw new Error(`未知节点：${peer}`);
+  async requestFile({ peerName, remotePath, localPath }) {
+    const target = this.peers.get(peerName);
+    if (!target) throw new Error(`未知节点：${peerName}`);
     if (target.relation === 'parent') throw new Error('不能从上级取文件（只允许直接下级）');
     if (this.#busy()) throw new Error('并发文件传输已达上限，请稍后重试');
     const transferId = `file_${randomUUID()}`;
     const save = resolve(String(localPath ?? basename(String(remotePath ?? 'file.bin'))));
-    this.transfers.set(transferId, { direction: 'pull', peer: target.label, canceled: false });
+    this.transfers.set(transferId, { direction: 'pull', peerName: target.label, canceled: false });
     const done = this.#wait(transferId, { kind: 'get', savePath: save });
     this.#send(target.label, 'file.get', { transferId, path: String(remotePath ?? '') });
     const result = await done;
@@ -246,12 +246,12 @@ export class FileExchange {
     this.activity?.add({
       kind: 'file',
       text: `从 ${target.label} 取回：${result.path}（${result.bytes} B）`,
-      peer: target.label,
+      peerName: target.label,
       from: target.label,
       to: this.instance.displayName || this.instance.peerId,
       status: 'received',
     });
-    return { transferId, peer: target.label, direction: 'pull', localPath: result.path, bytes: result.bytes, sha256: result.sha256 };
+    return { transferId, peerId: target.peerId || '', peerName: target.label, direction: 'pull', localPath: result.path, bytes: result.bytes, sha256: result.sha256 };
   }
 
   /** 取消进行中的传输（按 sendFile/requestFile 返回或日志里的 transferId）。 */
@@ -259,7 +259,7 @@ export class FileExchange {
     const transfer = this.transfers.get(String(transferId ?? ''));
     if (!transfer) throw new Error(`没有进行中的传输：${transferId}`);
     transfer.canceled = true;
-    try { this.#send(transfer.peer, 'file.cancel', { transferId }); } catch { /* 忽略 */ }
+    try { this.#send(transfer.peerName, 'file.cancel', { transferId }); } catch { /* 忽略 */ }
     for (const key of [transferId, `${transferId}:resume`]) {
       const waiter = this.pending.get(key);
       if (waiter) {
@@ -268,7 +268,8 @@ export class FileExchange {
       }
     }
     this.counters.canceled += 1;
-    return { transferId, canceled: true };
+    const known = this.peers.get?.(transfer.peerName);
+    return { transferId, canceled: true, peerId: known?.peerId || '', peerName: transfer.peerName };
   }
 
   stats() {
@@ -309,7 +310,7 @@ export class FileExchange {
       if (this.#busy()) throw new Error('并发文件传输已达上限');
       const buffer = readFileSync(source);
       const digest = sha256(buffer);
-      this.transfers.set(transferId, { direction: 'push', peer: from, canceled: false });
+      this.transfers.set(transferId, { direction: 'push', peerName: from, canceled: false });
       const resumePromise = this.#wait(`${transferId}:resume`, { kind: 'resume' }, 2000).catch(() => ({ offset: 0 }));
       this.#send(from, 'file.put', { transferId, name: source, size: buffer.length, sha256: digest });
       const resumed = await resumePromise;

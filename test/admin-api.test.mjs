@@ -36,7 +36,7 @@ function fakeDeps() {
       pending: () => [{ questionId: 'q1', peer: '子 B', question: '要 A 还是 B？', options: ['A', 'B'], session: 's1', createdAt: '2026-01-01T00:00:00.000Z' }],
       answer: () => ({ questionId: 'q1', status: 'sent' }),
     },
-    activity: { list: () => [{ id: 1, at: '2026-01-01T00:00:00.000Z', kind: 'message', text: '派发消息', peer: '子 B', status: 'sent' }] },
+    activity: { list: () => [{ id: 1, at: '2026-01-01T00:00:00.000Z', kind: 'message', text: '派发消息', peerName: '子 B', status: 'sent' }] },
     files: { stats: () => ({ sent: 1, received: 2 }) },
     doctor: null,
     passwordConfigured: () => true,
@@ -89,7 +89,7 @@ test('admin state 返回节点、待回答询问，不含任务队列', async ()
   assert.equal(body.currentInbound, undefined);
   assert.equal(body.pendingAsks.length, 1);
   assert.equal(body.stats.pendingAsks, 1);
-  assert.equal(body.peers[0].label, '子 B');
+  assert.equal(body.peers[0].peerName, '子 B');
   assert.equal(body.passwordConfigured, true);
 });
 
