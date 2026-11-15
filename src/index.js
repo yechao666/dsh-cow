@@ -372,6 +372,7 @@ export function apply(ctx, rawConfig = {}) {
       doctor,
       bridge,
       router,
+      activity,
       sessionInfoFor: (session) => sessionInfo(ctx, session),
     }),
   );
