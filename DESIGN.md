@@ -54,18 +54,19 @@ agent.followup({ content: [...], source: { kind: 'notification' } })
 非 `user` 来源的输入会被 DSH 标记为唤醒型 context message，界面显示
 “这条通知触发了本轮回复。”，主 DSH 因此能用同一轮对话继续处理结论。
 
-### 3.3 隔离键 = peer + workspace.id + session.id
+### 3.3 隔离键 = peerId(instanceId) + workspace.id + session.id
 
-子端为每个主会话维护一个子会话：
+子端为每个主会话维护一个子会话。`peerId` 是稳定身份，显示名只用于展示：
 
 ```text
-key       = peer :: workspace.id :: session.id
+key       = (peerId || peer) :: workspace.id :: session.id
 sessionId = "session-cow-" + sha256(key).slice(0, 16)
 ```
 
 不同工作区、不同主会话互不串线；同一主会话多次 dispatch 复用同一子会话，
-因此上下文连续。每条消息都带 workspace（id/name/path）与 session（id/title），
-子端不需要猜自己在替谁干活。
+因此上下文连续。每条消息都带 peerId、workspace（id/name/path）与 session（id/title），
+子端不需要猜自己在替谁干活。显示名可能重复或变更，`cow_send`/通道会按 instanceId
+解析到当前唯一 label；PeerRegistry 对同名不同实例自动追加后缀。
 
 ### 3.4 ask / answer 不引入任务 ID
 

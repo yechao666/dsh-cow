@@ -73,9 +73,12 @@ export class PeerRegistry {
     const list = Array.isArray(data?.peers) ? data.peers : [];
     this.peers = list.map(normalizePeer).filter(Boolean);
     // 同一父节点可能被历史配置重复登记（不同端口/地址）；保留最新一条，避免 cow_peers 出现两个“主 DSH”。
+    // 去重只合并「同一实例」的历史记录；不同实例同名时必须保留两条（显示名在 upsert 时加后缀）。
+    const identity = (peer) => (peer.instanceId ? `instance:${peer.instanceId}` : `${peer.relation}|${peer.label}|${peer.url}`);
     const unique = [];
     for (const peer of this.peers) {
-      const existing = unique.findIndex((item) => item.relation === peer.relation && item.label === peer.label);
+      const key = identity(peer);
+      const existing = unique.findIndex((item) => identity(item) === key);
       if (existing < 0) { unique.push(peer); continue; }
       if (String(peer.addedAt ?? '') > String(unique[existing].addedAt ?? '')) unique[existing] = peer;
     }
@@ -128,8 +131,9 @@ export class PeerRegistry {
   uniqueLabel(desired, instanceId) {
     const base = String(desired ?? '').trim().slice(0, 120) || String(instanceId ?? '').slice(-8) || 'peer';
     const existing = this.get(base);
-    if (!existing || !instanceId || existing.instanceId === instanceId) return base;
-    const suffix = String(instanceId).slice(-6);
+    if (!existing) return base;
+    if (instanceId && existing.instanceId === instanceId) return base;
+    const suffix = String(instanceId || existing.id || '').slice(-6) || Math.random().toString(36).slice(2, 8);
     let candidate = `${base}-${suffix}`;
     let index = 2;
     while (this.get(candidate) && this.get(candidate).instanceId !== instanceId) {
@@ -148,10 +152,14 @@ export class PeerRegistry {
       this.peers.find((peer) => instanceId && peer.instanceId === instanceId) ??
       // 子节点 url 为空：不能用「空 url 相等」把它们合并成一条。
       (normalizedUrl ? this.peers.find((peer) => peer.url === normalizedUrl) : null);
+    const desiredLabel = String(label ?? '').trim() || instanceId || normalizedUrl;
+    const labelForPeer = existing && desiredLabel === existing.label
+      ? existing.label
+      : this.uniqueLabel(desiredLabel, instanceId || existing?.instanceId || '');
     if (existing) {
       existing.url = normalizedUrl;
       if (token) existing.token = token;
-      if (label) existing.label = label;
+      if (label) existing.label = labelForPeer;
       if (instanceId) existing.instanceId = instanceId;
       if (uuid) existing.uuid = uuid;
       if (relation) existing.relation = relation;
@@ -164,7 +172,7 @@ export class PeerRegistry {
     const peer = normalizePeer({
       url: normalizedUrl,
       token,
-      label: label || instanceId || normalizedUrl,
+      label: labelForPeer,
       allowFiles,
       maxFileMB,
       instanceId,

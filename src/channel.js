@@ -221,11 +221,28 @@ export class Channel {
   }
 
   /**
+   * 把 label / instanceId / url 解析成当前连接使用的唯一 label。
+   * instanceId 是稳定身份：改名、重连、显示名冲突后仍能找到同一节点。
+   */
+  #resolveLabel(target) {
+    const raw = String(target ?? '').trim();
+    if (!raw) return '';
+    if (this.conns.has(raw) || this.outbox.has(raw) || this.dial.has(raw)) return raw;
+    const peer = this.peers?.get?.(raw);
+    if (peer) return peer.label;
+    for (const state of this.conns.values()) {
+      if (state.peerInstanceId === raw) return state.label;
+    }
+    return raw;
+  }
+
+  /**
    * 向某个 peer 发送一条事件。通道未连接时先入发件箱（等重连），返回 delivered=false。
-   * @param {string} label
+   * @param {string} target label 或 instanceId
    * @param {{type: string, payload?: object}} event
    */
-  send(label, { type, payload = {} }) {
+  send(target, { type, payload = {} }) {
+    const label = this.#resolveLabel(target);
     if (!label) return { queued: false, delivered: false, reason: 'missing_peer' };
     let box = this.outbox.get(label);
     if (!box) {
@@ -513,7 +530,9 @@ export class Channel {
           // 优先按实例 ID 匹配已登记的 peer，保证入站连接挂在 peer.label 上，
           // 而不是临时标签 / instanceId（否则主 DSH 侧一直显示离线）。
           const known = this.peers.list().find((peer) => peer.instanceId && peer.instanceId === state.peerInstanceId);
-          const next = known?.label || String(frame.displayName || frame.instanceId || '').trim() || state.label;
+          const desired = String(frame.displayName || frame.instanceId || '').trim() || state.label;
+          // 未登记的节点用 instanceId 生成唯一显示名，避免两个同名「主 DSH」互相顶掉连接。
+          const next = known?.label || this.peers.uniqueLabel(desired, state.peerInstanceId);
           if (next !== state.label) {
             if (this.conns.get(state.label) === state) this.conns.delete(state.label);
             state.label = next;

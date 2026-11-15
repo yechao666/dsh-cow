@@ -332,3 +332,22 @@ test('共用密码握手后连接启用帧级加密（双方会话密钥一致�
     await a.close();
   }
 });
+
+test('send 支持 instanceId：先解析成唯一 label 再入发件箱', () => {
+  const home = mkdtempSync(join(tmpdir(), 'cow-chan-id-'));
+  const peers = new PeerRegistry({ file: join(home, 'peers.json') });
+  peers.upsert({ url: '', token: '', label: '子 DSH', instanceId: 'cow_child_1', relation: 'child' });
+  const channel = new Channel({
+    ctx: {},
+    resolveConfig: () => ({ channelEnabled: true, serverEnabled: true, channelDial: 'always' }),
+    peers,
+    instance: { instanceId: 'cow_self', displayName: 'self' },
+    authorize: () => null,
+    logger: silent,
+    home,
+  });
+  const sent = channel.send('cow_child_1', { type: 'msg.dispatch', payload: { text: 'x' } });
+  assert.equal(sent.queued, true);
+  assert.ok(channel.outbox.has('子 DSH'), '按唯一 label 入发件箱');
+  assert.ok(!channel.outbox.has('cow_child_1'), '不按 instanceId 直接入队');
+});

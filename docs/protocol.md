@@ -87,7 +87,7 @@ key = HKDF-SHA256(base = passwordHash, salt = nonce, info = "cow/v1/e2e", 32)
 ## 3. 消息信封
 
 四条消息共用同一个信封。`peer` 是这条会话所属的**子节点标签**（主端视角），
-子端按 `peer + workspace.id + session.id` 隔离本地会话。
+子端按 `peerId（instanceId）+ workspace.id + session.id` 隔离本地会话；`peer` 只是显示名。
 
 ```json
 {
@@ -96,6 +96,7 @@ key = HKDF-SHA256(base = passwordHash, salt = nonce, info = "cow/v1/e2e", 32)
   "questionId": "",
   "replyTo": "",
   "peer": "子 DSH-A",
+  "peerId": "cow_6f1c…",
   "text": "…",
   "options": [],
   "workspace": { "id": "cods_workspace…", "name": "项目名", "path": "/abs/path" },
@@ -107,13 +108,15 @@ key = HKDF-SHA256(base = passwordHash, salt = nonce, info = "cow/v1/e2e", 32)
 
 ### 3.1 dispatch（主 → 子）
 
-主 DSH 用 `cow_send(peer, message)` 发送。消息**只入队、立即返回**，不等结果：
+主 DSH 用 `cow_send(peer, message)` 发送，`peer` 可填显示名或稳定的 `instanceId`。
+消息**只入队、立即返回**，不等结果：
 
 ```json
 {
   "kind": "dispatch",
   "messageId": "msg_…",
   "peer": "子 DSH-A",
+  "peerId": "cow_6f1c…",
   "text": "把周报整理成 markdown",
   "workspace": { "id": "…", "name": "docs", "path": "/Users/yechao/work/docs" },
   "session": { "id": "…", "title": "周报" },
@@ -121,7 +124,8 @@ key = HKDF-SHA256(base = passwordHash, salt = nonce, info = "cow/v1/e2e", 32)
 }
 ```
 
-子端按隔离键找到/新建子会话，把 `text` 作为一条用户消息交给 Agent；同一隔离键复用同一会话。
+子端按隔离键（`peerId + workspace.id + session.id`）找到/新建子会话，把 `text` 作为一条用户消息交给 Agent；
+同一隔离键复用同一会话。显示名重名时主端会自动追加实例后缀，instanceId 始终不变。
 子端工作目录取 `workspace.path`（必须在本机 `allowedRoots` 内），不可用时落到第一个根目录下的
 `workspace.name` 同名目录。
 

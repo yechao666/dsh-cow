@@ -25,7 +25,7 @@ export class MessageRouter {
     return true;
   }
 
-  handle(from, frame) {
+  handle(from, frame, fromId = '') {
     const type = String(frame?.type ?? '');
     const payload = frame?.payload ?? {};
     if (type === 'msg.complete') {
@@ -44,7 +44,7 @@ export class MessageRouter {
       const questionId = payload?.questionId ?? payload?.messageId;
       if (!questionId) return false;
       if (!this.#firstSeen(payload?.messageId ?? questionId)) return true;
-      this.questions.set(questionId, { peer: from, envelope: payload, at: Date.now() });
+      this.questions.set(questionId, { peer: from, peerId: String(fromId || payload?.peerId || ''), envelope: payload, at: Date.now() });
       const origin = payload?.session?.id;
       if (origin) {
         const self = this.selfName();
@@ -71,7 +71,7 @@ export class MessageRouter {
     const id = String(questionId ?? '');
     const pending = this.questions.get(id);
     if (!pending) throw new Error('没有找到待回答的询问');
-    const sent = this.channel.send(pending.peer, {
+    const sent = this.channel.send(pending.peerId || pending.peer, {
       type: 'msg.answer',
       payload: { ...pending.envelope, kind: 'answer', replyTo: id, text: String(text ?? '') },
     });
@@ -88,6 +88,7 @@ export class MessageRouter {
     return [...this.questions.entries()].map(([questionId, item]) => ({
       questionId,
       peer: item.peer,
+      peerId: item.peerId ?? '',
       question: String(item.envelope?.text ?? ''),
       options: item.envelope?.options ?? [],
       session: item.envelope?.session?.id ?? '',

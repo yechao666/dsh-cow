@@ -3,7 +3,7 @@
 多台 DSH 之间的协同工作插件：**主 DSH 开服务，子 DSH 主动连上来**，用一条
 WebSocket 长连接做全双工 JSON 通讯。**只有消息，没有任务层**。
 
-- 主 DSH：监听端口、设置一个共用连接密码，用 `cow_send` 把消息派给直接下级；
+- 主 DSH：监听端口、设置一个共用连接密码，用 `cow_send` 把消息派给直接下级（peer 可填显示名或稳定的 instanceId）；
 - 子 DSH：填写主 DSH 地址 + 密码，主动建立并维持长连接，消息直接进入会话输入队列执行；
 - **dispatch**：主 DSH 派消息后立即返回，不等待、不轮询；排队交给 DSH Agent 输入队列；
 - **complete**：子 DSH 回合结束时插件自动把本轮结论发回，主端以通知注入**派发时的原会话**，
@@ -14,8 +14,9 @@ WebSocket 长连接做全双工 JSON 通讯。**只有消息，没有任务层**
 - **询问由被询问节点的 Agent 处理**：它先自行判断；需要人工决定时调用 `ask_user_question`
   在 DSH 原生界面让用户输入；需要上级拍板时继续向上级 `cow_send(kind="ask")`，再逐级回报。
   COW 状态面板只显示「询问中」计数，不提供人工回答队列；
-- 每条消息都带 `workspace`（id/name/path）、`session`（id/title）与 `approvalMode`，
-  子端按 `peer + workspace.id + session.id` 隔离会话，不同主会话互不串线；
+- 每条消息都带 `workspace`（id/name/path）、`session`（id/title）与 `approvalMode`；
+  子端按 `peerId（instanceId，缺省回退显示名）+ workspace.id + session.id` 隔离会话，
+  同名节点不会串线，改名也不影响在途会话；显示名重复时 PeerRegistry 会自动追加实例后缀；
 - 子 DSH 的 agent preset 可在设置页指定（`agentPreset`），会话会挂到对应工作区；
 - 文件交换支持单个文件、目录递归（`cow_send_file` 传目录）与目录拉取（`cow_pull_dir`），逐文件 sha256 校验；
 - 连接握手后启用 **AES-256-GCM 帧级加密**（密钥由共用密码 + 每次连接的 nonce 派生，重连即轮换）；旧客户端不支持时自动回落明文；
@@ -39,10 +40,10 @@ WebSocket 长连接做全双工 JSON 通讯。**只有消息，没有任务层**
 |---|---|---|
 | `auth.challenge` | 接受方 → 拨号方 | 挑战：nonce + salt |
 | `hello` / `welcome` | 双向 | instanceId、名称、版本、proof、ack 水位 |
-| `msg.dispatch` | 主 → 子 | 派消息：messageId、text、workspace、session、approvalMode |
-| `msg.complete` | 子 → 主 | 回合结束：replyTo、text（本轮结论）、workspace、session |
-| `msg.ask` | 子 → 主 | 提问/审批：questionId、text、options[]、workspace、session |
-| `msg.answer` | 主 → 子 | 回答：replyTo（questionId）、text |
+| `msg.dispatch` | 主 → 子 | 派消息：messageId、text、**peerId**、workspace、session、approvalMode |
+| `msg.complete` | 子 → 主 | 回合结束：replyTo、text（本轮结论）、peerId、workspace、session |
+| `msg.ask` | 子 → 主 | 提问/审批：questionId、text、options[]、peerId、workspace、session |
+| `msg.answer` | 主 → 子 | 回答：replyTo（questionId）、text、peerId |
 | `file.*` | 双向 | 文件/目录分块传输、断点续传、目录清单 |
 | `peer.message` | 双向 | 协作消息 |
 | `ping` / `pong` | 双向 | 心跳（20s），断线自动退避重连 |

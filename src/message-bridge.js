@@ -80,14 +80,15 @@ export class MessageBridge {
     return true;
   }
 
-  async dispatch(envelope, from) {
+  async dispatch(envelope, from, fromId = '') {
     if (!this.#remember(envelope.messageId)) {
       const record = this.sessions.get(this.key(envelope));
       return { messageId: envelope.messageId, sessionId: record?.sessionId, status: 'duplicate' };
     }
     const record = await this.ensure(envelope);
     record.envelope = envelope;
-    record.parent = from;
+    record.parent = fromId || from;
+    record.parentLabel = from;
     // 必须在 followup 之前取水位，否则会漏掉本轮 turn/start，摘要读不到本轮文本与错误。
     const firstSeq = record.agent.session?.seq ?? 0;
     record.agent.followup(messageObject({ id: envelope.messageId, text: envelope.text }));
@@ -176,11 +177,11 @@ export class MessageBridge {
     return this.answer(envelope, from);
   }
 
-  async answer(envelope, from) {
+  async answer(envelope, from, fromId = '') {
     if (!this.#remember(envelope.messageId)) return { messageId: envelope.messageId, status: 'duplicate' };
     const record = await this.ensure(envelope);
     record.envelope = record.envelope ?? envelope;
-    record.parent = record.parent ?? from;
+    record.parent = record.parent ?? (fromId || from);
     record.agent.followup(messageObject({ id: envelope.messageId, text: `[COW 回答] ${envelope.text}` }));
     return { messageId: envelope.messageId, sessionId: record.sessionId, status: 'sent' };
   }

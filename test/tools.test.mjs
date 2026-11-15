@@ -63,8 +63,10 @@ test('cow_send 默认派 dispatch，立即返回消息 ID，不等待', async ()
   const result = await tool.execute({ peer: '子 DSH-x', message: '做一件事' }, { agent: { session: { id: 'session-1' } } });
   assert.equal(result.status, 'sent');
   assert.ok(result.messageId);
-  assert.equal(sent[0].peer, '子 DSH-x');
+  assert.equal(result.peerId, 'cow_child');
+  assert.equal(sent[0].peer, 'cow_child', '按 instanceId 路由，而不是显示名');
   assert.equal(sent[0].frame.type, 'msg.dispatch');
+  assert.equal(sent[0].frame.payload.peerId, 'cow_child');
   assert.equal(sent[0].frame.payload.text, '做一件事');
   assert.equal(sent[0].frame.payload.session.id, 'session-1');
   assert.equal(sent[0].frame.payload.workspace.id, 'w1');

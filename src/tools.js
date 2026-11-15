@@ -296,15 +296,17 @@ export function createToolDefinitions({ instance, channel, peers, files, doctor,
         const envelope = buildEnvelope({
           kind: 'dispatch',
           peer: peer.label,
+          peerId: peer.instanceId || '',
           text,
           workspace: info.workspace,
           session: info.session,
           approvalMode: 'follow',
         });
-        const sent = channel.send(peer.label, { type: 'msg.dispatch', payload: envelope });
+        // 优先按 instanceId 路由：显示名可以改、可能撞名，实例 ID 不变。
+        const sent = channel.send(peer.instanceId || peer.label, { type: 'msg.dispatch', payload: envelope });
         activity?.add?.({ kind: 'message', text: `派给 ${peer.label}：${text.slice(0, 80)}`, peer: peer.label, from: instance.displayName || instance.instanceId, to: peer.label, messageId: envelope.messageId, status: sent?.delivered ? 'sent' : 'queued' });
         if (!sent?.delivered && !sent?.queued) throw new Error('消息未送达，目标节点当前不在线');
-        return { messageId: envelope.messageId, peer: peer.label, kind: 'dispatch', status: sent.delivered ? 'sent' : 'queued' };
+        return { messageId: envelope.messageId, peer: peer.label, peerId: peer.instanceId || '', kind: 'dispatch', status: sent.delivered ? 'sent' : 'queued' };
       },
     },
   ];
