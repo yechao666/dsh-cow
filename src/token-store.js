@@ -75,9 +75,9 @@ export class TokenStore {
   }
 
   /** 把登记串绑定到第一次使用它的实例；用于拒绝“一个邀请码多台机器共用”。 */
-  bind(id, instanceId) {
+  bind(id, peerId) {
     const record = this.records.find((item) => item.id === id);
-    const next = String(instanceId ?? '').trim().slice(0, 128);
+    const next = String(peerId ?? '').trim().slice(0, 128);
     if (!record || !next) return record ?? null;
     if (record.boundInstanceId === next) return record;
     record.boundInstanceId = next;

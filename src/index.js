@@ -81,7 +81,7 @@ export function apply(ctx, rawConfig = {}) {
     instance = loadIdentity({ home, displayName: resolve().displayName });
   } catch (error) {
     logger.warn(`无法写入实例身份（${home}）：${error?.message ?? error}`);
-    instance = { instanceId: `cow_mem_${Math.random().toString(16).slice(2, 10)}`, displayName: '', role: 'leader', parent: null, createdAt: new Date().toISOString() };
+    instance = { peerId: `cow_mem_${Math.random().toString(16).slice(2, 10)}`, displayName: '', role: 'leader', parent: null, createdAt: new Date().toISOString() };
   }
   instance.version = currentPackageVersion();
   if (!instance.uuid) instance.uuid = '';
@@ -97,18 +97,18 @@ export function apply(ctx, rawConfig = {}) {
 
   const peers = new PeerRegistry({ file: peersPath(home), logger });
   for (const peer of peers.list()) {
-    if ((peer.instanceId && peer.instanceId === instance.instanceId) || (peer.uuid && peer.uuid === instance.uuid)) {
+    if ((peer.peerId && peer.peerId === instance.peerId) || (peer.uuid && peer.uuid === instance.uuid)) {
       try { peers.remove(peer.label); } catch { /* 忽略 */ }
     }
   }
 
   const activity = new ActivityLog();
-  const selfName = () => instance.displayName || instance.instanceId;
+  const selfName = () => instance.displayName || instance.peerId;
   const resolveApiPeer = (body) => {
     const id = String(body?.peerId ?? '').trim();
     const name = String(body?.peerName ?? body?.peer ?? '').trim();
     if (id) {
-      const found = peers.list().find((peer) => peer.instanceId === id || peer.id === id);
+      const found = peers.list().find((peer) => peer.peerId === id || peer.id === id);
       if (found) return found.label;
     }
     if (name) {
@@ -145,24 +145,24 @@ export function apply(ctx, rawConfig = {}) {
     return true;
   };
 
-  const onEvent = ({ from, peerInstanceId, event }) => {
+  const onEvent = ({ from, peerId, event }) => {
     const type = String(event?.type ?? '');
     const payload = event?.payload ?? {};
     if (type === 'msg.dispatch') {
-      void bridge.dispatch(payload, from, peerInstanceId).catch((error) => {
+      void bridge.dispatch(payload, from, peerId).catch((error) => {
         logger.warn(`[dsh-cow] 处理 ${from} 的 dispatch 失败：${error?.message ?? error}`);
       });
       activity.add({ kind: 'message', text: `收到 ${from} 的 dispatch：${String(payload.text ?? '').slice(0, 80)}`, peer: from, from, to: selfName(), status: 'received' });
       return;
     }
     if (type === 'msg.answer') {
-      void bridge.handleAnswer(payload, from, peerInstanceId).catch((error) => {
+      void bridge.handleAnswer(payload, from, peerId).catch((error) => {
         logger.warn(`[dsh-cow] 处理 ${from} 的 answer 失败：${error?.message ?? error}`);
       });
       return;
     }
     if (type === 'msg.complete' || type === 'msg.ask' || type === 'msg.ask.cancel') {
-      router.handle(from, event, peerInstanceId);
+      router.handle(from, event, peerId);
       return;
     }
     if (type.startsWith('file.')) {
@@ -175,8 +175,8 @@ export function apply(ctx, rawConfig = {}) {
     }
   };
 
-  const onPeer = ({ label, instanceId, displayName, node, direction }) => {
-    if (!instanceId) return;
+  const onPeer = ({ label, peerId, displayName, node, direction }) => {
+    if (!peerId) return;
     activity.add({
       kind: 'peer',
       text: `${direction === 'in' ? '节点上线' : '已连接上级'}：${label}`,
@@ -186,26 +186,26 @@ export function apply(ctx, rawConfig = {}) {
       status: 'connected',
     });
     if (direction === 'in') {
-      const existing = peers.list().find((peer) => peer.instanceId === instanceId);
-      const desired = String(displayName ?? '').trim() || `子 DSH-${instanceId.slice(-6)}`;
+      const existing = peers.list().find((peer) => peer.peerId === peerId);
+      const desired = String(displayName ?? '').trim() || `子 DSH-${peerId.slice(-6)}`;
       // 同名不同实例由 PeerRegistry 追加实例后缀；连接按最终 label 归位。
       const { peer } = peers.upsert({
         url: '',
         token: '',
         label: desired,
-        instanceId,
+        peerId,
         uuid: String(node?.uuid ?? existing?.uuid ?? ''),
         relation: 'child',
         capabilitySummary: String(node?.description ?? ''),
       });
-      try { channel.rebind(existing?.label || instanceId, peer.label); } catch { /* 忽略 */ }
+      try { channel.rebind(existing?.label || peerId, peer.label); } catch { /* 忽略 */ }
       return;
     }
-    const parent = peers.list().find((peer) => peer.instanceId === instanceId) ?? peers.list().find((peer) => peer.relation === 'parent');
+    const parent = peers.list().find((peer) => peer.peerId === peerId) ?? peers.list().find((peer) => peer.relation === 'parent');
     if (parent) {
       peers.upsert({
         ...parent,
-        instanceId: instanceId || parent.instanceId,
+        peerId: peerId || parent.peerId,
         capabilitySummary: String(node?.description ?? parent.capabilitySummary ?? ''),
       });
     }
@@ -290,7 +290,7 @@ export function apply(ctx, rawConfig = {}) {
     logger,
     selfName,
     parentLabel: () => peers.list().find((peer) => peer.relation === 'parent')?.label ?? '',
-    parentId: () => peers.list().find((peer) => peer.relation === 'parent')?.instanceId ?? '',
+    parentId: () => peers.list().find((peer) => peer.relation === 'parent')?.peerId ?? '',
   });
 
   const ensureParentPeer = () => {
@@ -308,7 +308,7 @@ export function apply(ctx, rawConfig = {}) {
       url,
       token: password,
       label,
-      instanceId: existing?.instanceId || instance.parent?.instanceId || '',
+      peerId: existing?.peerId || instance.parent?.peerId || '',
       relation: 'parent',
     });
     instance.role = 'member';
@@ -405,15 +405,15 @@ export function apply(ctx, rawConfig = {}) {
   const buildGuidance = () => {
     const lines = [];
     lines.push('## dsh-cow 协同工作（WebSocket 长连接）');
-    lines.push(`本实例：${instance.displayName || instance.instanceId}（${instance.version}）`);
+    lines.push(`本实例：${instance.displayName || instance.peerId}（${instance.version}）`);
     lines.push(`角色：${instance.role === 'member' ? '子 DSH' : '主 DSH'}`);
     const conns = peers.list().map((peer) => {
       const status = channel.status(peer.label);
-      const id = peer.instanceId || '(未登记)';
+      const id = peer.peerId || '(未登记)';
       return `- ${status.state === 'connected' ? '[在线]' : '[离线]'} ${peer.label}（${peer.relation === 'parent' ? '上级' : '下级'}，peerId: ${id}）${status.node?.description ? `：${String(status.node.description).slice(0, 140)}` : ''}`;
     });
     lines.push(...(conns.length ? ['已连接的节点：', ...conns] : ['当前没有已连接的节点。']));
-    lines.push('派消息用 cow_send(peerId, message, peerName?)：peerId 是节点稳定的 instanceId（cow_…），必须用它；peerName 是可选的显示名提示，名称可能随时变化，不参与路由与校验。消息直接进入对方会话输入队列，立即返回，不等待、不轮询；对方回合结束会把 complete 通知注入你派发时的原会话。子 DSH 用 cow_send(kind="ask") 提问/审批，主 DSH 用 cow_send(replyTo=questionId) 回答，回答会回到同一子会话。文件交换用 cow_send_file / cow_receive_file / cow_pull_dir（只限直接下级，参数同样用 peerId）；文件策略用 cow_set_file_policy 调整。');
+    lines.push('派消息用 cow_send(peerId, message, peerName?)：peerId 是节点稳定标识（cow_…），必须用它；peerName 是可选的显示名提示，名称可能随时变化，不参与路由与校验。消息直接进入对方会话输入队列，立即返回，不等待、不轮询；对方回合结束会把 complete 通知注入你派发时的原会话。子 DSH 用 cow_send(kind="ask") 提问/审批，主 DSH 用 cow_send(replyTo=questionId) 回答，回答会回到同一子会话。文件交换用 cow_send_file / cow_receive_file / cow_pull_dir（只限直接下级，参数同样用 peerId）；文件策略用 cow_set_file_policy 调整。');
     return lines.join('\n');
   };
 
@@ -483,7 +483,7 @@ export function apply(ctx, rawConfig = {}) {
         const api = {
           token: httpToken,
           status: async () => ({
-            instanceId: instance.instanceId,
+            peerId: instance.peerId,
             displayName: instance.displayName,
             version: instance.version,
             connections: channel.connectedCount(),
@@ -506,7 +506,7 @@ export function apply(ctx, rawConfig = {}) {
           logger,
         });
         logger.info(
-          `[dsh-cow] 已启动 ${instance.displayName || instance.instanceId} v${instance.version}；` +
+          `[dsh-cow] 已启动 ${instance.displayName || instance.peerId} v${instance.version}；` +
             `监听 ${cfg.listenHost}:${cfg.listenPort}；已连接 ${channel.connectedCount()}；` +
             `allowedRoots ${normalizeRoots(cfg.allowedRoots).length} 项`,
         );

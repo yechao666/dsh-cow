@@ -11,7 +11,7 @@ function deps(overrides = {}) {
     answered,
     asked,
     defs: createToolDefinitions({
-      instance: { instanceId: 'cow_self', displayName: 'self', version: '1.26.0', description: 'desc', role: 'leader' },
+      instance: { peerId: 'cow_self', displayName: 'self', version: '1.26.0', description: 'desc', role: 'leader' },
       channel: {
         connections: () => [],
         status: () => ({ state: 'offline' }),
@@ -19,8 +19,8 @@ function deps(overrides = {}) {
       },
       peers: {
         list: () => [
-          { label: '子 DSH-x', instanceId: 'cow_child', relation: 'child' },
-          { label: '主 DSH', instanceId: 'cow_parent', relation: 'parent' },
+          { label: '子 DSH-x', peerId: 'cow_child', relation: 'child' },
+          { label: '主 DSH', peerId: 'cow_parent', relation: 'parent' },
         ],
         get: (label) => ({ label, relation: 'child', allowFiles: true }),
         upsert: (input) => ({ peer: input }),
@@ -65,7 +65,7 @@ test('cow_send 默认派 dispatch，立即返回消息 ID，不等待', async ()
   assert.ok(result.messageId);
   assert.equal(result.peerId, 'cow_child');
   assert.equal(result.peerName, '子 DSH-x');
-  assert.equal(sent[0].peer, 'cow_child', '按 instanceId 路由，而不是显示名');
+  assert.equal(sent[0].peer, 'cow_child', '按 peerId 路由，而不是显示名');
   assert.equal(sent[0].frame.type, 'msg.dispatch');
   assert.equal(sent[0].frame.payload.peerId, 'cow_child');
   assert.equal(sent[0].frame.payload.peerName, '子 DSH-x');

@@ -49,7 +49,7 @@ export function createHandler({ channel, info, api }) {
       sendJson(res, 200, {
         ok: true,
         protocol: 'cow/v1',
-        instanceId: info?.instanceId ?? '',
+        peerId: info?.peerId ?? '',
         displayName: info?.displayName ?? '',
         version: info?.version ?? '',
         connections: channel?.connectedCount?.() ?? 0,

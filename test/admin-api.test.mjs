@@ -7,7 +7,7 @@ const silent = { info() {}, warn() {}, error() {}, debug() {} };
 
 function fakeDeps() {
   const state = {
-    instance: { instanceId: 'cow_self', displayName: 'self', version: '1.26.0', role: 'member', uuid: 'u1', description: 'desc', parentUrl: 'ws://parent/cow/v1/channel', parentPassword: 'secret-value' },
+    instance: { peerId: 'cow_self', displayName: 'self', version: '1.26.0', role: 'member', uuid: 'u1', description: 'desc', parentUrl: 'ws://parent/cow/v1/channel', parentPassword: 'secret-value' },
     resolveConfig: () => ({
       enabled: true,
       serverEnabled: true,
@@ -23,8 +23,8 @@ function fakeDeps() {
     }),
     peers: {
       list: () => [
-        { label: '子 B', relation: 'child', instanceId: 'cow_b' },
-        { label: '主 DSH', relation: 'parent', instanceId: 'cow_p' },
+        { label: '子 B', relation: 'child', peerId: 'cow_b' },
+        { label: '主 DSH', relation: 'parent', peerId: 'cow_p' },
       ],
       remove: () => {},
     },

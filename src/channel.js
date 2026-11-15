@@ -3,7 +3,7 @@
  * 双向发事件（任务完成通知、协作消息、能力变更）。
  *
  * 关键决策：
- *   - **一条双工连接**。谁拨号由 instanceId 字典序决定（小的拨），
+ *   - **一条双工连接**。谁拨号由 peerId 字典序决定（小的拨），
  *     两侧同时连上时按同一规则裁决，最终收敛到同一条 socket。
  *   - **at-least-once + 去重**。每条事件有 `seq` 与 `msgId`，接收方累计 ack，
  *     发送方按 ack 丢弃；重连后按 ack 续传，不会丢通知。
@@ -37,7 +37,7 @@ function backoffMs(attempts) {
  *   ctx: object,
  *   resolveConfig: () => object,
  *   peers: import('./peers.js').PeerRegistry,
- *   instance: {instanceId: string, displayName?: string},
+ *   instance: {peerId: string, displayName?: string},
  *   authorize: (token: string) => ({label?: string} | null),
  *   onEvent?: (input: {from: string, event: object}) => void,
  *   logger?: object,
@@ -143,7 +143,7 @@ export class Channel {
       peers[peer.label] = {
         state: state?.ready ? 'connected' : state ? 'connecting' : 'offline',
         since: state?.since ? new Date(state.since).toISOString() : null,
-        peerInstanceId: state?.peerInstanceId ?? peer.instanceId ?? '',
+        peerId: state?.peerId ?? peer.peerId ?? '',
         lastError: state?.lastError ?? this.dial.get(peer.label)?.lastError ?? null,
       };
     }
@@ -167,12 +167,12 @@ export class Channel {
     const state = this.conns.get(label);
     if (!state) {
       const dialState = this.dial.get(label);
-      return { state: 'offline', since: null, peerInstanceId: '', lastError: dialState?.lastError ?? null };
+      return { state: 'offline', since: null, peerId: '', lastError: dialState?.lastError ?? null };
     }
     return {
       state: state.ready ? 'connected' : 'connecting',
       since: state.since ? new Date(state.since).toISOString() : null,
-      peerInstanceId: state.peerInstanceId ?? '',
+      peerId: state.peerId ?? '',
       displayName: state.displayName ?? '',
       node: state.node ?? null,
       direction: state.direction,
@@ -221,8 +221,8 @@ export class Channel {
   }
 
   /**
-   * 把 label / instanceId / url 解析成当前连接使用的唯一 label。
-   * instanceId 是稳定身份：改名、重连、显示名冲突后仍能找到同一节点。
+   * 把 label / peerId / url 解析成当前连接使用的唯一 label。
+   * peerId 是稳定身份：改名、重连、显示名冲突后仍能找到同一节点。
    */
   #resolveLabel(target) {
     const raw = String(target ?? '').trim();
@@ -231,14 +231,14 @@ export class Channel {
     const peer = this.peers?.get?.(raw);
     if (peer) return peer.label;
     for (const state of this.conns.values()) {
-      if (state.peerInstanceId === raw) return state.label;
+      if (state.peerId === raw) return state.label;
     }
     return raw;
   }
 
   /**
    * 向某个 peer 发送一条事件。通道未连接时先入发件箱（等重连），返回 delivered=false。
-   * @param {string} target label 或 instanceId
+   * @param {string} target label 或 peerId
    * @param {{type: string, payload?: object}} event
    */
   send(target, { type, payload = {} }) {
@@ -253,7 +253,7 @@ export class Channel {
     box.nextSeq += 1;
     const entry = {
       seq,
-      msgId: `${this.instance.instanceId}:${seq}`,
+      msgId: `${this.instance.peerId}:${seq}`,
       type,
       at: new Date(this.now()).toISOString(),
       payload,
@@ -278,10 +278,10 @@ export class Channel {
 
   /**
    * 入站 ack 水位（重连时告诉对端「我已经收到哪一条」）。
-   * 历史水位可能记在 label 或 instanceId 两个键上（先连上才知道实例 id），两者取最大。
+   * 历史水位可能记在 label 或 peerId 两个键上（先连上才知道实例 id），两者取最大。
    */
-  inboundAck(label, instanceId) {
-    const knownId = instanceId || this.peers?.get?.(label)?.instanceId || '';
+  inboundAck(label, peerId) {
+    const knownId = peerId || this.peers?.get?.(label)?.peerId || '';
     const state = this.conns.get(label);
     const stored = Math.max(
       Number(this.inboxAck?.[label] ?? 0),
@@ -345,7 +345,7 @@ export class Channel {
       joinAuth,
       authenticated,
       ready: false,
-      peerInstanceId: '',
+      peerId: '',
       displayName: '',
       since: this.now(),
       lastSeenAt: this.now(),
@@ -408,7 +408,9 @@ export class Channel {
     this.#write(state.conn, {
       type: 'hello',
         protocol: PROTOCOL_VERSION,
-        instanceId: this.instance.instanceId,
+        peerId: this.instance.peerId,
+        // 兼容旧节点：旧版本只读 instanceId 字段。
+        instanceId: this.instance.peerId,
         displayName: this.instance.displayName ?? '',
         node: {
           uuid: this.instance.uuid ?? '',
@@ -421,15 +423,15 @@ export class Channel {
     });
   }
 
-  /** 同一 peer 只保留一条连接：按 instanceId 字典序决定保留方向。 */
+  /** 同一 peer 只保留一条连接：按 peerId 字典序决定保留方向。 */
   #adopt(label, next) {
     const existing = this.conns.get(label);
     if (!existing || existing === next) {
       this.conns.set(label, next);
       return;
     }
-    const peerId = next.peerInstanceId || existing.peerInstanceId || '';
-    const preferOut = peerId ? this.instance.instanceId < peerId : true;
+    const peerId = next.peerId || existing.peerId || '';
+    const preferOut = peerId ? this.instance.peerId < peerId : true;
     const keep = preferOut ? 'out' : 'in';
     const winner = next.direction === keep ? next : existing.direction === keep ? existing : next;
     const loser = winner === next ? existing : next;
@@ -463,7 +465,7 @@ export class Channel {
     try {
       this.onPeer?.({
         label,
-        instanceId: state.peerInstanceId,
+        peerId: state.peerId,
         displayName: state.displayName,
         node: state.node ?? null,
         direction: state.direction,
@@ -510,15 +512,15 @@ export class Channel {
           state.authenticated = true;
           this.#clearAuthTimer(state);
         }
-        state.peerInstanceId = String(frame.instanceId ?? '');
-        if (state.peerInstanceId && state.peerInstanceId === this.instance.instanceId) {
+        state.peerId = String(frame.peerId ?? frame.instanceId ?? '');
+        if (state.peerId && state.peerId === this.instance.peerId) {
           this.logger.warn?.('[dsh-cow] 拒绝连接到自身，关闭该长连接');
           try { state.conn.close(1000, 'self connection'); } catch { state.conn.destroy(); }
           return;
         }
         // 每个节点只有直接父子关系：拒绝把「本节点的上级」再当作下级接入。
-        const parentInstanceId = String(this.instance.parent?.instanceId ?? '');
-        if (parentInstanceId && state.peerInstanceId === parentInstanceId) {
+        const parentInstanceId = String(this.instance.parent?.peerId ?? '');
+        if (parentInstanceId && state.peerId === parentInstanceId) {
           this.logger.warn?.('[dsh-cow] 拒绝把上级当作下级接入');
           this.#write(state.conn, { type: 'bye', reason: 'parent_as_child' });
           try { state.conn.close(1000, 'parent as child'); } catch { state.conn.destroy(); }
@@ -528,11 +530,11 @@ export class Channel {
         state.node = frame.node ?? state.node ?? null;
         if (state.joinAuth && state.direction === 'in') {
           // 优先按实例 ID 匹配已登记的 peer，保证入站连接挂在 peer.label 上，
-          // 而不是临时标签 / instanceId（否则主 DSH 侧一直显示离线）。
-          const known = this.peers.list().find((peer) => peer.instanceId && peer.instanceId === state.peerInstanceId);
-          const desired = String(frame.displayName || frame.instanceId || '').trim() || state.label;
-          // 未登记的节点用 instanceId 生成唯一显示名，避免两个同名「主 DSH」互相顶掉连接。
-          const next = known?.label || this.peers.uniqueLabel(desired, state.peerInstanceId);
+          // 而不是临时标签 / peerId（否则主 DSH 侧一直显示离线）。
+          const known = this.peers.list().find((peer) => peer.peerId && peer.peerId === state.peerId);
+          const desired = String(frame.displayName || frame.peerId || frame.instanceId || '').trim() || state.label;
+          // 未登记的节点用 peerId 生成唯一显示名，避免两个同名「主 DSH」互相顶掉连接。
+          const next = known?.label || this.peers.uniqueLabel(desired, state.peerId);
           if (next !== state.label) {
             if (this.conns.get(state.label) === state) this.conns.delete(state.label);
             state.label = next;
@@ -547,7 +549,9 @@ export class Channel {
           this.#write(state.conn, {
             type: 'welcome',
             protocol: PROTOCOL_VERSION,
-            instanceId: this.instance.instanceId,
+            peerId: this.instance.peerId,
+            // 兼容旧节点：旧版本只读 instanceId 字段。
+            instanceId: this.instance.peerId,
             displayName: this.instance.displayName ?? '',
             node: {
               uuid: this.instance.uuid ?? '',
@@ -555,7 +559,7 @@ export class Channel {
               description: this.instance.description ?? '',
             },
             enc: state.e2eKey ? 1 : 0,
-            ackSeq: this.inboundAck(label, state.peerInstanceId),
+            ackSeq: this.inboundAck(label, state.peerId),
           });
         }
         if (!frame.enc) state.e2eKey = null;
@@ -580,8 +584,8 @@ export class Channel {
           state.authenticated = true;
           this.#clearAuthTimer(state);
         }
-        state.peerInstanceId = String(frame.instanceId ?? '');
-        if (state.peerInstanceId && state.peerInstanceId === this.instance.instanceId) {
+        state.peerId = String(frame.peerId ?? frame.instanceId ?? '');
+        if (state.peerId && state.peerId === this.instance.peerId) {
           this.logger.warn?.('[dsh-cow] 拒绝连接到自身，关闭该长连接');
           try { state.conn.close(1000, 'self connection'); } catch { state.conn.destroy(); }
           return;
@@ -609,7 +613,7 @@ export class Channel {
         state.inboundAckSeq = Math.max(state.inboundAckSeq, seq);
         this.inboxAck = this.inboxAck ?? {};
         this.inboxAck[label] = state.inboundAckSeq;
-        if (state.peerInstanceId) this.inboxAck[state.peerInstanceId] = state.inboundAckSeq;
+        if (state.peerId) this.inboxAck[state.peerId] = state.inboundAckSeq;
         this.#scheduleAck(label, state);
         let eventType = frame.event ?? frame.eventType;
         let payload = frame.payload ?? {};
@@ -630,7 +634,7 @@ export class Channel {
         try {
           this.onEvent?.({
             from: label,
-            peerInstanceId: state.peerInstanceId,
+            peerId: state.peerId,
             event: {
               type: String(eventType ?? ''),
               msgId,
@@ -669,7 +673,7 @@ export class Channel {
     this.conns.set(label, state);
     this.#saveState(true);
     this.logger.info?.(
-      `[dsh-cow] 通道已建立：${label}${state.peerInstanceId ? ` (${state.peerInstanceId})` : ''}（${state.direction}）`,
+      `[dsh-cow] 通道已建立：${label}${state.peerId ? ` (${state.peerId})` : ''}（${state.direction}）`,
     );
   }
 
@@ -710,8 +714,8 @@ export class Channel {
     if (config.channelDial === 'always') return true;
     if (peer.relation === 'parent') return true;
     // 手工登记/旧数据没有上下级关系时，退回按实例 ID 排序，避免双方同时拨号。
-    if (!peer.instanceId) return true;
-    return this.instance.instanceId < peer.instanceId;
+    if (!peer.peerId) return true;
+    return this.instance.peerId < peer.peerId;
   }
 
   #dialTarget(peer) {
@@ -797,7 +801,7 @@ export class Channel {
       peer: label,
       direction: state.direction,
       ready: state.ready,
-      peerInstanceId: state.peerInstanceId,
+      peerId: state.peerId,
       displayName: state.displayName ?? '',
       node: state.node ?? null,
       e2e: Boolean(state.e2eKey),

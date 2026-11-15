@@ -6,13 +6,13 @@ const URL_OK = 'http://mac-mini.local:3080/cow/v1';
 const TOKEN = 'cods_0123456789abcdefghijklmnop';
 
 test('登记串可以往返编解码', () => {
-  const text = encodeEnrollment({ url: URL_OK, token: TOKEN, label: 'mac-mini', instanceId: 'cods_abcdef0123456789' });
+  const text = encodeEnrollment({ url: URL_OK, token: TOKEN, label: 'mac-mini', peerId: 'cods_abcdef0123456789' });
   assert.match(text, /^cods1\.[A-Za-z0-9_-]+$/);
   const decoded = decodeEnrollment(text);
   assert.equal(decoded.url, URL_OK);
   assert.equal(decoded.token, TOKEN);
   assert.equal(decoded.label, 'mac-mini');
-  assert.equal(decoded.instanceId, 'cods_abcdef0123456789');
+  assert.equal(decoded.peerId, 'cods_abcdef0123456789');
 });
 
 test('尾斜杠被规范化，标签与实例 id 可缺省', () => {
@@ -20,7 +20,7 @@ test('尾斜杠被规范化，标签与实例 id 可缺省', () => {
   const decoded = decodeEnrollment(text);
   assert.equal(decoded.url, URL_OK);
   assert.equal(decoded.label, '');
-  assert.equal(decoded.instanceId, '');
+  assert.equal(decoded.peerId, '');
 });
 
 test('前缀不对时给出明确错误码', () => {
@@ -60,13 +60,13 @@ test('token 形态不合法被拒绝', () => {
 });
 
 test('登记 URL 往返：带 token，缺 /cow/v1 时自动补上', () => {
-  const url = buildEnrollmentUrl({ endpoint: 'http://127.0.0.1:3099', token: TOKEN, label: 'mac-mini', instanceId: 'cods_x' });
+  const url = buildEnrollmentUrl({ endpoint: 'http://127.0.0.1:3099', token: TOKEN, label: 'mac-mini', peerId: 'cods_x' });
   assert.match(url, /^http:\/\/127\.0\.0\.1:3099\/cow\/v1\?/);
   const parsed = parseEnrollmentUrl(url);
   assert.equal(parsed.endpoint, 'http://127.0.0.1:3099/cow/v1');
   assert.equal(parsed.token, TOKEN);
   assert.equal(parsed.label, 'mac-mini');
-  assert.equal(parsed.instanceId, 'cods_x');
+  assert.equal(parsed.peerId, 'cods_x');
 });
 
 test('只有 base 地址时也能解析（token 留空）', () => {

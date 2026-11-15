@@ -5,7 +5,7 @@ import { buildEnvelope, childKey, summarizeSession } from '../src/message-core.j
 test('消息必须带工作区与会话隔离键', () => {
   assert.throws(() => childKey({ peerName: 'F', workspace: {}, session: { id: 's1' } }), /workspace/);
   assert.equal(childKey({ peerName: 'F', workspace: { id: 'w1' }, session: { id: 's1' } }), 'F::w1::s1');
-  // 稳定身份优先：同名节点靠 instanceId 区分。
+  // 稳定身份优先：同名节点靠 peerId 区分。
   assert.equal(childKey({ peerName: '主 DSH', peerId: 'cow_a', workspace: { id: 'w1' }, session: { id: 's1' } }), 'cow_a::w1::s1');
   assert.notEqual(
     childKey({ peerName: '主 DSH', peerId: 'cow_a', workspace: { id: 'w1' }, session: { id: 's1' } }),

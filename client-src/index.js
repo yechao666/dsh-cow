@@ -560,8 +560,8 @@ function CowActivityPanel() {
     const roleText = role === 'parent' ? '上级节点' : role === 'self' ? '本机节点' : '下级节点';
     const conn = connectionOf(peer.label);
     const facts = [
-      ['唯一标识', peer.uuid || peer.instanceId || '', true],
-      ['实例 ID', peer.instanceId || '', true],
+      ['唯一标识', peer.uuid || peer.peerId || '', true],
+      ['peerId', peer.peerId || '', true],
       ['连接方向', peer.direction === 'out' ? '本机 → 对端' : peer.direction === 'in' ? '对端 → 本机' : '', false],
       ['连接时间', conn?.since ? dateOf(conn.since) : '', false],
       ['最近心跳', conn?.lastSeenAt ? dateOf(conn.lastSeenAt) : '', false],
@@ -687,7 +687,7 @@ function CowActivityPanel() {
             h('div', { style: { ...PANEL.card, marginBottom: 0 } },
               h('div', { style: PANEL.cardHead }, h('h3', { style: PANEL.cardTitle }, '本机节点'), h(E2EChip, { enabled: encryptedCount > 0 })),
               h(PanelKV, { rows: [
-                ['唯一标识', h('span', { style: S.mono }, instance.uuid || instance.instanceId || '-')],
+                ['唯一标识', h('span', { style: S.mono }, instance.uuid || instance.peerId || '-')],
                 ['WebSocket', endpoint],
                 ['工作区根目录', config.allowedRoots || '-'],
                 ['子会话 preset', config.agentPreset || 'profile 默认'],
@@ -724,7 +724,7 @@ function CowActivityPanel() {
             connected: true,
             version: instance.version,
             uuid: instance.uuid,
-            instanceId: instance.instanceId,
+            peerId: instance.peerId,
             encrypted: encryptedCount > 0,
             direction: '',
             description: instance.description || '',

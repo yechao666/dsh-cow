@@ -145,7 +145,7 @@ export class FileExchange {
       kind: 'file',
       text: `发送文件到 ${target.label}：${result.path}（${size} B）`,
       peer: target.label,
-      from: this.instance.displayName || this.instance.instanceId,
+      from: this.instance.displayName || this.instance.peerId,
       to: target.label,
       status: 'sent',
     });
@@ -248,7 +248,7 @@ export class FileExchange {
       text: `从 ${target.label} 取回：${result.path}（${result.bytes} B）`,
       peer: target.label,
       from: target.label,
-      to: this.instance.displayName || this.instance.instanceId,
+      to: this.instance.displayName || this.instance.peerId,
       status: 'received',
     });
     return { transferId, peer: target.label, direction: 'pull', localPath: result.path, bytes: result.bytes, sha256: result.sha256 };

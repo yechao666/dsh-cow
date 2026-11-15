@@ -83,7 +83,7 @@ writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
 const instancePath = join(cowDir, 'instance.json');
 const instance = existsSync(instancePath) ? JSON.parse(readFileSync(instancePath, 'utf8')) : {
   schema: 1,
-  instanceId: `cow_${randomBytes(8).toString('hex')}`,
+  peerId: `cow_${randomBytes(8).toString('hex')}`,
   uuid: randomUUID(),
   displayName: '',
   role: 'member',

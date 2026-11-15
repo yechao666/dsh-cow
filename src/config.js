@@ -71,7 +71,7 @@ export const Config = z.object({
     .string()
     .default('auto')
     .volatile()
-    .description('长连接由谁拨号：auto（instanceId 小的一方拨）| always（本机总是拨）| never（只接受对方连接）'),
+    .description('长连接由谁拨号：auto（peerId 小的一方拨）| always（本机总是拨）| never（只接受对方连接）'),
   capabilityRefreshMinutes: z.number().default(10).volatile().description('对端能力文档缓存时长（分钟）'),
 
   // ── 能力声明 ──────────────────────────────────────────────────

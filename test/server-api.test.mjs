@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import { createHandler } from '../src/server.js';
 
 function start(api) {
-  const handler = createHandler({ channel: { connectedCount: () => 1 }, info: { instanceId: 'cow_x', displayName: 'X', version: '1.4.0' }, api });
+  const handler = createHandler({ channel: { connectedCount: () => 1 }, info: { peerId: 'cow_x', displayName: 'X', version: '1.4.0' }, api });
   const server = createServer((req, res) => handler(req, res));
   return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve({ server, port: server.address().port })));
 }

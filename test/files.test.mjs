@@ -13,14 +13,14 @@ function makePair({ rootsA, rootsB }) {
   const bus = {};
   const peersOf = (label, relation) => ({ get: () => ({ label, relation }), list: () => [] });
   const exchangeA = new FileExchange({
-    instance: { instanceId: 'cow_a' },
+    instance: { peerId: 'cow_a' },
     channel: { send: (peer, frame) => { exchangeB.handle(peer, frame); return { delivered: true }; } },
     peers: peersOf('子 DSH-B', 'child'),
     resolveConfig: () => ({ allowedRoots: rootsA }),
     logger: silent,
   });
   const exchangeB = new FileExchange({
-    instance: { instanceId: 'cow_b' },
+    instance: { peerId: 'cow_b' },
     channel: { send: (peer, frame) => { exchangeA.handle(peer, frame); return { delivered: true }; } },
     peers: peersOf('主 DSH', 'parent'),
     resolveConfig: () => ({ allowedRoots: rootsB }),
@@ -57,7 +57,7 @@ test('文件取回：主 DSH 从子 DSH 拉文件到本机', async () => {
 test('路径越界被拒绝', async () => {
   const rootB = mkdtempSync(join(tmpdir(), 'cow-file-b3-'));
   const exchange = new FileExchange({
-    instance: { instanceId: 'cow_b' },
+    instance: { peerId: 'cow_b' },
     channel: { send: () => ({ delivered: true }) },
     peers: { get: () => ({ label: '主 DSH', relation: 'parent' }) },
     resolveConfig: () => ({ allowedRoots: rootB }),
@@ -90,7 +90,7 @@ test('取消进行中的传输会 reject 并清理登记', async () => {
   const source = join(rootA, 'x.txt');
   writeFileSync(source, 'cancel me');
   const exchange = new FileExchange({
-    instance: { instanceId: 'cow_a' },
+    instance: { peerId: 'cow_a' },
     channel: { send: () => ({ delivered: true }) },
     peers: { get: () => ({ label: '子 B', relation: 'child' }) },
     resolveConfig: () => ({ allowedRoots: rootA, maxConcurrentFiles: 1 }),
@@ -106,7 +106,7 @@ test('按 peer 策略禁用文件接收', async () => {
   const source = join(rootA, 'x.txt');
   writeFileSync(source, 'no');
   const exchange = new FileExchange({
-    instance: { instanceId: 'cow_a' },
+    instance: { peerId: 'cow_a' },
     channel: { send: () => ({ delivered: true }) },
     peers: { get: () => ({ label: '子 B', relation: 'child', allowFiles: false }) },
     resolveConfig: () => ({ allowedRoots: rootA }),
@@ -120,7 +120,7 @@ test('maxFileMB 限制生效', async () => {
   const source = join(rootA, 'big.bin');
   writeFileSync(source, Buffer.alloc(2 * 1024 * 1024));
   const exchange = new FileExchange({
-    instance: { instanceId: 'cow_a' },
+    instance: { peerId: 'cow_a' },
     channel: { send: () => ({ delivered: true }) },
     peers: { get: () => ({ label: '子 B', relation: 'child' }) },
     resolveConfig: () => ({ allowedRoots: rootA, maxFileMB: 1 }),

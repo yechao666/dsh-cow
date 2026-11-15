@@ -22,13 +22,15 @@ function normalizePeer(input) {
   // 子节点由它主动连主 DSH，不需要上报自身监听地址；允许子节点 url 为空。
   const relation = ['parent', 'child', 'peer'].includes(input.relation) ? input.relation : 'peer';
   if (!url && relation !== 'child') return null;
-  const label = String(input.label ?? '').trim() || input.instanceId || 'peer';
+  // 兼容旧 peers.json 的 instanceId 字段。
+  const peerId = String(input.peerId ?? input.instanceId ?? '');
+  const label = String(input.label ?? '').trim() || peerId || 'peer';
   return {
-    id: String(input.id ?? input.instanceId ?? `peer_${Math.random().toString(36).slice(2, 10)}`),
+    id: String(input.id ?? peerId ?? `peer_${Math.random().toString(36).slice(2, 10)}`),
     label,
     url,
     token: String(input.token ?? ''),
-    instanceId: String(input.instanceId ?? ''),
+    peerId,
     uuid: String(input.uuid ?? ''),
     addedAt: input.addedAt ?? new Date().toISOString(),
     lastSeenAt: input.lastSeenAt ?? null,
@@ -74,7 +76,7 @@ export class PeerRegistry {
     this.peers = list.map(normalizePeer).filter(Boolean);
     // 同一父节点可能被历史配置重复登记（不同端口/地址）；保留最新一条，避免 cow_peers 出现两个“主 DSH”。
     // 去重只合并「同一实例」的历史记录；不同实例同名时必须保留两条（显示名在 upsert 时加后缀）。
-    const identity = (peer) => (peer.instanceId ? `instance:${peer.instanceId}` : `${peer.relation}|${peer.label}|${peer.url}`);
+    const identity = (peer) => (peer.peerId ? `instance:${peer.peerId}` : `${peer.relation}|${peer.label}|${peer.url}`);
     const unique = [];
     for (const peer of this.peers) {
       const key = identity(peer);
@@ -85,9 +87,11 @@ export class PeerRegistry {
     const changed = unique.length !== this.peers.length;
     this.peers = unique;
     for (const raw of list) {
-      const peer = this.peers.find((item) => item.id === String(raw?.id ?? raw?.instanceId ?? ''));
+      const peer = this.peers.find((item) => item.id === String(raw?.id ?? raw?.peerId ?? raw?.instanceId ?? ''));
       if (peer && raw?.tokenEnc) peer.token = decryptSecret(this.home, raw.tokenEnc);
     }
+    // 旧 peers.json 的 instanceId 字段一旦加载就规范化为 peerId，下次保存即完成迁移。
+    if (list.some((raw) => raw?.instanceId !== undefined && raw?.peerId === undefined)) this.save();
     try {
       this.stamp = statSync(this.file).mtimeMs;
     } catch {
@@ -109,7 +113,7 @@ export class PeerRegistry {
     return this.peers.map((peer) => ({ ...peer }));
   }
 
-  /** 按 label / instanceId / id / url 查找。 */
+  /** 按 label / peerId / id / url 查找。 */
   get(key) {
     this.#maybeReload();
     const needle = String(key ?? '').trim();
@@ -117,7 +121,7 @@ export class PeerRegistry {
     const lowered = needle.toLowerCase();
     return (
       this.peers.find((peer) => peer.label.toLowerCase() === lowered) ??
-      this.peers.find((peer) => peer.instanceId && peer.instanceId === needle) ??
+      this.peers.find((peer) => peer.peerId && peer.peerId === needle) ??
       this.peers.find((peer) => peer.id === needle) ??
       this.peers.find((peer) => peer.url.toLowerCase() === lowered) ??
       null
@@ -128,15 +132,15 @@ export class PeerRegistry {
    * 生成一个不冲突的显示名：同名但不同实例时追加实例后缀。
    * 同实例改名时直接返回目标名（upsert 会更新原记录）。
    */
-  uniqueLabel(desired, instanceId) {
-    const base = String(desired ?? '').trim().slice(0, 120) || String(instanceId ?? '').slice(-8) || 'peer';
+  uniqueLabel(desired, peerId) {
+    const base = String(desired ?? '').trim().slice(0, 120) || String(peerId ?? '').slice(-8) || 'peer';
     const existing = this.get(base);
     if (!existing) return base;
-    if (instanceId && existing.instanceId === instanceId) return base;
-    const suffix = String(instanceId || existing.id || '').slice(-6) || Math.random().toString(36).slice(2, 8);
+    if (peerId && existing.peerId === peerId) return base;
+    const suffix = String(peerId || existing.id || '').slice(-6) || Math.random().toString(36).slice(2, 8);
     let candidate = `${base}-${suffix}`;
     let index = 2;
-    while (this.get(candidate) && this.get(candidate).instanceId !== instanceId) {
+    while (this.get(candidate) && this.get(candidate).peerId !== peerId) {
       candidate = `${base}-${suffix}-${index}`;
       index += 1;
     }
@@ -144,23 +148,23 @@ export class PeerRegistry {
   }
 
   /**
-   * 登记 / 更新一个 peer。同一 instanceId 或同一 url 视为同一条。
+   * 登记 / 更新一个 peer。同一 peerId 或同一 url 视为同一条。
    */
-  upsert({ url, token, label, instanceId, uuid, relation, orgId, allowFiles, maxFileMB }) {
+  upsert({ url, token, label, peerId, uuid, relation, orgId, allowFiles, maxFileMB }) {
     const normalizedUrl = String(url ?? '').trim().replace(/\/+$/, '');
     const existing =
-      this.peers.find((peer) => instanceId && peer.instanceId === instanceId) ??
+      this.peers.find((peer) => peerId && peer.peerId === peerId) ??
       // 子节点 url 为空：不能用「空 url 相等」把它们合并成一条。
       (normalizedUrl ? this.peers.find((peer) => peer.url === normalizedUrl) : null);
-    const desiredLabel = String(label ?? '').trim() || instanceId || normalizedUrl;
+    const desiredLabel = String(label ?? '').trim() || peerId || normalizedUrl;
     const labelForPeer = existing && desiredLabel === existing.label
       ? existing.label
-      : this.uniqueLabel(desiredLabel, instanceId || existing?.instanceId || '');
+      : this.uniqueLabel(desiredLabel, peerId || existing?.peerId || '');
     if (existing) {
       existing.url = normalizedUrl;
       if (token) existing.token = token;
       if (label) existing.label = labelForPeer;
-      if (instanceId) existing.instanceId = instanceId;
+      if (peerId) existing.peerId = peerId;
       if (uuid) existing.uuid = uuid;
       if (relation) existing.relation = relation;
       if (typeof allowFiles === 'boolean') existing.allowFiles = allowFiles;
@@ -175,7 +179,7 @@ export class PeerRegistry {
       label: labelForPeer,
       allowFiles,
       maxFileMB,
-      instanceId,
+      peerId,
       relation,
       orgId,
       addedAt: new Date().toISOString(),

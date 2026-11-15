@@ -41,7 +41,7 @@ export function createDoctor({ instance, channel, peers, files, activity, router
       return {
         label: peer.label,
         relation: peer.relation,
-        instanceId: peer.instanceId ?? '',
+        peerId: peer.peerId ?? '',
         state: status.state ?? 'unknown',
         direction: status.direction ?? null,
         encrypted: status.e2e === true,
@@ -54,7 +54,7 @@ export function createDoctor({ instance, channel, peers, files, activity, router
       generatedAt: new Date().toISOString(),
       uptimeSec: Math.round((Date.now() - startedAt) / 1000),
       instance: {
-        instanceId: instance.instanceId,
+        peerId: instance.peerId,
         displayName: instance.displayName ?? '',
         version: instance.version ?? '',
         role: instance.role ?? '',

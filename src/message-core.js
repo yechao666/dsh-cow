@@ -13,7 +13,7 @@ export function newMessageId(prefix = 'msg') {
 export function childKey({ peerId, peerName, peer, workspace, session }) {
   const ws = String(workspace?.id ?? workspace?.name ?? '').trim();
   const sid = String(session?.id ?? '').trim();
-  // instanceId 是稳定身份；显示名（peerName）只用于展示与回退。
+  // peerId 是稳定身份；显示名（peerName）只用于展示与回退。
   const node = String(peerId || peerName || peer || '').trim();
   if (!ws || !sid || !node) throw new Error('缺少 peerId/workspace.id/session.id，拒绝隔离不足的消息');
   return `${node}::${ws}::${sid}`;

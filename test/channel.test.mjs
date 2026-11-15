@@ -28,12 +28,12 @@ async function startAcceptor() {
   const { token } = issueToken('b-host');
   const received = [];
   const registry = new PeerRegistry({ file: join(home, 'peers.json') });
-  registry.upsert({ url: '', token: '', label: 'b-host', instanceId: 'cods_bbbb', relation: 'child' });
+  registry.upsert({ url: '', token: '', label: 'b-host', peerId: 'cods_bbbb', relation: 'child' });
   const channel = new Channel({
     ctx: {},
     resolveConfig: () => ({ channelEnabled: true, serverEnabled: true, channelDial: 'never' }),
     peers: registry,
-    instance: { instanceId: 'cods_aaaa', displayName: 'A', uuid: 'uuid-a', passwordSalt: 'testsalt', passwordHash: hashJoinPassword(token, 'testsalt') },
+    instance: { peerId: 'cods_aaaa', displayName: 'A', uuid: 'uuid-a', passwordSalt: 'testsalt', passwordHash: hashJoinPassword(token, 'testsalt') },
     authorize: (candidate) => (candidate === token ? { label: 'b-host' } : null),
     onEvent: (input) => received.push(input),
     logger: silent,
@@ -58,14 +58,14 @@ async function startAcceptor() {
   };
 }
 
-function makeDialer({ url, token, home, instanceId = 'cods_bbbb', router, onEvent }) {
+function makeDialer({ url, token, home, peerId = 'cods_bbbb', router, onEvent }) {
   const peers = new PeerRegistry({ file: join(home, 'peers.json') });
-  peers.upsert({ url, token, label: 'a-host', instanceId: 'cods_aaaa' });
+  peers.upsert({ url, token, label: 'a-host', peerId: 'cods_aaaa' });
   return new Channel({
     ctx: {},
     resolveConfig: () => ({ channelEnabled: true, serverEnabled: true, channelDial: 'always' }),
     peers,
-    instance: { instanceId, displayName: 'B' },
+    instance: { peerId, displayName: 'B' },
     authorize: () => null,
     onEvent: (input) => {
       onEvent?.(input);
@@ -107,12 +107,12 @@ test('拨号方连上接受方后可以双向发事件', async () => {
 test('共用密码模式：入站连接按已登记 peer.label 归位（不会一直显示离线）', async () => {
   const home = mkdtempSync(join(tmpdir(), 'cow-chan-label-'));
   const peers = new PeerRegistry({ file: join(home, 'peers.json') });
-  peers.upsert({ url: 'http://127.0.0.1:1/cow/v1', token: 'cods_abcdefghijklmnopqrstuv', label: 'b-host', instanceId: 'cods_bbbb', relation: 'child' });
+  peers.upsert({ url: 'http://127.0.0.1:1/cow/v1', token: 'cods_abcdefghijklmnopqrstuv', label: 'b-host', peerId: 'cods_bbbb', relation: 'child' });
   const channel = new Channel({
     ctx: {},
     resolveConfig: () => ({ channelEnabled: true, serverEnabled: true, channelDial: 'never' }),
     peers,
-    instance: { instanceId: 'cods_aaaa', displayName: 'A', uuid: 'uuid-a', passwordSalt: 'testsalt', passwordHash: hashJoinPassword('cods_abcdefghijklmnopqrstuv', 'testsalt') },
+    instance: { peerId: 'cods_aaaa', displayName: 'A', uuid: 'uuid-a', passwordSalt: 'testsalt', passwordHash: hashJoinPassword('cods_abcdefghijklmnopqrstuv', 'testsalt') },
     authorize: () => ({ kind: 'join' }),
     onEvent: () => {},
     logger: silent,
@@ -123,7 +123,7 @@ test('共用密码模式：入站连接按已登记 peer.label 归位（不会�
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const { port } = server.address();
   const childHome = mkdtempSync(join(tmpdir(), 'cow-chan-label-b-'));
-  const b = makeDialer({ url: `http://127.0.0.1:${port}/cow/v1`, token: 'cods_abcdefghijklmnopqrstuv', home: childHome, instanceId: 'cods_bbbb' });
+  const b = makeDialer({ url: `http://127.0.0.1:${port}/cow/v1`, token: 'cods_abcdefghijklmnopqrstuv', home: childHome, peerId: 'cods_bbbb' });
   try {
     b.start();
     await waitFor(() => channel.connectedCount() === 1);
@@ -142,8 +142,8 @@ test('拒绝把上级当作下级接入（每个节点只有直接父子）', as
     ctx: {}, resolveConfig: () => ({ channelEnabled: true, serverEnabled: true, channelDial: 'never' }),
     peers: new PeerRegistry({ file: join(homeA, 'peers.json') }),
     instance: {
-      instanceId: 'cods_aaaa', displayName: 'A', uuid: 'uuid-a',
-      parent: { instanceId: 'cods_bbbb', label: 'B' },
+      peerId: 'cods_aaaa', displayName: 'A', uuid: 'uuid-a',
+      parent: { peerId: 'cods_bbbb', label: 'B' },
       passwordSalt: 'testsalt', passwordHash: hashJoinPassword('pw', 'testsalt'),
     },
     authorize: () => ({ kind: 'join' }),
@@ -155,10 +155,10 @@ test('拒绝把上级当作下级接入（每个节点只有直接父子）', as
   const port = server.address().port;
   const homeB = mkdtempSync(join(tmpdir(), 'cow-parent-guard-b-'));
   const peersB = new PeerRegistry({ file: join(homeB, 'peers.json') });
-  peersB.upsert({ url: `http://127.0.0.1:${port}/cow/v1`, token: 'pw', label: 'A', instanceId: 'cods_aaaa' });
+  peersB.upsert({ url: `http://127.0.0.1:${port}/cow/v1`, token: 'pw', label: 'A', peerId: 'cods_aaaa' });
   const b = new Channel({
     ctx: {}, resolveConfig: () => ({ channelEnabled: true, serverEnabled: true, channelDial: 'always' }),
-    peers: peersB, instance: { instanceId: 'cods_bbbb', displayName: 'B', uuid: 'uuid-b' },
+    peers: peersB, instance: { peerId: 'cods_bbbb', displayName: 'B', uuid: 'uuid-b' },
     authorize: () => null, logger: silent, home: homeB,
   });
   try {
@@ -196,7 +196,7 @@ test('complete 消息经通道送达后注入发起会话（端到端）', async
   const a = await startAcceptor();
   const home = mkdtempSync(join(tmpdir(), 'cow-chan-d-'));
   const peers = new PeerRegistry({ file: join(home, 'peers.json') });
-  peers.upsert({ url: a.url, token: a.token, label: 'a-host', instanceId: 'cods_aaaa' });
+  peers.upsert({ url: a.url, token: a.token, label: 'a-host', peerId: 'cods_aaaa' });
 
   const injected = [];
   const router = new MessageRouter({
@@ -208,7 +208,7 @@ test('complete 消息经通道送达后注入发起会话（端到端）', async
     ctx: {},
     resolveConfig: () => ({ channelEnabled: true, serverEnabled: true, channelDial: 'always' }),
     peers,
-    instance: { instanceId: 'cods_bbbb', displayName: 'B' },
+    instance: { peerId: 'cods_bbbb', displayName: 'B' },
     authorize: () => null,
     onEvent: (input) => router.handle(input.from, input.event),
     logger: silent,
@@ -285,7 +285,7 @@ test('心跳与连接状态可观测', async () => {
     await waitFor(() => b.connectedCount() === 1);
     const status = b.status('a-host');
     assert.equal(status.state, 'connected');
-    assert.equal(status.peerInstanceId, 'cods_aaaa');
+    assert.equal(status.peerId, 'cods_aaaa');
     const conns = b.connections();
     assert.equal(conns[0].direction, 'out');
   } finally {
@@ -333,15 +333,15 @@ test('共用密码握手后连接启用帧级加密（双方会话密钥一致�
   }
 });
 
-test('send 支持 instanceId：先解析成唯一 label 再入发件箱', () => {
+test('send 支持 peerId：先解析成唯一 label 再入发件箱', () => {
   const home = mkdtempSync(join(tmpdir(), 'cow-chan-id-'));
   const peers = new PeerRegistry({ file: join(home, 'peers.json') });
-  peers.upsert({ url: '', token: '', label: '子 DSH', instanceId: 'cow_child_1', relation: 'child' });
+  peers.upsert({ url: '', token: '', label: '子 DSH', peerId: 'cow_child_1', relation: 'child' });
   const channel = new Channel({
     ctx: {},
     resolveConfig: () => ({ channelEnabled: true, serverEnabled: true, channelDial: 'always' }),
     peers,
-    instance: { instanceId: 'cow_self', displayName: 'self' },
+    instance: { peerId: 'cow_self', displayName: 'self' },
     authorize: () => null,
     logger: silent,
     home,
@@ -349,5 +349,5 @@ test('send 支持 instanceId：先解析成唯一 label 再入发件箱', () => 
   const sent = channel.send('cow_child_1', { type: 'msg.dispatch', payload: { text: 'x' } });
   assert.equal(sent.queued, true);
   assert.ok(channel.outbox.has('子 DSH'), '按唯一 label 入发件箱');
-  assert.ok(!channel.outbox.has('cow_child_1'), '不按 instanceId 直接入队');
+  assert.ok(!channel.outbox.has('cow_child_1'), '不按 peerId 直接入队');
 });

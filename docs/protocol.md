@@ -29,7 +29,7 @@ proof = sha256(nonce + ":" + hashJoinPassword(password, salt))
 {
   "type": "hello",
   "protocol": "cow/v1",
-  "instanceId": "cods_…",
+  "peerId": "cods_…",
   "displayName": "叶超的MacMini",
   "uuid": "…",
   "parent": "cods_parent…",
@@ -52,7 +52,7 @@ proof = sha256(nonce + ":" + hashJoinPassword(password, salt))
 
 | type | 方向 | 字段 | 说明 |
 |---|---|---|---|
-| `hello` / `welcome` | 双向 | `protocol, instanceId, displayName, uuid, ackSeq, proof` | 握手 |
+| `hello` / `welcome` | 双向 | `protocol, peerId, displayName, uuid, ackSeq, proof` | 握手 |
 | `auth.challenge` | 接受方 → 拨号方 | `nonce, salt` | 挑战 |
 | `event` | 双向 | `seq, msgId, at, event, payload` | 业务事件 |
 | `ack` | 双向 | `seq` | 累计确认 ≤ seq 已收到 |
@@ -87,7 +87,7 @@ key = HKDF-SHA256(base = passwordHash, salt = nonce, info = "cow/v1/e2e", 32)
 ## 3. 消息信封
 
 四条消息共用同一个信封。`peer` 是这条会话所属的**子节点标签**（主端视角），
-子端按 `peerId（instanceId）+ workspace.id + session.id` 隔离本地会话；`peerName` 只是显示名。
+子端按 `peerId+ workspace.id + session.id` 隔离本地会话；`peerName` 只是显示名。
 
 ```json
 {
@@ -108,7 +108,7 @@ key = HKDF-SHA256(base = passwordHash, salt = nonce, info = "cow/v1/e2e", 32)
 
 ### 3.1 dispatch（主 → 子）
 
-主 DSH 用 `cow_send(peerId, message, peerName?)` 发送，`peerId` 是稳定的 `instanceId`；
+主 DSH 用 `cow_send(peerId, message, peerName?)` 发送，`peerId` 是稳定节点标识；
 `peerName` 是可选的显示名提示，名称可能随时变化，不参与校验。消息**只入队、立即返回**，不等结果：
 
 ```json
@@ -125,7 +125,7 @@ key = HKDF-SHA256(base = passwordHash, salt = nonce, info = "cow/v1/e2e", 32)
 ```
 
 子端按隔离键（`peerId + workspace.id + session.id`）找到/新建子会话，把 `text` 作为一条用户消息交给 Agent；
-同一隔离键复用同一会话。显示名重名时主端会自动追加实例后缀，instanceId 始终不变。
+同一隔离键复用同一会话。显示名重名时主端会自动追加实例后缀，peerId 始终不变。
 子端工作目录取 `workspace.path`（必须在本机 `allowedRoots` 内），不可用时落到第一个根目录下的
 `workspace.name` 同名目录。
 

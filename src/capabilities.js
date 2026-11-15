@@ -310,7 +310,7 @@ export function matchPeers(peers, requirement) {
     }
     return {
       peer: peer.label,
-      instanceId: peer.instanceId ?? '',
+      peerId: peer.peerId ?? '',
       score,
       matched: [...new Set(matched)],
       reason: reasons.slice(0, 5).join('；'),
@@ -334,7 +334,7 @@ export function buildInstanceDocument({
 }) {
   return {
     schema: protocol,
-    instanceId: identity.instanceId,
+    peerId: identity.peerId,
     displayName: displayName || identity.displayName || hostname(),
     hostname: hostname(),
     platform: { os: osPlatform(), arch: osArch(), release: release(), hostname: hostname() },

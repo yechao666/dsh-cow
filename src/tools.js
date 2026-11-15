@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 /**
  * dsh-cow 的模型侧工具（WebSocket 全双工，纯消息）。
  *
- * 目标节点一律用 `peerId`（稳定的 instanceId）标识；`peerName` 是可选显示名，
+ * 目标节点一律用 `peerId`（稳定的节点标识）标识；`peerName` 是可选显示名，
  * 只作展示提示，名称可能随时变化、不参与路由与校验；工具参数里不再出现 `peer`。
  *
  *   cow_status / cow_peers / cow_send / cow_doctor + 文件交换工具
@@ -48,7 +48,7 @@ function sessionIdOf(exec) {
 
 const PEER_ID_PARAM = {
   type: 'string',
-  description: '目标节点 peerId（稳定的 instanceId，cow_…）；cow_peers 返回值里叫 peerId',
+  description: '目标节点 peerId（稳定节点标识，cow_…）；cow_peers 返回值里叫 peerId',
 };
 
 const PEER_NAME_PARAM = {
@@ -60,7 +60,7 @@ export function createToolDefinitions({ instance, channel, peers, files, doctor,
   const peerById = (id) => {
     const needle = String(id ?? '').trim();
     if (!needle) return null;
-    return peers.list().find((item) => item.instanceId === needle || item.id === needle) ?? null;
+    return peers.list().find((item) => item.peerId === needle || item.id === needle) ?? null;
   };
   const peerByName = (name) => {
     const needle = String(name ?? '').trim();
@@ -75,7 +75,7 @@ export function createToolDefinitions({ instance, channel, peers, files, doctor,
     if (!peerId && !peerName) throw new Error('缺少 peerId（可选 peerName）');
     let peer = null;
     if (peerId) {
-      // 只按稳定的 instanceId 路由；peerName 可能过期/被改名，忽略它，不参与校验。
+      // 只按稳定的 peerId 路由；peerName 可能过期/被改名，忽略它，不参与校验。
       peer = peerById(peerId);
       if (!peer) throw new Error(`未知节点 peerId=${peerId}`);
     } else {
@@ -122,7 +122,7 @@ export function createToolDefinitions({ instance, channel, peers, files, doctor,
             filesDone.push(...sent.files);
             totalBytes += sent.totalBytes;
           }
-          return { files: filesDone, totalBytes, peerId: target.instanceId || '', peerName: peerLabel };
+          return { files: filesDone, totalBytes, peerId: target.peerId || '', peerName: peerLabel };
         },
       },
       {
@@ -208,7 +208,7 @@ export function createToolDefinitions({ instance, channel, peers, files, doctor,
           maxFileMB: Number.isInteger(args?.maxFileMB) ? args.maxFileMB : target.maxFileMB,
         });
         return {
-          peerId: updated.peer.instanceId || '',
+          peerId: updated.peer.peerId || '',
           peerName: updated.peer.label,
           allowFiles: updated.peer.allowFiles,
           maxFileMB: updated.peer.maxFileMB,
@@ -244,7 +244,7 @@ export function createToolDefinitions({ instance, channel, peers, files, doctor,
       async execute() {
         const conns = channel.connections?.() ?? [];
         return {
-          instanceId: instance.instanceId,
+          peerId: instance.peerId,
           displayName: instance.displayName,
           version: instance.version ?? '',
           description: instance.description ?? '',
@@ -257,7 +257,7 @@ export function createToolDefinitions({ instance, channel, peers, files, doctor,
             installedVersion: installedVersion(),
             peers: peers.list().map((peer) => {
               const status = channel.status(peer.label);
-              return { peerId: peer.instanceId || '', peerName: peer.label, relation: peer.relation, state: status.state, encrypted: status.e2e === true, lastError: status.lastError ?? null };
+              return { peerId: peer.peerId || '', peerName: peer.label, relation: peer.relation, state: status.state, encrypted: status.e2e === true, lastError: status.lastError ?? null };
             }),
             files: files?.stats?.() ?? null,
           },
@@ -275,7 +275,7 @@ export function createToolDefinitions({ instance, channel, peers, files, doctor,
           peers: peers.list().map((peer) => {
             const status = channel.status(peer.label);
             return {
-              peerId: peer.instanceId || '',
+              peerId: peer.peerId || '',
               peerName: peer.label,
               relation: peer.relation,
               connected: status.state === 'connected',
@@ -294,7 +294,7 @@ export function createToolDefinitions({ instance, channel, peers, files, doctor,
       description:
         '发送 dsh-cow 消息，主 DSH 不等待、不轮询。kind=dispatch（默认）把消息派给直接下级，异步进入对方会话输入队列，对方回合结束自动把 complete 注入本会话；' +
         'kind=ask 向直接上级提问/审批并等待回答；带 replyTo 时作为对某条询问的回答（answer 会回到提出询问的子会话）。' +
-        '目标节点只用 peerId（稳定 instanceId）路由；peerName 是可选的显示名提示，名称可能随时变化，不参与校验。',
+        '目标节点只用 peerId（稳定 peerId）路由；peerName 是可选的显示名提示，名称可能随时变化，不参与校验。',
       parameters: {
         type: 'object',
         properties: {
@@ -331,7 +331,7 @@ export function createToolDefinitions({ instance, channel, peers, files, doctor,
             kind: 'message',
             text: `回答 ${replyTo}：${text.slice(0, 80)}`,
             peer: to,
-            from: instance.displayName || instance.instanceId,
+            from: instance.displayName || instance.peerId,
             to,
             messageId: replyTo,
             status: answered?.status ?? 'sent',
@@ -352,7 +352,7 @@ export function createToolDefinitions({ instance, channel, peers, files, doctor,
             kind: 'message',
             text: `向 ${targetName || '上级'} 询问：${text.slice(0, 80)}`,
             peer: targetName,
-            from: instance.displayName || instance.instanceId,
+            from: instance.displayName || instance.peerId,
             to: targetName,
             status: result?.ok ? 'answered' : 'failed',
           });
@@ -367,20 +367,20 @@ export function createToolDefinitions({ instance, channel, peers, files, doctor,
           : { session: { id: sessionIdOf(exec), title: '' }, workspace: { id: '', name: '', path: '' } };
         const envelope = buildEnvelope({
           kind: 'dispatch',
-          peerId: target.instanceId || '',
+          peerId: target.peerId || '',
           peerName: target.label,
           text,
           workspace: info.workspace,
           session: info.session,
           approvalMode: 'follow',
         });
-        const sent = channel.send(target.instanceId || target.label, { type: 'msg.dispatch', payload: envelope });
-        const shortId = target.instanceId ? `（${target.instanceId}）` : '';
+        const sent = channel.send(target.peerId || target.label, { type: 'msg.dispatch', payload: envelope });
+        const shortId = target.peerId ? `（${target.peerId}）` : '';
         activity?.add?.({
           kind: 'message',
           text: `派给 ${target.label}${shortId}：${text.slice(0, 80)}`,
           peer: target.label,
-          from: instance.displayName || instance.instanceId,
+          from: instance.displayName || instance.peerId,
           to: target.label,
           messageId: envelope.messageId,
           status: sent?.delivered ? 'sent' : 'queued',
@@ -388,7 +388,7 @@ export function createToolDefinitions({ instance, channel, peers, files, doctor,
         if (!sent?.delivered && !sent?.queued) throw new Error('消息未送达，目标节点当前不在线');
         return {
           messageId: envelope.messageId,
-          peerId: target.instanceId || '',
+          peerId: target.peerId || '',
           peerName: target.label,
           kind: 'dispatch',
           status: sent.delivered ? 'sent' : 'queued',

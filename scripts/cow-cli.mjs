@@ -61,7 +61,7 @@ try {
     } catch { /* 忽略 */ }
     const payload = {
       home,
-      instanceId: id.instanceId,
+      peerId: id.peerId,
       uuid: id.uuid,
       displayName: id.displayName,
       role: id.role,

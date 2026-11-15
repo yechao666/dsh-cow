@@ -1,7 +1,7 @@
 /**
  * 实例身份：`$DSH_HOME/cow/instance.json`。
  *
- * instanceId 一经生成就不再变化 —— 对端用它做去重与审计，token 和它绑定。
+ * peerId 一经生成就不再变化 —— 对端用它做去重与审计，token 和它绑定。
  */
 import { readFileSync } from 'node:fs';
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
@@ -15,8 +15,17 @@ export function identityPath(home) {
   return join(coDshDir(home), IDENTITY_FILE);
 }
 
-export function newInstanceId() {
+export function newPeerId() {
   return `cow_${randomBytes(8).toString('hex')}`;
+}
+
+/** 兼容旧身份文件：旧的 instanceId 字段迁移为 peerId。 */
+function canonicalIdentity(identity) {
+  if (!identity || typeof identity !== 'object') return identity;
+  const next = { ...identity };
+  if (!next.peerId && typeof next.instanceId === 'string') next.peerId = next.instanceId;
+  delete next.instanceId;
+  return next;
 }
 
 export function newOrgId() {
@@ -95,8 +104,9 @@ function normalizeOrg(identity) {
  */
 export function loadIdentity({ home, displayName } = {}) {
   const file = identityPath(home);
-  const existing = readJson(file, null);
-  if (existing && typeof existing.instanceId === 'string' && (existing.instanceId.startsWith('cow_') || existing.instanceId.startsWith('cods_'))) {
+  const raw = readJson(file, null);
+  const existing = canonicalIdentity(raw);
+  if (existing && typeof existing.peerId === 'string' && (existing.peerId.startsWith('cow_') || existing.peerId.startsWith('cods_'))) {
     const normalized = normalizeOrg(existing);
     const plainParentPassword = normalized.parentPasswordEnc
       ? decryptSecret(home, normalized.parentPasswordEnc)
@@ -107,6 +117,7 @@ export function loadIdentity({ home, displayName } = {}) {
     }
     delete normalized.parentPassword;
     if (
+      raw?.instanceId !== undefined ||
       normalized.parentPasswordEnc !== existing.parentPasswordEnc ||
       normalized.orgId !== existing.orgId ||
       normalized.role !== existing.role ||
@@ -124,7 +135,7 @@ export function loadIdentity({ home, displayName } = {}) {
   }
   const identity = {
     schema: 1,
-    instanceId: newInstanceId(),
+    peerId: newPeerId(),
     uuid: randomUUID(),
     createdAt: new Date().toISOString(),
     displayName: String(displayName ?? ''),
@@ -140,9 +151,9 @@ export function updateIdentityName(home, displayName) {
   const file = identityPath(home);
   let current;
   try {
-    current = JSON.parse(readFileSync(file, 'utf8'));
+    current = canonicalIdentity(JSON.parse(readFileSync(file, 'utf8')));
   } catch {
-    current = { schema: 1, instanceId: newInstanceId(), createdAt: new Date().toISOString() };
+    current = { schema: 1, peerId: newPeerId(), createdAt: new Date().toISOString() };
   }
   const next = { ...current, displayName: String(displayName ?? '') };
   writeJsonAtomic(file, next);
@@ -155,9 +166,9 @@ export function patchIdentity(home, patch) {
   const file = identityPath(home);
   let current;
   try {
-    current = JSON.parse(readFileSync(file, 'utf8'));
+    current = canonicalIdentity(JSON.parse(readFileSync(file, 'utf8')));
   } catch {
-    current = { schema: 1, instanceId: newInstanceId(), createdAt: new Date().toISOString() };
+    current = { schema: 1, peerId: newPeerId(), createdAt: new Date().toISOString() };
   }
   const next = { ...current, ...patch, updatedAt: new Date().toISOString() };
   if (Object.prototype.hasOwnProperty.call(patch, 'parentPassword')) {

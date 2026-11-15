@@ -72,7 +72,7 @@ export function createAdminHandlers(deps) {
       return {
         label: peer.label,
         peer: peer.label,
-        instanceId: peer.instanceId ?? '',
+        peerId: peer.peerId ?? '',
         uuid: peer.uuid || status.node?.uuid || '',
         relation: peer.relation ?? 'peer',
         connected: status.state === 'connected',
@@ -90,7 +90,7 @@ export function createAdminHandlers(deps) {
     const pendingAsks = deps.router?.pending?.() ?? [];
     return {
       instance: {
-        instanceId: deps.instance.instanceId,
+        peerId: deps.instance.peerId,
         uuid: deps.instance.uuid ?? '',
         displayName: cfg.displayName || deps.instance.displayName || '',
         version: deps.pluginVersion ?? '',
@@ -201,7 +201,7 @@ export function createAdminHandlers(deps) {
           kind: 'message',
           text: `回答 ${questionId}：${answer.slice(0, 80)}`,
           peer: ask?.peer ?? '',
-          from: deps.instance.displayName || deps.instance.instanceId,
+          from: deps.instance.displayName || deps.instance.peerId,
           to: ask?.peer ?? '',
           messageId: questionId,
           status: answered?.status ?? 'sent',
