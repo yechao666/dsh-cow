@@ -56,7 +56,7 @@ agent.followup({ content: [...], source: { kind: 'notification' } })
 
 ### 3.3 复用键 = peerId + workspace.id
 
-子端为每个主会话维护一个子会话。`peerId` 是稳定身份，显示名只用于展示：
+子端为每个工作区维护一个子会话。`peerId` 是稳定身份，显示名只用于展示：
 
 ```text
 key       = (peerId || peer) :: workspace.id
