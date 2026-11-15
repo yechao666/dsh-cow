@@ -266,6 +266,7 @@ export function apply(ctx, rawConfig = {}) {
     agents: {
       get: (sessionId) => service('agents')?.get?.(sessionId) ?? null,
       create: (options) => service('agents')?.create?.(options),
+      resume: (options) => service('agents')?.resume?.(options),
     },
     logger,
     agentOptions,
@@ -273,8 +274,9 @@ export function apply(ctx, rawConfig = {}) {
     prepareAgent: async (agent, envelope, cwd) => {
       await selectPreset(agent);
       const titleService = service('sessionTitle');
-      const title = String(envelope?.session?.title ?? '').trim();
-      if (titleService?.rename && title && agent?.session) {
+      // 子会话按工作区复用，标题也用工作区而不是某一次主会话的标题。
+      const title = String(envelope?.workspace?.name ?? '').trim() || basename(String(cwd ?? '')) || '子会话';
+      if (titleService?.rename && agent?.session) {
         try { titleService.rename(agent.session, `[COW] ${title}`); } catch (error) {
           logger.warn?.(`[dsh-cow] 设置子会话标题失败：${error?.message ?? error}`);
         }

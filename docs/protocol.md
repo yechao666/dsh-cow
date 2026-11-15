@@ -87,7 +87,7 @@ key = HKDF-SHA256(base = passwordHash, salt = nonce, info = "cow/v1/e2e", 32)
 ## 3. 消息信封
 
 四条消息共用同一个信封。`peer` 是这条会话所属的**子节点标签**（主端视角），
-子端按 `peerId+ workspace.id + session.id` 隔离本地会话；`peerName` 只是显示名。
+子端按 `peerId + workspace.id` 复用本地子会话（同一工作区一个）；每条消息里的 `session.id` 记录主端原会话，complete/ask 据此回到对应会话。`peerName` 只是显示名。
 
 ```json
 {
@@ -124,8 +124,8 @@ key = HKDF-SHA256(base = passwordHash, salt = nonce, info = "cow/v1/e2e", 32)
 }
 ```
 
-子端按隔离键（`peerId + workspace.id + session.id`）找到/新建子会话，把 `text` 作为一条用户消息交给 Agent；
-同一隔离键复用同一会话。显示名重名时主端会自动追加实例后缀，peerId 始终不变。
+子端按工作区键（`peerId + workspace.id`）找到/新建子会话，把 `text` 作为一条用户消息交给 Agent；
+同一工作区复用同一会话，子会话标题为 `[COW] <工作区名>`。显示名重名时主端会自动追加实例后缀，peerId 始终不变。
 子端工作目录取 `workspace.path`（必须在本机 `allowedRoots` 内），不可用时落到第一个根目录下的
 `workspace.name` 同名目录。
 

@@ -15,8 +15,8 @@ WebSocket 长连接做全双工 JSON 通讯。**只有消息，没有任务层**
   在 DSH 原生界面让用户输入；需要上级拍板时继续向上级 `cow_send(kind="ask")`，再逐级回报。
   COW 状态面板只显示「询问中」计数，不提供人工回答队列；
 - 每条消息都带 `workspace`（id/name/path）、`session`（id/title）与 `approvalMode`；
-  子端按 `peerId（缺省回退显示名）+ workspace.id + session.id` 隔离会话，
-  同名节点不会串线，改名也不影响在途会话；显示名重复时 PeerRegistry 会自动追加实例后缀；
+  子端按 `peerId + workspace.id` 复用子会话：同一主 DSH、同一工作区只保留一个子会话，
+  complete/ask 仍按每条消息里的主会话 `session.id` 回到对应原会话；同名节点不会串线，改名也不影响在途会话；
 - 子 DSH 的 agent preset 可在设置页指定（`agentPreset`），会话会挂到对应工作区；
 - 文件交换支持单个文件、目录递归（`cow_send_file` 传目录）与目录拉取（`cow_pull_dir`），逐文件 sha256 校验；
 - 连接握手后启用 **AES-256-GCM 帧级加密**（密钥由共用密码 + 每次连接的 nonce 派生，重连即轮换）；旧客户端不支持时自动回落明文；

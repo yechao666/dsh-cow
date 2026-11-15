@@ -28,14 +28,53 @@ test('dispatch 进入固定子会话并自动 complete', async () => {
   assert.equal(sent[0].frame.payload.text, 'done');
 });
 
-test('同一工作区+会话复用子会话，不同会话分开', async () => {
+test('同一工作区复用子会话，不同工作区分开', async () => {
   const agents = { get: () => null, create: async ({ sessionId }) => ({ agent: { session: { seq: 0 }, followup() {}, whenIdle: async () => {} }, sessionId }) };
   const bridge = new MessageBridge({ channel: { send() {} }, agents, summarize: () => '', workspacePath: (ws) => ws.id });
   const a = await bridge.dispatch(fakeEnv('w1', 1), '主 DSH');
-  const b = await bridge.dispatch(fakeEnv('w1', 2), '主 DSH');
-  const c = await bridge.dispatch({ ...fakeEnv('w1', 3), session: { id: 's2' } }, '主 DSH');
+  // 不同主会话、同一工作区：复用同一子会话。
+  const b = await bridge.dispatch({ ...fakeEnv('w1', 2), session: { id: 's2' } }, '主 DSH');
+  const c = await bridge.dispatch(fakeEnv('w2', 3), '主 DSH');
   assert.equal(a.sessionId, b.sessionId);
   assert.notEqual(a.sessionId, c.sessionId);
+});
+
+test('同一子会话处理多个主会话时，complete 回到各自原会话', async () => {
+  const sent = [];
+  const agent = { session: { seq: 0, eventAt: () => undefined }, followup(message) { agent.session.seq += 1; }, whenIdle: async () => {} };
+  const bridge = new MessageBridge({
+    channel: { send: (peer, frame) => sent.push({ peer, frame }) },
+    agents: { get: () => null, create: async ({ sessionId }) => ({ sessionId, agent }) },
+    summarize: () => 'done',
+    workspacePath: (ws) => ws.id,
+  });
+  const a = await bridge.dispatch({ ...fakeEnv('w1', 1), session: { id: 'main-A' } }, '主 DSH');
+  const b = await bridge.dispatch({ ...fakeEnv('w1', 2), session: { id: 'main-B' } }, '主 DSH');
+  assert.equal(a.sessionId, b.sessionId);
+  await tick();
+  const completes = sent.filter((item) => item.frame.type === 'msg.complete');
+  assert.equal(completes.length, 2);
+  assert.deepEqual(completes.map((item) => item.frame.payload.session.id).sort(), ['main-A', 'main-B']);
+  assert.deepEqual(completes.map((item) => item.frame.payload.replyTo).sort(), ['m_w1_1', 'm_w1_2']);
+});
+
+test('进程重启后按工作区键 resume 已存在的子会话', async () => {
+  let created = 0;
+  let resumed = 0;
+  const agent = { session: { seq: 0 }, followup() {}, whenIdle: async () => {} };
+  const bridge = new MessageBridge({
+    channel: { send() {} },
+    agents: {
+      get: () => null,
+      resume: async ({ resumeSessionId }) => { resumed += 1; return { sessionId: resumeSessionId, agent }; },
+      create: async ({ sessionId }) => { created += 1; return { sessionId, agent }; },
+    },
+    summarize: () => '',
+    workspacePath: (ws) => ws.id,
+  });
+  await bridge.dispatch(fakeEnv('w1', 1), '主 DSH');
+  assert.equal(resumed, 1);
+  assert.equal(created, 0);
 });
 
 test('answer 注入同一子会话', async () => {

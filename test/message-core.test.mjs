@@ -1,17 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildEnvelope, childKey, summarizeSession } from '../src/message-core.js';
-
-test('消息必须带工作区与会话隔离键', () => {
-  assert.throws(() => childKey({ peerName: 'F', workspace: {}, session: { id: 's1' } }), /workspace/);
-  assert.equal(childKey({ peerName: 'F', workspace: { id: 'w1' }, session: { id: 's1' } }), 'F::w1::s1');
-  // 稳定身份优先：同名节点靠 peerId 区分。
-  assert.equal(childKey({ peerName: '主 DSH', peerId: 'cow_a', workspace: { id: 'w1' }, session: { id: 's1' } }), 'cow_a::w1::s1');
-  assert.notEqual(
-    childKey({ peerName: '主 DSH', peerId: 'cow_a', workspace: { id: 'w1' }, session: { id: 's1' } }),
-    childKey({ peerName: '主 DSH', peerId: 'cow_b', workspace: { id: 'w1' }, session: { id: 's1' } }),
-  );
-});
+import { buildEnvelope, summarizeSession, summarizeTurn, workspaceKey } from '../src/message-core.js';
 
 test('dispatch 信封完整', () => {
   const msg = buildEnvelope({ kind: 'dispatch', peerName: 'F', peerId: 'cow_f', text: 'hello', workspace: { id: 'w1', name: 'A', path: '/a' }, session: { id: 's1', title: 'T' }, approvalMode: 'follow' });
@@ -30,6 +19,31 @@ test('complete 引用 dispatch', () => {
   assert.equal(msg.peerId, 'cow_f');
   assert.equal(msg.peerName, 'F');
   assert.equal(msg.peer, msg.peerName, '兼容旧节点的只读别名');
+});
+
+test('workspaceKey 按 peerId + 工作区复用，不带主会话', () => {
+  const key = workspaceKey({ peerId: 'cow_peer', peerName: '主 DSH', workspace: { id: 'w1', name: 'proj' } });
+  assert.equal(key, 'cow_peer::w1');
+  assert.equal(
+    workspaceKey({ peerId: 'cow_peer', workspace: { id: 'w1' } }),
+    workspaceKey({ peerId: 'cow_peer', workspace: { id: 'w1', name: 'renamed' } }),
+  );
+});
+
+test('summarizeTurn 只取指定 messageId 那一轮', () => {
+  const events = [
+    { type: 'user/message', data: { id: 'm1', source: { kind: 'user' } } },
+    { type: 'user/message', data: { id: 'ctx1', source: { kind: 'runtime-context' } } },
+    { type: 'assistant/message', data: { message: { content: [{ type: 'text', text: '第一轮' }] } } },
+    { type: 'turn/end', data: { reason: { kind: 'completed' } } },
+    { type: 'user/message', data: { id: 'm2', source: { kind: 'user' } } },
+    { type: 'assistant/message', data: { message: { content: [{ type: 'text', text: '第二轮' }] } } },
+    { type: 'turn/end', data: { reason: { kind: 'completed' } } },
+  ];
+  const session = { seq: events.length, eventAt: (seq) => events[seq] };
+  assert.equal(summarizeTurn(session, 0, 'm1'), '第一轮');
+  assert.equal(summarizeTurn(session, 0, 'm2'), '第二轮');
+  assert.equal(summarizeTurn(session, 0, 'missing'), null);
 });
 
 test('summarizeSession 跳过水位前的旧消息并抽取本轮助手文本', () => {

@@ -10,13 +10,12 @@ export function newMessageId(prefix = 'msg') {
   return `${prefix}_${Date.now().toString(36)}_${randomBytes(4).toString('hex')}`;
 }
 
-export function childKey({ peerId, peerName, peer, workspace, session }) {
-  const ws = String(workspace?.id ?? workspace?.name ?? '').trim();
-  const sid = String(session?.id ?? '').trim();
-  // peerId 是稳定身份；显示名（peerName）只用于展示与回退。
+/** 子端会话的复用键：同一 peer + 工作区共用一个子会话，不再按主会话分裂。 */
+export function workspaceKey({ peerId, peerName, peer, workspace }) {
   const node = String(peerId || peerName || peer || '').trim();
-  if (!ws || !sid || !node) throw new Error('缺少 peerId/workspace.id/session.id，拒绝隔离不足的消息');
-  return `${node}::${ws}::${sid}`;
+  const ws = String(workspace?.id ?? workspace?.name ?? '').trim();
+  if (!node || !ws) throw new Error('缺少 peerId/workspace.id，无法定位子会话');
+  return `${node}::${ws}`;
 }
 
 export function buildEnvelope({ kind, peerId = '', peerName, peer, text, workspace, session, approvalMode = 'follow', replyTo = '', questionId = '', options = [] }) {
@@ -117,6 +116,60 @@ export function summarizeSession(session, fromSeq) {
       if (reason?.kind === 'error') error = reason.error ?? new Error('Agent 执行失败');
     }
   }
+  if (error) {
+    const message = error instanceof Error
+      ? error.message
+      : (error?.message ? String(error.message) : (() => { try { return JSON.stringify(error); } catch { return String(error); } })());
+    throw new Error(message);
+  }
+  return text.trim();
+}
+
+
+/**
+ * 从 fromSeq 之后找到指定 messageId 那一轮的助手文本。
+ * 同一子会话可能连续收到多个主会话的消息，必须按消息找出对应回合。
+ * 返回 null 表示事件里没找到这条消息（调用方可回退到整段摘要）。
+ */
+export function summarizeTurn(session, fromSeq, messageId) {
+  const id = String(messageId ?? '');
+  if (!id || typeof session?.eventAt !== 'function') return null;
+  const first = Number.isFinite(Number(fromSeq)) ? Number(fromSeq) : 0;
+  let started = false;
+  let text = '';
+  let error = null;
+  for (let seq = first; seq < session.seq; seq += 1) {
+    const event = session.eventAt(seq);
+    if (!event) continue;
+    if (!started) {
+      if (event.type === 'user/message' && String(event.data?.id ?? '') === id) started = true;
+      continue;
+    }
+    if (event.type === 'user/message') {
+      // 只有下一条「真实用户输入」才代表本轮结束；runtime-context / skill-catalog
+      // 等注入也走 user/message，不能把它们当成下一条 dispatch。
+      const nextId = String(event.data?.id ?? '');
+      const sourceKind = String(event.data?.source?.kind ?? '');
+      if (nextId !== id && (sourceKind === 'user' || sourceKind === 'steering')) break;
+      continue;
+    }
+    if (event.type === 'assistant/message') {
+      const content = event.data?.message?.content ?? [];
+      const joined = Array.isArray(content)
+        ? content
+            .filter((block) => block?.type === 'text')
+            .map((block) => String(block.text ?? ''))
+            .join('')
+        : '';
+      if (joined.trim()) text = joined;
+    }
+    if (event.type === 'turn/end') {
+      const reason = event.data?.reason;
+      if (reason?.kind === 'error') error = reason.error ?? new Error('Agent 执行失败');
+      break;
+    }
+  }
+  if (!started) return null;
   if (error) {
     const message = error instanceof Error
       ? error.message

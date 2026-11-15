@@ -2,11 +2,13 @@
  * 纯消息桥：主 DSH 的 dispatch 直接进入子 DSH 会话；回合结束自动 complete。
  * 不建任务、不维护消息队列，排队交给 DSH Agent 输入队列。
  *
- * 子端会话按 `peer + workspace.id + session.id` 隔离：同一个主会话派来的消息
- * 复用同一个子会话，不同主会话互不串线。子端的 ask/answer 复用同一隔离键。
+ * 子端会话按 `peerId + workspace.id` 复用：同一主 DSH 的同一工作区只保留一个
+ * 子会话，多个主会话不再各自分裂一个子会话。每条 dispatch 自己带着发起方的
+ * session，因此 complete / ask 仍然回到正确的原会话；回合产物也按 messageId
+ * 从会话事件里精确提取。
  */
 import { createHash, randomBytes } from 'node:crypto';
-import { askEnvelope, childKey, completeEnvelope, summarizeSession } from './message-core.js';
+import { askEnvelope, completeEnvelope, summarizeSession, summarizeTurn, workspaceKey } from './message-core.js';
 
 const SEEN_LIMIT = 512;
 
@@ -29,14 +31,14 @@ export class MessageBridge {
     this.workspacePath = workspacePath ?? ((name) => name);
     this.prepareAgent = prepareAgent ?? (async () => {});
     this.finishTurn = finishTurn ?? (async () => {});
-    this.sessions = new Map(); // isolation key -> { sessionId, agent, envelope, parent }
+    this.sessions = new Map(); // workspace key -> record
     this.bySession = new Map(); // child sessionId -> record
     this.questions = new Map(); // questionId -> { resolve, timer, record }
     this.seen = new Set();
   }
 
   key(envelope) {
-    return childKey(envelope);
+    return workspaceKey(envelope);
   }
 
   #sessionId(key) {
@@ -48,6 +50,20 @@ export class MessageBridge {
     return this.bySession.get(String(sessionId ?? '')) ?? null;
   }
 
+  #newRecord(sessionId, agent, workspacePath, envelope, handle = null) {
+    return {
+      sessionId,
+      agent,
+      workspacePath,
+      handle,
+      envelopes: new Map(), // messageId -> dispatch envelope（尚未完成）
+      completed: new Set(),
+      parent: '',
+      parentLabel: '',
+      createdAt: envelope?.createdAt ?? new Date().toISOString(),
+    };
+  }
+
   async ensure(envelope) {
     const key = this.key(envelope);
     const existing = this.sessions.get(key);
@@ -55,19 +71,31 @@ export class MessageBridge {
     const sessionId = this.#sessionId(key);
     const live = this.agents.get?.(sessionId);
     if (live?.session) {
-      const record = { sessionId, agent: live, workspacePath: this.workspacePath(envelope.workspace), envelope };
+      const record = this.#newRecord(sessionId, live, this.workspacePath(envelope.workspace), envelope);
       this.sessions.set(key, record);
       this.bySession.set(sessionId, record);
       return record;
     }
     const cwd = this.workspacePath(envelope.workspace);
-    const handle = await this.agents.create({ sessionId, meta: { cwd }, agentOptions: this.agentOptions() });
+    // 进程重启后同一个工作区键会算出同一个 sessionId：优先 resume 已持久化的子会话，
+    // 否则才新建。这样子端不会因为重启再长出一堆重复会话。
+    let handle = null;
+    let resumed = false;
+    try {
+      handle = await this.agents.resume?.({ resumeSessionId: sessionId, agentOptions: this.agentOptions() });
+      resumed = Boolean(handle);
+    } catch {
+      handle = null;
+    }
+    if (!handle) {
+      handle = await this.agents.create({ sessionId, meta: { cwd }, agentOptions: this.agentOptions() });
+    }
     const agent = handle?.agent ?? handle;
     if (!agent) throw new Error('agents.create 没有返回 Agent');
-    const record = { sessionId, agent, workspacePath: cwd, envelope, handle: handle?.dispose ? handle : null };
+    const record = this.#newRecord(sessionId, agent, cwd, envelope, handle?.dispose ? handle : null);
     this.sessions.set(key, record);
     this.bySession.set(sessionId, record);
-    await this.prepareAgent(agent, envelope, cwd);
+    if (!resumed) await this.prepareAgent(agent, envelope, cwd);
     return record;
   }
 
@@ -86,10 +114,10 @@ export class MessageBridge {
       return { messageId: envelope.messageId, sessionId: record?.sessionId, status: 'duplicate' };
     }
     const record = await this.ensure(envelope);
-    record.envelope = envelope;
+    record.envelopes.set(envelope.messageId, envelope);
     record.parent = fromId || from;
     record.parentLabel = from;
-    // 必须在 followup 之前取水位，否则会漏掉本轮 turn/start，摘要读不到本轮文本与错误。
+    // 必须在 followup 之前取水位，否则会漏掉这条消息的 user/message 事件。
     const firstSeq = record.agent.session?.seq ?? 0;
     record.agent.followup(messageObject({ id: envelope.messageId, text: envelope.text }));
     void this.#completeAfter(record, envelope, from, firstSeq);
@@ -103,11 +131,17 @@ export class MessageBridge {
     try {
       await agent.whenIdle?.();
       await this.finishTurn(agent);
-      text = String(this.summarize(session, firstSeq) ?? '').trim();
+      // 同一子会话可能排着多个主会话的消息：优先只抽取这条消息对应的一轮。
+      const turnText = summarizeTurn(session, firstSeq, envelope.messageId);
+      text = turnText === null ? String(this.summarize(session, firstSeq) ?? '').trim() : turnText;
       if (!text) text = '（子 DSH 本轮没有文本输出）';
     } catch (error) {
       text = `子 DSH 执行失败：${error?.message ?? error}`;
       this.logger.warn?.(`[dsh-cow] 获取本轮结果失败：${error?.message ?? error}`);
+    } finally {
+      record.envelopes.delete(envelope.messageId);
+      record.completed.add(envelope.messageId);
+      if (record.completed.size > SEEN_LIMIT) record.completed.delete(record.completed.values().next().value);
     }
     const payload = completeEnvelope(envelope, text);
     try {
@@ -115,6 +149,26 @@ export class MessageBridge {
     } catch (error) {
       this.logger.warn?.(`[dsh-cow] 完成通知发送失败：${error?.message ?? error}`);
     }
+  }
+
+  /**
+   * 找出当前正在处理的那条 dispatch：
+   * 子会话事件里最近一条属于待完成消息的 user/message 就是当前上下文。
+   */
+  #activeEnvelope(record) {
+    const session = record.agent?.session;
+    if (session?.eventAt) {
+      for (let seq = session.seq - 1; seq >= 0; seq -= 1) {
+        const event = session.eventAt(seq);
+        if (event?.type !== 'user/message') continue;
+        const id = String(event.data?.id ?? '');
+        const found = record.envelopes.get(id);
+        if (found) return found;
+        // 遇到更晚的普通消息就继续往前找，直到命中已知 dispatch。
+      }
+    }
+    const pending = [...record.envelopes.values()];
+    return pending.length ? pending[pending.length - 1] : null;
   }
 
   /**
@@ -128,7 +182,9 @@ export class MessageBridge {
     if (!record) return { ok: false, error: '当前会话不是上级派来的消息会话，无法提问' };
     const target = record.parent;
     if (!target) return { ok: false, error: '找不到发起方节点' };
-    const payload = askEnvelope(record.envelope, text, options);
+    const context = this.#activeEnvelope(record);
+    if (!context) return { ok: false, error: '找不到这条消息的发起方上下文' };
+    const payload = askEnvelope(context, text, options);
     const waitMs = Math.min(3600, Math.max(5, Number(timeoutSec) || 300)) * 1000;
     // 先登记等待者再发送：回答可能在 send 返回前就被路由回来（本机/测试直连）。
     const waiting = new Promise((resolve) => {
@@ -165,7 +221,7 @@ export class MessageBridge {
   /**
    * 收到 msg.answer：先兑现正在等待的 ask；没有等待者时作为新一轮输入注入子会话。
    */
-  async handleAnswer(envelope, from) {
+  async handleAnswer(envelope, from, fromId = '') {
     const questionId = String(envelope?.replyTo || envelope?.questionId || '');
     const pending = questionId ? this.questions.get(questionId) : null;
     if (pending) {
@@ -174,14 +230,13 @@ export class MessageBridge {
       pending.resolve({ ok: true, answer: String(envelope?.text ?? ''), questionId });
       return { questionId, status: 'resolved' };
     }
-    return this.answer(envelope, from);
+    return this.answer(envelope, from, fromId);
   }
 
   async answer(envelope, from, fromId = '') {
     if (!this.#remember(envelope.messageId)) return { messageId: envelope.messageId, status: 'duplicate' };
     const record = await this.ensure(envelope);
-    record.envelope = record.envelope ?? envelope;
-    record.parent = record.parent ?? (fromId || from);
+    record.parent = record.parent || fromId || from;
     record.agent.followup(messageObject({ id: envelope.messageId, text: `[COW 回答] ${envelope.text}` }));
     return { messageId: envelope.messageId, sessionId: record.sessionId, status: 'sent' };
   }
