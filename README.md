@@ -97,6 +97,6 @@ node scripts/build-client.mjs   # 打包设置页
 node --test test/*.test.mjs     # 单元 + WebSocket 集成测试
 ```
 
-设计评审与开源方案对比：[docs/design-review-2026-11.md](docs/design-review-2026-11.md)。
+设计评审与开源方案对比：[docs/design-review-2026-11.md](docs/design-review-2026-11.md)；A2A 迁移可行性：[docs/a2a-migration-assessment.md](docs/a2a-migration-assessment.md)。
 
 状态文件在 `$DSH_HOME/cow/`（instance.json、peers.json、settings.json、channel-*.json）。

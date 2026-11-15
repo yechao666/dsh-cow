@@ -406,6 +406,7 @@ complete / ask / answer 增加：
 - 先做只读 Agent Card：`/.well-known/agent-card.json`（peerId、名称、版本、能力、认证方式）；
 - 再做 A2A adapter：`SendMessage` → `msg.dispatch`，`Task` 状态映射，SSE 推 progress；
 - 不建议一开始就把内部协议替换成 A2A：A2A 的 Task 状态机会把刚删掉的任务层复杂度带回来；用 adapter 隔离。
+- 详细可行性、映射表与迁移路线见 [a2a-migration-assessment.md](a2a-migration-assessment.md)。
 
 ---
 
