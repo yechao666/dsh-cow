@@ -22,7 +22,7 @@ function messageObject({ id, text, source = 'user' }) {
 }
 
 export class MessageBridge {
-  constructor({ channel, agents, logger, agentOptions, summarize, workspacePath, prepareAgent, finishTurn }) {
+  constructor({ channel, agents, logger, agentOptions, summarize, workspacePath, prepareAgent, finishTurn, bindWorkspace }) {
     this.channel = channel;
     this.agents = agents; // 只要求 get(sessionId)
     this.logger = logger ?? console;
@@ -31,6 +31,7 @@ export class MessageBridge {
     this.workspacePath = workspacePath ?? ((name) => name);
     this.prepareAgent = prepareAgent ?? (async () => {});
     this.finishTurn = finishTurn ?? (async () => {});
+    this.bindWorkspace = bindWorkspace ?? (async () => {});
     this.sessions = new Map(); // workspace key -> record
     this.bySession = new Map(); // child sessionId -> record
     this.questions = new Map(); // questionId -> { resolve, timer, record }
@@ -67,13 +68,18 @@ export class MessageBridge {
   async ensure(envelope) {
     const key = this.key(envelope);
     const existing = this.sessions.get(key);
-    if (existing?.agent) return existing;
+    if (existing?.agent) {
+      await this.bindWorkspace(existing.agent.session, envelope, existing.workspacePath);
+      return existing;
+    }
     const sessionId = this.#sessionId(key);
     const live = this.agents.get?.(sessionId);
     if (live?.session) {
-      const record = this.#newRecord(sessionId, live, this.workspacePath(envelope.workspace), envelope);
+      const cwd = this.workspacePath(envelope.workspace);
+      const record = this.#newRecord(sessionId, live, cwd, envelope);
       this.sessions.set(key, record);
       this.bySession.set(sessionId, record);
+      await this.bindWorkspace(live.session, envelope, cwd);
       return record;
     }
     const cwd = this.workspacePath(envelope.workspace);
@@ -96,6 +102,7 @@ export class MessageBridge {
     this.sessions.set(key, record);
     this.bySession.set(sessionId, record);
     if (!resumed) await this.prepareAgent(agent, envelope, cwd);
+    await this.bindWorkspace(agent.session, envelope, cwd);
     return record;
   }
 

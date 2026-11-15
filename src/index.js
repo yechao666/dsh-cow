@@ -281,9 +281,9 @@ export function apply(ctx, rawConfig = {}) {
           logger.warn?.(`[dsh-cow] 设置子会话标题失败：${error?.message ?? error}`);
         }
       }
-      await attachWorkspace(agent?.session, cwd, envelope?.workspace?.name);
     },
     finishTurn,
+    bindWorkspace: (session, envelope, cwd) => attachWorkspace(session, cwd, envelope?.workspace?.name),
   });
 
   router = new MessageRouter({
