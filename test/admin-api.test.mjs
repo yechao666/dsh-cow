@@ -156,3 +156,27 @@ test('admin state 区分运行中版本与磁盘已安装版本', async () => {
   assert.equal(body.pluginVersion, '1.31.2');
   assert.equal(body.installedVersion, '1.31.3');
 });
+
+test('admin send 把输入框消息派给直接下级', async () => {
+  const { Readable } = await import('node:stream');
+  const deps = fakeDeps();
+  let sent = null;
+  deps.sendMessage = async (body) => {
+    sent = body;
+    return { messageId: 'msg_test', peerId: body.peerId, peerName: '子 B', status: 'sent' };
+  };
+  const handlers = createAdminHandlers(deps);
+  const res = {
+    status: 0,
+    headers: {},
+    writeHead(status, headers) { this.status = status; this.headers = headers; },
+    end(body) { this.body = body; },
+  };
+  const req = Readable.from([Buffer.from(JSON.stringify({ peerId: 'cow_b', message: '你好', sessionId: 's1' }))]);
+  req.method = 'POST';
+  req.url = '/api/cow/send';
+  await handlers['/api/cow/send'](req, res);
+  assert.equal(res.status, 200);
+  assert.deepEqual(sent, { peerId: 'cow_b', message: '你好', sessionId: 's1' });
+  assert.equal(JSON.parse(res.body).peerName, '子 B');
+});

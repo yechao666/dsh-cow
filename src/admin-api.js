@@ -190,6 +190,25 @@ export function createAdminHandlers(deps) {
       });
     }),
 
+    '/api/cow/send': wrap(async (req, res) => {
+      if (req.method !== 'POST') {
+        sendJson(res, 405, { error: { code: 'method_not_allowed', message: '只支持 POST' } });
+        return;
+      }
+      const body = await readBody(req);
+      const peerId = String(body?.peerId ?? '').trim();
+      const message = String(body?.message ?? '').trim();
+      const sessionId = String(body?.sessionId ?? '').trim();
+      if (!peerId || !message || !sessionId) {
+        sendJson(res, 400, { error: { code: 'invalid_request', message: '缺少 peerId/message/sessionId' } });
+        return;
+      }
+      try {
+        sendJson(res, 200, await deps.sendMessage({ peerId, message, sessionId }));
+      } catch (error) {
+        sendJson(res, 400, { error: { code: 'send_failed', message: String(error?.message ?? error) } });
+      }
+    }),
     '/api/cow/answer': wrap(async (req, res) => {
       if (req.method !== 'POST') return sendJson(res, 405, { error: { code: 'method_not_allowed', message: '只支持 POST' } });
       const body = await readBody(req);
