@@ -166,7 +166,7 @@ export function apply(ctx, rawConfig = {}) {
     if (!instanceId) return;
     activity.add({
       kind: 'peer',
-      text: `${direction === 'in' ? '节点上线' : '已连接上级'}：${displayName || label}`,
+      text: `${direction === 'in' ? '节点上线' : '已连接上级'}：${label}`,
       peer: label,
       from: direction === 'in' ? label : selfName(),
       to: direction === 'in' ? selfName() : label,
@@ -277,6 +277,7 @@ export function apply(ctx, rawConfig = {}) {
     logger,
     selfName,
     parentLabel: () => peers.list().find((peer) => peer.relation === 'parent')?.label ?? '',
+    parentId: () => peers.list().find((peer) => peer.relation === 'parent')?.instanceId ?? '',
   });
 
   const ensureParentPeer = () => {

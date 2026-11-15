@@ -10,6 +10,7 @@ test('complete/ask 注入原会话，answer 回子端', () => {
     inject: (...args) => { injected.push(args); return true; },
     selfName: () => 'COW Dev',
     parentLabel: () => '更上级',
+    parentId: () => 'cow_parent',
   });
   router.handle('F', { type: 'msg.complete', payload: { messageId: 'm1', replyTo: 'd1', session: { id: 's1' }, text: 'done' } });
   router.handle('F', { type: 'msg.ask', payload: { messageId: 'm2', questionId: 'q1', session: { id: 's1' }, text: 'ok?', options: ['允许一次'] } });
@@ -22,8 +23,9 @@ test('complete/ask 注入原会话，answer 回子端', () => {
   // 询问交给被询问节点的 Agent 处理：本机思考 / 原生 UI / 请示上级，而不是留在设置页。
   assert.match(injected[1][2], /ask_user_question/);
   assert.match(injected[1][2], /COW Dev/);
-  assert.match(injected[1][2], /cow_send\(peer="更上级", kind="ask"/);
+  assert.match(injected[1][2], /cow_send\(peerId="cow_parent", kind="ask"/);
   assert.doesNotMatch(injected[1][2], /设置页处理/);
+  assert.doesNotMatch(injected[1][2], /peer="更上级"/);
   assert.equal(router.pending().length, 1);
   router.answer('q1', '允许一次');
   assert.equal(sent[0].peer, 'F');

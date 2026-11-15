@@ -272,8 +272,10 @@ export function createToolDefinitions({ instance, channel, peers, files, doctor,
         const replyTo = String(args?.replyTo ?? '').trim();
         if (replyTo) {
           if (typeof router?.answer !== 'function') throw new Error('当前节点不能回答提问');
+          const asked = (router.pending?.() ?? []).find((item) => item.questionId === replyTo);
           const answered = router.answer(replyTo, text);
-          activity?.add?.({ kind: 'message', text: `回答 ${replyTo}：${text.slice(0, 80)}`, peer: target, from: instance.displayName || instance.instanceId, to: target, messageId: replyTo, status: answered?.status ?? 'sent' });
+          const to = asked?.peer || findPeer(target)?.label || target;
+          activity?.add?.({ kind: 'message', text: `回答 ${replyTo}：${text.slice(0, 80)}`, peer: to, from: instance.displayName || instance.instanceId, to, messageId: replyTo, status: answered?.status ?? 'sent' });
           return answered;
         }
         const kind = String(args?.kind ?? 'dispatch');

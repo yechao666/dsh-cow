@@ -5,13 +5,14 @@
 const SEEN_LIMIT = 512;
 
 export class MessageRouter {
-  constructor({ channel, inject, logger, selfName, parentLabel, questionTtlMs = 10 * 60_000 }) {
+  constructor({ channel, inject, logger, selfName, parentLabel, parentId, questionTtlMs = 10 * 60_000 }) {
     this.channel = channel;
     this.inject = inject;
     this.logger = logger ?? console;
     this.questionTtlMs = questionTtlMs;
     this.selfName = typeof selfName === 'function' ? selfName : () => String(selfName ?? '本机');
     this.parentLabel = typeof parentLabel === 'function' ? parentLabel : () => String(parentLabel ?? '');
+    this.parentId = typeof parentId === 'function' ? parentId : () => String(parentId ?? '');
     this.questions = new Map(); // questionId -> { peer, envelope }
     this.seen = new Set();
   }
@@ -48,7 +49,8 @@ export class MessageRouter {
       const origin = payload?.session?.id;
       if (origin) {
         const self = this.selfName();
-        const parent = this.parentLabel();
+        const parent = this.parentId() || this.parentLabel();
+        const asker = String(payload?.peerId || fromId || from);
         const lines = [
           `[COW 询问] 来自 ${from}（questionId: ${questionId}）`,
           '',
@@ -57,8 +59,8 @@ export class MessageRouter {
           `这条询问由你（${self}）处理，不要留给设置页：`,
           '1. 先自己判断能否直接答复；',
           '2. 涉及人工决策时，调用 ask_user_question 让用户在本机界面输入；',
-          ...(parent ? [`3. 需要上级拍板时，用 cow_send(peer="${parent}", kind="ask", message="…") 向上级请示；`] : []),
-          `最后用 cow_send(peer="${from}", replyTo="${questionId}", message="最终答复") 发回。`,
+          ...(parent ? [`3. 需要上级拍板时，用 cow_send(peerId="${parent}", kind="ask", message="…") 向上级请示；`] : []),
+          `最后用 cow_send(peerId="${asker}", replyTo="${questionId}", message="最终答复") 发回。`,
         ];
         this.inject(origin, from, lines.join('\n'), 'ask', payload);
       }
