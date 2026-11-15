@@ -35,7 +35,7 @@
 - 环境：
   - 主：DSH_HOME=`/tmp/dsh-cow-dev`，web 端口随机，COW 60001。
   - 子：DSH_HOME=`/tmp/dsh-cow-child`，由 `scripts/join-child.mjs` 生成，连主 60001。
-  - 主密码：`cow-dev-shared-password-2026`（仅本机临时环境）。
+  - 主密码：临时开发密码，不写入文档；需要时在设置页重置。
 - dispatch → complete：
   - 主 Agent 调用 `cow_send` 后立即结束回合（turn/end completed）。
   - 子端按工作区创建/复用 `session-cow-*` 会话并真实执行，回复后 `msg.complete` 回到主端。
