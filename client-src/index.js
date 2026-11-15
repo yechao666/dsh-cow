@@ -1010,7 +1010,7 @@ function CowNodeBadge({ wide }) {
   const connected = Number(state.stats?.connected) || 0;
   const peerId = String(instance.peerId || '');
   const online = connected > 0;
-  const title = `本机 COW 节点：${name}\n${peerId}${online ? `\n${connected} 个连接` : '\n未连接'}`;
+  const title = `本机 COW 节点：${name}\n${peerId}${online ? `\n${connected} 个连接` : '\n未连接'}\n点击查看 COW 状态`;
   const openStatus = () => {
     try { ctxLayout?.selectPanel?.('cow-activity'); } catch { /* 面板不可用时忽略 */ }
   };
@@ -1019,7 +1019,7 @@ function CowNodeBadge({ wide }) {
     return h('button', {
       type: 'button',
       title,
-      'aria-label': `本机 COW 节点：${name}`,
+      'aria-label': `打开 COW 状态：${name}`,
       onClick: openStatus,
       onMouseEnter: () => setHover(true),
       onMouseLeave: () => setHover(false),
@@ -1043,7 +1043,7 @@ function CowNodeBadge({ wide }) {
   return h('button', {
     type: 'button',
     title,
-    'aria-label': `本机 COW 节点：${name}`,
+    'aria-label': `打开 COW 状态：${name}`,
     onClick: openStatus,
     onMouseEnter: () => setHover(true),
     onMouseLeave: () => setHover(false),
@@ -1063,7 +1063,7 @@ function CowNodeBadge({ wide }) {
       h('span', { style: { fontSize: 12, fontWeight: 600, lineHeight: 1.35, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, name),
       h('span', { style: { display: 'flex', alignItems: 'center', gap: 5, minWidth: 0, fontSize: 10.5, lineHeight: 1.3, color: 'var(--dsw-alias-label-tertiary)' } },
         h('span', { style: { width: 6, height: 6, borderRadius: 999, flex: 'none', background: online ? '#34c38f' : '#94a3b8' } }),
-        h('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, `${role} · ${online ? `${connected} 连接` : '未连接'}`),
+        h('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, `COW · ${role} · ${online ? `${connected} 连接` : '未连接'}`),
       ),
     ),
   );
@@ -1078,10 +1078,6 @@ const COW_RIGHT_ID = 'dsh-cow/status';
 
 function CowRightStatus() {
   return h(CowActivityPanel, null);
-}
-
-function CowStatusIcon() {
-  return h(CowActivityIcon, { size: 16 });
 }
 
 export function apply(ctx) {
@@ -1116,14 +1112,6 @@ export function apply(ctx) {
       key: 'cow-activity',
     }, CowActivityPanel));
   } catch { /* 主面板插槽不可用时忽略 */ }
-  try {
-    ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
-      name: 'sidebar.panellist',
-      id: 'cow-activity',
-      order: 20,
-      label: 'COW状态',
-    }, CowStatusIcon));
-  } catch { /* 侧边栏插槽不可用时忽略 */ }
   try {
     ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({
       name: 'sidebar.footer.action',
