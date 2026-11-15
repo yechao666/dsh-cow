@@ -14,6 +14,9 @@ const api = (path) => new URL(`api/cow/${path}`, document.baseURI).toString();
 const S = {
   wrap: { padding: '0 0 24px', color: 'var(--dsw-alias-label-primary)' },
   lead: { margin: '0 0 16px', fontSize: 12, color: 'var(--dsw-alias-label-secondary)', lineHeight: 1.7 },
+  tabs: { display: 'flex', gap: 20, margin: '2px 0 14px', width: '100%', boxSizing: 'border-box', borderBottom: '1px solid var(--dsw-alias-border-l2)' },
+  tab: { border: 0, padding: '8px 2px 9px', marginBottom: -1, background: 'transparent', borderBottom: '2px solid transparent', color: 'var(--dsw-alias-label-secondary)', fontSize: 13, fontWeight: 500, cursor: 'pointer' },
+  tabActive: { border: 0, padding: '8px 2px 9px', marginBottom: -1, background: 'transparent', borderBottom: '2px solid var(--dsw-alias-brand-primary)', color: 'var(--dsw-alias-label-primary)', fontSize: 13, fontWeight: 600, cursor: 'pointer' },
   card: { border: '1px solid var(--dsw-alias-border-l2)', borderRadius: 'var(--dsw-radius-md, 8px)', padding: '14px 16px', marginBottom: 12, background: 'var(--dsw-alias-bg-l1)' },
   cardHead: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 10 },
   cardTitle: { margin: 0, fontSize: 13, fontWeight: 600 },
@@ -24,6 +27,11 @@ const S = {
   textarea: { flex: '1 1 auto', minWidth: 120, minHeight: 56, boxSizing: 'border-box', padding: '7px 10px', borderRadius: 'var(--dsw-radius-sm, 6px)', border: '1px solid var(--dsw-alias-border-l2)', background: 'var(--dsw-alias-bg-l2)', color: 'var(--dsw-alias-label-primary)', fontSize: 12, outline: 'none', resize: 'vertical' },
   button: { border: '1px solid var(--dsw-alias-button-primary-fill)', background: 'var(--dsw-alias-button-primary-fill)', color: 'var(--dsw-alias-label-primary-foreground)', borderRadius: 'var(--dsw-radius-sm, 6px)', padding: '6px 14px', fontSize: 12, fontWeight: 500, cursor: 'pointer' },
   secondary: { border: '1px solid var(--dsw-alias-border-l2)', background: 'var(--dsw-alias-bg-l2)', color: 'var(--dsw-alias-label-primary)', borderRadius: 'var(--dsw-radius-sm, 6px)', padding: '6px 12px', fontSize: 12, cursor: 'pointer' },
+  danger: { border: '1px solid color-mix(in srgb, var(--dsw-alias-label-error) 30%, transparent)', background: 'transparent', color: 'var(--dsw-alias-label-error)', borderRadius: 'var(--dsw-radius-sm, 6px)', padding: '6px 12px', fontSize: 12, cursor: 'pointer' },
+  badge: { display: 'inline-flex', alignItems: 'center', padding: '1px 8px', borderRadius: 999, fontSize: 11, background: 'var(--dsw-alias-bg-l2)', color: 'var(--dsw-alias-label-primary)', border: '1px solid var(--dsw-alias-border-l2)' },
+  badgeOn: { display: 'inline-flex', alignItems: 'center', padding: '1px 8px', borderRadius: 999, fontSize: 11, background: 'rgba(52,199,89,.14)', color: '#2ea043', border: '1px solid rgba(52,199,89,.35)' },
+  badgeOff: { display: 'inline-flex', alignItems: 'center', padding: '1px 8px', borderRadius: 999, fontSize: 11, background: 'var(--dsw-alias-bg-l2)', color: 'var(--dsw-alias-label-secondary)', border: '1px solid var(--dsw-alias-border-l2)' },
+  code: { flex: '1 1 auto', minWidth: 120, padding: '7px 10px', borderRadius: 'var(--dsw-radius-sm, 6px)', border: '1px solid var(--dsw-alias-border-l2)', background: 'var(--dsw-alias-bg-l2)', color: 'var(--dsw-alias-label-primary)', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 11.5, wordBreak: 'break-all' },
   hint: { fontSize: 11, color: 'var(--dsw-alias-label-tertiary)', lineHeight: 1.6 },
   meta: { fontSize: 11, color: 'var(--dsw-alias-label-secondary)' },
   err: { fontSize: 12, color: 'var(--dsw-alias-label-error)' },
@@ -779,27 +787,36 @@ function field(label, control) {
 function CoCowSettingsPage() {
   const [data, setData] = React.useState(null);
   const [form, setForm] = React.useState(null);
+  const [savedForm, setSavedForm] = React.useState(null);
+  const [tab, setTab] = React.useState('node');
   const [advanced, setAdvanced] = React.useState(false);
   const [busy, setBusy] = React.useState('');
   const [message, setMessage] = React.useState('');
   const [error, setError] = React.useState('');
   const [pwdInput, setPwdInput] = React.useState('');
   const [pwdConfigured, setPwdConfigured] = React.useState(false);
+  const [showPwd, setShowPwd] = React.useState(false);
   const [parentUrl, setParentUrl] = React.useState('');
   const [parentPassword, setParentPassword] = React.useState('');
+  const [savedParent, setSavedParent] = React.useState({ url: '', password: '' });
+  const [showParentPwd, setShowParentPwd] = React.useState(false);
+
+  const makeForm = (next) => ({
+    displayName: next?.config?.displayName ?? '',
+    capabilityNote: next?.config?.capabilityNote ?? '',
+    allowedRoots: next?.config?.allowedRoots ?? '',
+    listenHost: next?.config?.listenHost ?? '127.0.0.1',
+    listenPort: next?.config?.listenPort ?? 0,
+    maxFileMB: next?.config?.maxFileMB ?? 50,
+    maxConcurrentFiles: next?.config?.maxConcurrentFiles ?? 4,
+    agentPreset: next?.config?.agentPreset ?? '',
+  });
 
   const apply = React.useCallback((next) => {
+    const built = makeForm(next);
     setData(next);
-    setForm({
-      displayName: next?.config?.displayName ?? '',
-      capabilityNote: next?.config?.capabilityNote ?? '',
-      allowedRoots: next?.config?.allowedRoots ?? '',
-      listenHost: next?.config?.listenHost ?? '127.0.0.1',
-      listenPort: next?.config?.listenPort ?? 0,
-      maxFileMB: next?.config?.maxFileMB ?? 50,
-      maxConcurrentFiles: next?.config?.maxConcurrentFiles ?? 4,
-      agentPreset: next?.config?.agentPreset ?? '',
-    });
+    setForm(built);
+    setSavedForm(built);
   }, []);
 
   const load = React.useCallback(async () => {
@@ -817,8 +834,10 @@ function CoCowSettingsPage() {
       }
       if (parent?.ok) {
         const body = await parent.json().catch(() => null);
-        if (body?.url) setParentUrl(body.url);
-        if (body?.password) setParentPassword(body.password);
+        const nextParent = { url: String(body?.url ?? ''), password: String(body?.password ?? '') };
+        setParentUrl(nextParent.url);
+        setParentPassword(nextParent.password);
+        setSavedParent(nextParent);
       }
       const payload = await state.json();
       if (!state.ok) throw new Error(payload?.error?.message || `HTTP ${state.status}`);
@@ -834,10 +853,18 @@ function CoCowSettingsPage() {
     void load();
   }, [load]);
 
+  React.useEffect(() => {
+    if (!message) return undefined;
+    const timer = setTimeout(() => setMessage(''), 4000);
+    return () => clearTimeout(timer);
+  }, [message]);
+
   const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
+  const dirty = Boolean(form && savedForm && JSON.stringify(form) !== JSON.stringify(savedForm));
+  const parentDirty = parentUrl.trim() !== savedParent.url.trim() || parentPassword !== savedParent.password;
 
   const saveSettings = async () => {
-    if (busy) return;
+    if (busy || !dirty) return;
     setBusy('save');
     setError('');
     setMessage('');
@@ -852,7 +879,7 @@ function CoCowSettingsPage() {
       if (!response.ok) throw new Error(payload?.error?.message || `HTTP ${response.status}`);
       apply(payload);
       window.dispatchEvent(new Event('dsh-cow:state-changed'));
-      setMessage('已保存。');
+      setMessage('设置已保存。');
     } catch (saveError) {
       setError(saveError.message);
     } finally {
@@ -861,7 +888,7 @@ function CoCowSettingsPage() {
   };
 
   const savePassword = async () => {
-    if (busy || !pwdInput) return;
+    if (busy || pwdInput.length < 12) return;
     setBusy('password');
     setError('');
     setMessage('');
@@ -876,8 +903,9 @@ function CoCowSettingsPage() {
       if (!response.ok) throw new Error(payload?.error?.message || `HTTP ${response.status}`);
       setPwdConfigured(Boolean(payload?.configured));
       setPwdInput('');
+      setShowPwd(false);
       window.dispatchEvent(new Event('dsh-cow:state-changed'));
-      setMessage('连接密码已保存。');
+      setMessage('连接密码已保存；已连接的子节点需要用新密码重连。');
     } catch (saveError) {
       setError(saveError.message);
     } finally {
@@ -886,7 +914,12 @@ function CoCowSettingsPage() {
   };
 
   const saveParent = async () => {
-    if (busy) return;
+    if (busy || !parentDirty) return;
+    const url = parentUrl.trim();
+    if (url && !/^(https?|wss?):\/\//i.test(url)) {
+      setError('上级地址必须是 ws(s):// 或 http(s):// URL');
+      return;
+    }
     setBusy('parent');
     setError('');
     setMessage('');
@@ -895,16 +928,67 @@ function CoCowSettingsPage() {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ url: parentUrl.trim(), password: parentPassword }),
+        body: JSON.stringify({ url, password: parentPassword }),
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload?.error?.message || `HTTP ${response.status}`);
+      setSavedParent({ url, password: parentPassword });
       window.dispatchEvent(new Event('dsh-cow:state-changed'));
-      setMessage(payload?.url ? '已保存上级地址，正在重连。' : '已清除上级地址。');
+      setMessage(url ? '上级配置已保存，正在建立长连接。' : '已清除上级配置。');
+      setTimeout(() => { void load(); }, 700);
     } catch (saveError) {
       setError(saveError.message);
     } finally {
       setBusy('');
+    }
+  };
+
+  const clearParent = async () => {
+    if (busy) return;
+    if (!window.confirm('清除上级地址和密码？')) return;
+    setBusy('parent');
+    setError('');
+    setMessage('');
+    try {
+      const response = await fetch(api('parent'), {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ url: '', password: '' }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload?.error?.message || `HTTP ${response.status}`);
+      setParentUrl('');
+      setParentPassword('');
+      setSavedParent({ url: '', password: '' });
+      window.dispatchEvent(new Event('dsh-cow:state-changed'));
+      setMessage('已清除上级配置。');
+      setTimeout(() => { void load(); }, 500);
+    } catch (clearError) {
+      setError(clearError.message);
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const generatePassword = () => {
+    const bytes = new Uint8Array(32);
+    crypto.getRandomValues(bytes);
+    const key = btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    setPwdInput(key);
+    setShowPwd(true);
+    setMessage('已生成随机密钥，保存后生效。');
+  };
+
+  const copyAddress = async () => {
+    const endpoint = String(data?.instance?.endpoint ?? '');
+    const wsUrl = endpoint ? `${endpoint.replace(/^http/, 'ws').replace(/\/$/, '')}/channel` : '';
+    if (!wsUrl) { setError('连接地址还没就绪'); return; }
+    try {
+      await navigator.clipboard.writeText(wsUrl);
+      setMessage('连接地址已复制。');
+    } catch {
+      setError('复制失败，请手动选择连接地址');
     }
   };
 
@@ -913,73 +997,160 @@ function CoCowSettingsPage() {
   }
 
   const instance = data.instance ?? {};
+  const runningVersion = String(data.pluginVersion || instance.version || '');
+  const installedVersion = String(data.installedVersion || instance.installedVersion || runningVersion);
+  const versionMismatch = Boolean(installedVersion && runningVersion && installedVersion !== runningVersion);
+  const parent = data.parent ?? {};
+  const parentNode = parent.node ?? null;
+  const wsUrl = instance.endpoint ? `${String(instance.endpoint).replace(/^http/, 'ws').replace(/\/$/, '')}/channel` : '';
+  const statusLine = error
+    ? h('div', { style: { ...S.err, marginBottom: 10, padding: '8px 10px', borderRadius: 8, background: 'rgba(197,48,48,0.08)' } }, error)
+    : message
+      ? h('div', { style: { ...S.ok, marginBottom: 10, padding: '8px 10px', borderRadius: 8, background: 'rgba(52,199,89,0.08)' } }, message)
+      : null;
+  const tabButton = (id, label) => h('button', {
+    type: 'button', role: 'tab', 'aria-selected': tab === id,
+    style: tab === id ? S.tabActive : S.tab,
+    onClick: () => { setTab(id); setMessage(''); setError(''); },
+  }, label);
+  const actionStyle = (disabled) => ({ ...S.button, opacity: disabled ? 0.55 : 1, cursor: disabled ? 'not-allowed' : 'pointer' });
+  const saveRow = (disabled, label, hintText) => h('div', { style: { ...S.row, marginTop: 12, justifyContent: 'space-between' } },
+    h('span', { style: S.hint }, hintText ?? (dirty ? '有未保存的修改' : '所有修改已保存')),
+    h('button', { type: 'button', style: actionStyle(Boolean(busy) || disabled), disabled: Boolean(busy) || disabled, onClick: () => void saveSettings() }, busy === 'save' ? '保存中…' : label),
+  );
+  const passwordStrength = pwdInput.length >= 32
+    ? { label: `强（${pwdInput.length} 位）`, style: S.badgeOn }
+    : pwdInput.length >= 12
+      ? { label: `中（${pwdInput.length} 位）`, style: S.badgeOff }
+      : { label: pwdInput ? `太短（${pwdInput.length} 位）` : '', style: S.badgeOff };
 
-  return h('div', { style: S.wrap },
-    h('p', { style: S.lead }, 'dsh-cow 让多台 DSH 通过一条 WebSocket 长连接协同：主 DSH 派消息，子 DSH 回合结束自动回报，ask/answer 回到同一会话。详细状态点侧边栏底部的节点按钮打开。'),
-
-    error ? h('div', { style: { ...S.err, marginBottom: 10 } }, error) : null,
-    message ? h('div', { style: { ...S.ok, marginBottom: 10 } }, message) : null,
-
-    h('div', { style: S.card },
-      h('div', { style: S.cardHead },
-        h('h3', { style: S.cardTitle }, '本机节点'),
-        h('div', { style: S.row },
-          h(PanelChip, { tone: instance.role === 'member' ? 'neutral' : 'on' }, instance.role === 'member' ? '子 DSH' : '主 DSH'),
-          h(PanelChip, null, `v${data.pluginVersion || instance.version || ''}`),
-        ),
+  const nodePanel = h('div', { style: S.card },
+    h('div', { style: S.cardHead },
+      h('h3', { style: S.cardTitle }, '本机节点'),
+      h('div', { style: S.row },
+        h(PanelChip, { tone: instance.role === 'member' ? 'neutral' : 'on' }, instance.role === 'member' ? '子 DSH' : '主 DSH'),
+        h(PanelChip, null, `运行 v${runningVersion || '-'}`),
+        versionMismatch ? h(PanelChip, { tone: 'brand' }, `已安装 v${installedVersion}`) : null,
       ),
-      h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12 } },
-        field('节点名称', h('input', { style: S.inputFlex, value: form.displayName, placeholder: '留空用计算机名', onChange: (event) => update('displayName', event.target.value) })),
-        field('子会话 preset', h('input', { style: S.inputFlex, value: form.agentPreset, placeholder: '留空用 profile 默认', onChange: (event) => update('agentPreset', event.target.value) })),
-        field('工作区根目录', h('textarea', {
-          style: { ...S.textarea, gridColumn: '1 / -1' },
-          value: form.allowedRoots,
-          placeholder: '每行一个绝对路径',
-          onChange: (event) => update('allowedRoots', event.target.value),
-        })),
-      ),
-      h('div', { style: { ...S.row, marginTop: 12, justifyContent: 'space-between' } },
-        h('button', { type: 'button', style: S.secondary, onClick: () => setAdvanced((value) => !value) }, advanced ? '收起高级设置' : '高级设置'),
-        h('button', { type: 'button', style: S.button, disabled: busy === 'save', onClick: () => void saveSettings() }, busy === 'save' ? '保存中…' : '保存'),
-      ),
-      advanced
-        ? h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--dsw-alias-border-l2)' } },
-            field('监听地址', h('input', { style: S.inputFlex, value: form.listenHost, onChange: (event) => update('listenHost', event.target.value) })),
-            field('监听端口', h('input', { style: S.inputFlex, type: 'number', min: 0, value: form.listenPort, onChange: (event) => update('listenPort', event.target.value) })),
-            field('文件上限 MB', h('input', { style: S.inputFlex, type: 'number', min: 1, max: 1024, value: form.maxFileMB, onChange: (event) => update('maxFileMB', event.target.value) })),
-            field('并发传输', h('input', { style: S.inputFlex, type: 'number', min: 1, max: 16, value: form.maxConcurrentFiles, onChange: (event) => update('maxConcurrentFiles', event.target.value) })),
-            field('能力说明', h('textarea', { style: S.textarea, value: form.capabilityNote, onChange: (event) => update('capabilityNote', event.target.value) })),
-          )
-        : null,
     ),
+    h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12 } },
+      field('节点名称', h('input', { style: S.inputFlex, value: form.displayName, placeholder: '留空用计算机名', onChange: (event) => update('displayName', event.target.value) })),
+      field('子会话 preset', h('input', { style: S.inputFlex, value: form.agentPreset, placeholder: '留空用 profile 默认', onChange: (event) => update('agentPreset', event.target.value) })),
+      h('div', { style: { gridColumn: '1 / -1' } }, field('工作区根目录', h('textarea', {
+        style: { ...S.textarea, minHeight: 64 },
+        value: form.allowedRoots,
+        placeholder: '每行一个绝对路径；留空使用默认数据目录',
+        onChange: (event) => update('allowedRoots', event.target.value),
+      }))),
+    ),
+    h('div', { style: { ...S.row, marginTop: 12, justifyContent: 'space-between' } },
+      h('button', { type: 'button', style: S.secondary, onClick: () => setAdvanced((value) => !value) }, advanced ? '收起高级设置' : '高级设置'),
+      h('span', { style: S.hint }, '监听地址/端口在「作为主 DSH」里配置'),
+    ),
+    advanced
+      ? h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--dsw-alias-border-l2)' } },
+          h('div', { style: { gridColumn: '1 / -1' } }, field('能力说明', h('textarea', { style: { ...S.textarea, minHeight: 52 }, value: form.capabilityNote, onChange: (event) => update('capabilityNote', event.target.value) }))),
+          field('文件上限 MB', h('input', { style: S.inputFlex, type: 'number', min: 1, max: 1024, value: form.maxFileMB, onChange: (event) => update('maxFileMB', event.target.value) })),
+          field('并发传输', h('input', { style: S.inputFlex, type: 'number', min: 1, max: 16, value: form.maxConcurrentFiles, onChange: (event) => update('maxConcurrentFiles', event.target.value) })),
+        )
+      : null,
+    saveRow(!dirty, '保存节点设置'),
+  );
 
+  const mainPanel = h(React.Fragment, null,
+    h('div', { style: S.card },
+      h('div', { style: S.cardHead }, h('h3', { style: S.cardTitle }, '服务设置'), h('span', { style: S.hint }, '子 DSH 连到这里')),
+      h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12 } },
+        field('监听地址', h('select', {
+          style: { ...S.inputFlex, height: 33 },
+          value: form.listenHost,
+          onChange: (event) => update('listenHost', event.target.value),
+        },
+          h('option', { value: '127.0.0.1' }, '127.0.0.1（仅本机）'),
+          h('option', { value: '0.0.0.0' }, '0.0.0.0（所有网卡，远端可连）'),
+          !['127.0.0.1', '0.0.0.0'].includes(form.listenHost) ? h('option', { value: form.listenHost }, form.listenHost) : null,
+        )),
+        field('监听端口', h('input', { style: S.inputFlex, type: 'number', min: 0, max: 65535, value: form.listenPort, onChange: (event) => update('listenPort', event.target.value) })),
+        h('div', { style: { gridColumn: '1 / -1' } }, field('连接地址', h('div', { style: S.row },
+          h('code', { style: S.code }, wsUrl || '保存并监听后生成'),
+          h('button', { type: 'button', style: { ...S.secondary, opacity: wsUrl ? 1 : 0.55, cursor: wsUrl ? 'pointer' : 'not-allowed' }, disabled: !wsUrl, onClick: () => void copyAddress() }, '复制'),
+        ))),
+        h('div', { style: { gridColumn: '1 / -1' } }, h('span', { style: S.hint }, '远端机器要能访问这个地址：监听 0.0.0.0 并使用局域网 IP；只监听 127.0.0.1 时仅本机可用。')),
+      ),
+      saveRow(!dirty, '保存服务设置'),
+    ),
     h('div', { style: S.card },
       h('div', { style: S.cardHead },
         h('h3', { style: S.cardTitle }, '连接密码'),
-        h(PanelChip, { tone: pwdConfigured ? 'on' : 'off' }, pwdConfigured ? '已配置' : '未配置'),
+        h('div', { style: S.row },
+          h('span', { style: pwdConfigured ? S.badgeOn : S.badgeOff }, pwdConfigured ? '已设置' : '未设置'),
+          passwordStrength.label ? h('span', { style: passwordStrength.style }, passwordStrength.label) : null,
+        ),
       ),
       h('div', { style: S.row },
-        h('input', { style: S.inputFlex, type: 'password', value: pwdInput, placeholder: '至少 12 个字符', onChange: (event) => setPwdInput(event.target.value) }),
-        h('button', { type: 'button', style: S.button, disabled: busy === 'password' || pwdInput.trim().length < 12, onClick: () => void savePassword() }, busy === 'password' ? '保存中…' : '保存'),
+        h('input', { style: S.inputFlex, type: showPwd ? 'text' : 'password', value: pwdInput, placeholder: '至少 12 个字符；留空表示不修改', onChange: (event) => setPwdInput(event.target.value) }),
+        h('button', { type: 'button', style: S.secondary, onClick: () => setShowPwd((value) => !value) }, showPwd ? '隐藏' : '显示'),
+        h('button', { type: 'button', style: S.secondary, title: '生成 32 字节随机密钥', onClick: generatePassword }, '生成随机密钥'),
+        h('button', { type: 'button', style: actionStyle(Boolean(busy) || pwdInput.length < 12), disabled: Boolean(busy) || pwdInput.length < 12, onClick: () => void savePassword() }, busy === 'password' ? '保存中…' : '保存密码'),
       ),
-      h('div', { style: { ...S.hint, marginTop: 8 } }, '同一密码用于所有子 DSH；修改后已连接的节点需要重新连接。'),
+      h('div', { style: { ...S.hint, marginTop: 8 } }, '同一密码用于所有子 DSH；修改后已连接的节点需要重新连接。密码不会明文回显。'),
     ),
-
     h('div', { style: S.card },
-      h('div', { style: S.cardHead },
-        h('h3', { style: S.cardTitle }, '作为子 DSH：连到上级'),
-        h(PanelChip, { tone: data.parent?.connected ? 'on' : 'off' }, data.parent?.connected ? '已连接' : '未连接'),
-      ),
-      h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12 } },
-        field('上级地址', h('input', { style: S.inputFlex, value: parentUrl, placeholder: 'ws://192.168.1.10:59999/cow/v1/channel', onChange: (event) => setParentUrl(event.target.value) })),
-        field('共用密码', h('input', { style: S.inputFlex, type: 'password', value: parentPassword, onChange: (event) => setParentPassword(event.target.value) })),
-      ),
-      h('div', { style: { ...S.row, marginTop: 12 } },
-        h('button', { type: 'button', style: S.button, disabled: busy === 'parent', onClick: () => void saveParent() }, busy === 'parent' ? '保存中…' : '保存并重连'),
+      h('div', { style: S.cardHead }, h('h3', { style: S.cardTitle }, '插件包'), h('span', { style: S.hint }, `运行 v${runningVersion}${versionMismatch ? ` · 已安装 v${installedVersion}` : ''}`)),
+      h('div', { style: S.row },
+        h('a', {
+          href: api('package'),
+          download: `dsh-cow-${installedVersion || runningVersion}.tgz`,
+          style: { ...S.secondary, textDecoration: 'none', display: 'inline-flex', alignItems: 'center' },
+        }, `下载 dsh-cow-${installedVersion || runningVersion}.tgz`),
+        h('span', { style: S.hint }, '公开下载，无 token；子端自动升级要求 >= 1.31.0。'),
       ),
     ),
+  );
 
-    h('div', { style: S.hint }, '纯消息架构：消息直接进入对方会话输入队列，不建任务、不轮询。'),
+  const childPanel = h('div', { style: S.card },
+    h('div', { style: S.cardHead },
+      h('h3', { style: S.cardTitle }, '上级连接'),
+      h('div', { style: S.row },
+        h('span', { style: parent.connected ? S.badgeOn : S.badgeOff }, parent.connected ? '已连接（WebSocket）' : '未连接'),
+        parentNode?.version ? h('span', { style: S.meta }, `上级 v${parentNode.version}`) : null,
+      ),
+    ),
+    h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12 } },
+      h('div', { style: { gridColumn: '1 / -1' } }, field('上级地址', h('input', { style: S.inputFlex, placeholder: 'ws://192.168.1.10:60001/cow/v1/channel', value: parentUrl, onChange: (event) => setParentUrl(event.target.value) }))),
+      field('连接密码', h('div', { style: S.row },
+        h('input', { style: S.inputFlex, type: showParentPwd ? 'text' : 'password', placeholder: '主 DSH 设置的连接密码', value: parentPassword, onChange: (event) => setParentPassword(event.target.value) }),
+        h('button', { type: 'button', style: S.secondary, onClick: () => setShowParentPwd((value) => !value) }, showParentPwd ? '隐藏' : '显示'),
+      )),
+      parentNode?.uuid ? h('div', { style: { gridColumn: '1 / -1' } }, field('上级 ID', h('span', { style: { ...S.mono, paddingTop: 7, wordBreak: 'break-all' } }, parentNode.uuid))) : null,
+      parentNode?.description ? h('div', { style: { gridColumn: '1 / -1' } }, field('上级说明', h('div', { style: { ...S.meta, whiteSpace: 'pre-wrap', lineHeight: 1.7, paddingTop: 6 } }, String(parentNode.description).slice(0, 400)))) : null,
+    ),
+    h('div', { style: { ...S.row, marginTop: 12, justifyContent: 'space-between' } },
+      h('div', { style: S.row },
+        h('span', { style: S.hint }, parentDirty ? '有未保存的修改' : '所有修改已保存'),
+        h('button', { type: 'button', style: { ...S.danger, opacity: Boolean(busy) || (!parentUrl && !parentPassword) ? 0.55 : 1, cursor: Boolean(busy) || (!parentUrl && !parentPassword) ? 'not-allowed' : 'pointer' }, disabled: Boolean(busy) || (!parentUrl && !parentPassword), onClick: () => void clearParent() }, '清除'),
+      ),
+      h('button', { type: 'button', style: actionStyle(Boolean(busy) || !parentDirty), disabled: Boolean(busy) || !parentDirty, onClick: () => void saveParent() }, busy === 'parent' ? '连接中…' : '保存并连接'),
+    ),
+    h('div', { style: { ...S.hint, marginTop: 8 } }, '保存后子 DSH 会主动建立并维持 WebSocket 长连接；断线自动重连。'),
+  );
+
+  return h('div', { style: S.wrap },
+    h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 8 } },
+      h('div', { style: { display: 'grid', gap: 2 } },
+        h('h2', { style: { margin: 0, fontSize: 16, fontWeight: 700, letterSpacing: '-0.2px' } }, 'COW 协同'),
+        h('span', { style: S.hint }, '节点标识、主端监听与子端连接'),
+      ),
+      h('div', { style: S.row },
+        h(PanelChip, { tone: instance.role === 'member' ? 'neutral' : 'on' }, instance.role === 'member' ? '子 DSH' : '主 DSH'),
+        h(PanelChip, null, `运行 v${runningVersion || '-'}`),
+        versionMismatch ? h(PanelChip, { tone: 'brand' }, `已安装 v${installedVersion}`) : null,
+      ),
+    ),
+    h('div', { style: S.tabs }, tabButton('node', '节点'), tabButton('main', '作为主 DSH'), tabButton('child', '作为子 DSH')),
+    statusLine,
+    tab === 'node' ? nodePanel : tab === 'main' ? mainPanel : childPanel,
+    h('div', { style: { ...S.hint, marginTop: 4 } }, '纯消息架构：消息直接进入对方会话输入队列，不建任务、不轮询。'),
   );
 }
 
@@ -1086,7 +1257,6 @@ function CowNodeBadge({ wide }) {
   );
 }
 
-// ── 注册 ────────────────────────────────────────────────────────
 
 export const name = 'dsh-cow-client';
 export const inject = ['slots', 'sidebarRightTabs', 'sidebarRight', 'layout'];
