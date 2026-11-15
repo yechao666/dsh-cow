@@ -5,10 +5,13 @@
 const SEEN_LIMIT = 512;
 
 export class MessageRouter {
-  constructor({ channel, inject, logger }) {
+  constructor({ channel, inject, logger, selfName, parentLabel, questionTtlMs = 10 * 60_000 }) {
     this.channel = channel;
     this.inject = inject;
     this.logger = logger ?? console;
+    this.questionTtlMs = questionTtlMs;
+    this.selfName = typeof selfName === 'function' ? selfName : () => String(selfName ?? '本机');
+    this.parentLabel = typeof parentLabel === 'function' ? parentLabel : () => String(parentLabel ?? '');
     this.questions = new Map(); // questionId -> { peer, envelope }
     this.seen = new Set();
   }
@@ -32,20 +35,32 @@ export class MessageRouter {
       if (origin) this.inject(origin, from, `[COW 完成] 来自 ${from}${payload?.replyTo ? `（回复消息 ${payload.replyTo}）` : ''}\n\n${text}`, 'complete', payload);
       return true;
     }
+    if (type === 'msg.ask.cancel') {
+      const questionId = String(payload?.questionId ?? payload?.replyTo ?? '');
+      if (questionId) this.questions.delete(questionId);
+      return true;
+    }
     if (type === 'msg.ask') {
       const questionId = payload?.questionId ?? payload?.messageId;
       if (!questionId) return false;
       if (!this.#firstSeen(payload?.messageId ?? questionId)) return true;
-      this.questions.set(questionId, { peer: from, envelope: payload });
+      this.questions.set(questionId, { peer: from, envelope: payload, at: Date.now() });
       const origin = payload?.session?.id;
       if (origin) {
-        this.inject(
-          origin,
-          from,
-          `[COW 询问] 来自 ${from}\n\n${payload.text ?? ''}\n\n用 cow_send(peer="${from}", replyTo="${questionId}", message="…") 回答。`,
-          'ask',
-          payload,
-        );
+        const self = this.selfName();
+        const parent = this.parentLabel();
+        const lines = [
+          `[COW 询问] 来自 ${from}（questionId: ${questionId}）`,
+          '',
+          String(payload.text ?? ''),
+          '',
+          `这条询问由你（${self}）处理，不要留给设置页：`,
+          '1. 先自己判断能否直接答复；',
+          '2. 涉及人工决策时，调用 ask_user_question 让用户在本机界面输入；',
+          ...(parent ? [`3. 需要上级拍板时，用 cow_send(peer="${parent}", kind="ask", message="…") 向上级请示；`] : []),
+          `最后用 cow_send(peer="${from}", replyTo="${questionId}", message="最终答复") 发回。`,
+        ];
+        this.inject(origin, from, lines.join('\n'), 'ask', payload);
       }
       return true;
     }
@@ -66,6 +81,10 @@ export class MessageRouter {
   }
 
   pending() {
+    const now = Date.now();
+    for (const [questionId, item] of this.questions) {
+      if (this.questionTtlMs > 0 && now - Number(item.at ?? now) > this.questionTtlMs) this.questions.delete(questionId);
+    }
     return [...this.questions.entries()].map(([questionId, item]) => ({
       questionId,
       peer: item.peer,

@@ -7,7 +7,7 @@ test('活动流按时间倒序保留最近 N 条', () => {
   const log = new ActivityLog({ limit: 3, now: () => now });
   log.add({ kind: 'peer', text: '节点上线' });
   now += 1000;
-  log.add({ kind: 'message', text: '派发消息', peer: 'B', messageId: 'm1' });
+  log.add({ kind: 'message', text: '派发消息', peer: 'B', from: 'A', to: 'B', messageId: 'm1' });
   now += 1000;
   log.add({ kind: 'result', text: '消息完成', status: 'succeeded' });
   now += 1000;
@@ -18,4 +18,6 @@ test('活动流按时间倒序保留最近 N 条', () => {
   assert.equal(items[2].kind, 'message');
   assert.match(items[1].at, /^\d{4}-/);
   assert.equal(items[2].messageId, 'm1');
+  assert.equal(items[2].from, 'A');
+  assert.equal(items[2].to, 'B');
 });

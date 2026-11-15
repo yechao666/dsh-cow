@@ -195,8 +195,17 @@ export function createAdminHandlers(deps) {
       const answer = String(body?.answer ?? '');
       if (!questionId) return sendJson(res, 400, { error: { code: 'invalid_request', message: '缺少 questionId' } });
       try {
+        const ask = (deps.router.pending?.() ?? []).find((item) => item.questionId === questionId);
         const answered = deps.router.answer(questionId, answer);
-        deps.activity?.add?.({ kind: 'message', text: `回答 ${questionId}：${answer.slice(0, 80)}`, messageId: questionId, status: answered?.status ?? 'sent' });
+        deps.activity?.add?.({
+          kind: 'message',
+          text: `回答 ${questionId}：${answer.slice(0, 80)}`,
+          peer: ask?.peer ?? '',
+          from: deps.instance.displayName || deps.instance.instanceId,
+          to: ask?.peer ?? '',
+          messageId: questionId,
+          status: answered?.status ?? 'sent',
+        });
         sendJson(res, 200, state());
       } catch (error) {
         sendJson(res, 409, { error: { code: 'answer_failed', message: String(error?.message ?? error) } });

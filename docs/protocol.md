@@ -164,8 +164,10 @@ key = HKDF-SHA256(base = passwordHash, salt = nonce, info = "cow/v1/e2e", 32)
 }
 ```
 
-主端把它注入原会话，并提示用 `cow_send(peer, message, replyTo=questionId)` 回答。
-回答以 `msg.answer` 发回同一子节点：
+主端把询问注入原会话，由**被询问节点的 Agent** 处理：先自行判断；需要人工决定时调用
+`ask_user_question` 在 DSH 原生界面让用户输入；需要上级拍板时继续用 `cow_send(kind="ask")`
+向上级请示。最终用 `cow_send(peer, message, replyTo=questionId)` 回答，回答以
+`msg.answer` 发回同一子节点：
 
 ```json
 { "kind": "answer", "replyTo": "q_…", "peer": "子 DSH-A", "text": "A", "workspace": { … }, "session": { … } }
@@ -174,7 +176,8 @@ key = HKDF-SHA256(base = passwordHash, salt = nonce, info = "cow/v1/e2e", 32)
 子端收到 `msg.answer`：若有工具/审批正在等待该 `questionId`，直接兑现等待；
 否则作为一条 `[COW 回答]` 输入唤醒同一子会话。
 
-提问只存在于内存；超时（默认 300s）返回失败。审批接管：子端执行派发会话时若 DSH 触发
+提问由发起端内存中的等待器承接；超时（默认 300s）返回失败。COW 状态面板只展示
+「询问中」计数，不作为人工审批队列。审批接管：子端执行派发会话时若 DSH 触发
 `approval/request`，插件把它转成同样的 `msg.ask`（文本“子 DSH 请求审批：<tool>（<reason>）”，
 选项“允许一次/拒绝”），把回答映射为 `allowed-once` / `rejected`；超时、取消或主端不可达
 返回 `unavailable`（fail-closed）。只接管派发会话，本机自己的会话审批仍走本机 answerer。

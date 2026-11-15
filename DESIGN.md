@@ -69,8 +69,10 @@ sessionId = "session-cow-" + sha256(key).slice(0, 16)
 
 ### 3.4 ask / answer 不引入任务 ID
 
-提问复用原 dispatch 信封的 workspace/session，只多一个 `questionId`。主端把问题注入原会话，
-回答用 `msg.answer` 回到同一子节点。子端：
+提问复用原 dispatch 信封的 workspace/session，只多一个 `questionId`。被询问节点（主端）
+把问题注入自己的原会话，由**该节点的 Agent 处理**：先自行判断；需要人工决定时用
+`ask_user_question` 让用户在本机 DSH 界面输入；需要上级拍板时继续向上级 `cow_send(kind="ask")`
+请示，再逐级回报。最终回答用 `msg.answer` 回到同一子节点。子端：
 
 - 有工具/审批正在等待该 questionId → 直接兑现 Promise，本轮继续；
 - 没有等待者 → 作为 `[COW 回答]` 输入唤醒同一子会话。

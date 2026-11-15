@@ -1,7 +1,7 @@
 /**
  * dsh-cow 客户端：侧边栏「COW状态」详细面板 + 简洁的设置页。
  *
- * 纯消息架构：面板展示节点拓扑、连接明细、待回答询问与活动时间线；
+ * 纯消息架构：面板展示节点拓扑、连接明细与活动时间线；询问由被询问节点的 Agent 处理；
  * 设置页只保留节点名称、工作区根、连接密码、作为子 DSH 与折叠的高级项。
  */
 import * as React from 'react';
@@ -436,8 +436,6 @@ function CowActivityPanel() {
   const [error, setError] = React.useState('');
   const [loading, setLoading] = React.useState(false);
   const [toolMessage, setToolMessage] = React.useState('');
-  const [answers, setAnswers] = React.useState({});
-  const [answering, setAnswering] = React.useState('');
   const [section, setSection] = React.useState('overview');
   const [activityFilter, setActivityFilter] = React.useState('all');
 
@@ -465,30 +463,6 @@ function CowActivityPanel() {
     const timer = setInterval(() => { void load(); }, 4000);
     return () => clearInterval(timer);
   }, [load]);
-
-  const answerAsk = async (ask, text) => {
-    const value = String(text ?? '').trim();
-    if (!value) { setError('请先填写回答'); return; }
-    setAnswering(ask.questionId);
-    setError('');
-    try {
-      const response = await fetch(api('answer'), {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ questionId: ask.questionId, answer: value }),
-      });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload?.error?.message || `HTTP ${response.status}`);
-      setAnswers((current) => ({ ...current, [ask.questionId]: '' }));
-      setToolMessage('回答已发送');
-      await load();
-    } catch (answerError) {
-      setError(answerError.message);
-    } finally {
-      setAnswering('');
-    }
-  };
 
   const runDoctor = async () => {
     setToolMessage('正在生成诊断包…');
@@ -621,42 +595,6 @@ function CowActivityPanel() {
     );
   };
 
-  const renderAsk = (ask) => h('div', { key: ask.questionId, style: { display: 'grid', gap: 8, padding: '12px 0', borderTop: '1px solid var(--dsw-alias-border-l2)' } },
-    h('div', { style: { display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' } },
-      h('span', { style: { ...PANEL.chip, color: '#b7791f', background: 'rgba(183,121,31,0.12)', borderColor: 'rgba(183,121,31,0.35)' } }, '待回答'),
-      h(PanelChip, null, `来自 ${ask.peer}`),
-      ask.session ? h('span', { style: { ...S.meta, fontSize: 10.5 } }, `会话 ${String(ask.session).slice(0, 18)}…`) : null,
-      ask.createdAt ? h('span', { style: { ...S.meta, fontSize: 10.5 } }, timeOf(ask.createdAt)) : null,
-    ),
-    h('div', { style: { fontSize: 12.5, lineHeight: 1.6, whiteSpace: 'pre-wrap' } }, ask.question || '（无正文）'),
-    (ask.options ?? []).length
-      ? h('div', { style: { display: 'flex', gap: 6, flexWrap: 'wrap' } }, ask.options.map((option) => h('button', {
-          key: option, type: 'button',
-          style: {
-            ...S.secondary, padding: '4px 12px', borderRadius: 999, fontSize: 11.5,
-            borderColor: answers[ask.questionId] === option ? 'var(--dsw-alias-brand-primary)' : undefined,
-            color: answers[ask.questionId] === option ? 'var(--dsw-alias-brand-primary)' : undefined,
-            background: answers[ask.questionId] === option ? 'color-mix(in srgb, var(--dsw-alias-brand-primary) 10%, transparent)' : undefined,
-          },
-          onClick: () => setAnswers((current) => ({ ...current, [ask.questionId]: option })),
-        }, option)))
-      : null,
-    h('div', { style: { display: 'flex', gap: 8, alignItems: 'center' } },
-      h('input', {
-        style: { ...S.inputFlex, height: 30, borderRadius: 7 },
-        placeholder: '输入回答或选择上面的选项',
-        value: answers[ask.questionId] ?? '',
-        onChange: (event) => setAnswers((current) => ({ ...current, [ask.questionId]: event.target.value })),
-      }),
-      h('button', {
-        type: 'button',
-        style: { ...S.button, height: 30, padding: '0 14px' },
-        disabled: Boolean(answering),
-        onClick: () => void answerAsk(ask, answers[ask.questionId]),
-      }, answering === ask.questionId ? '发送中…' : '回答'),
-    ),
-  );
-
   const activityList = (limit) => visibleItems.length
     ? h('div', { style: { position: 'relative', paddingLeft: 16 } },
         h('div', { style: { position: 'absolute', left: 6, top: 6, bottom: 6, width: 1, background: 'var(--dsw-alias-border-l2)' } }),
@@ -675,7 +613,9 @@ function CowActivityPanel() {
               h('div', { style: { ...S.meta, display: 'flex', gap: 7, flexWrap: 'wrap', fontSize: 10.5, marginTop: 2 } },
                 h('span', { style: { color: kind.color, fontWeight: 600 } }, kind.label),
                 h('span', null, timeOf(item.at)),
-                item.peer ? h('span', null, item.peer) : null,
+                item.from || item.to
+                  ? h('span', { style: { color: 'var(--dsw-alias-label-secondary)' } }, `${item.from || '?'} → ${item.to || '?'}`)
+                  : (item.peer ? h('span', null, item.peer) : null),
                 item.messageId ? h('span', { style: S.mono }, String(item.messageId).slice(-12)) : null,
                 item.status ? h('span', null, item.status) : null,
               ),
@@ -695,7 +635,7 @@ function CowActivityPanel() {
       h('div', { style: { marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' } },
         h(PanelChip, { tone: 'on' }, `${connectedCount} 连接`),
         h(PanelChip, { tone: 'brand' }, `${encryptedCount} 加密`),
-        pending.length ? h(PanelChip, { tone: 'brand' }, `${pending.length} 待回答`) : null,
+        pending.length ? h(PanelChip, { tone: 'brand', title: '由被询问节点的 Agent 处理（可请示上级或让用户在本机界面回答）' }, `${pending.length} 询问中`) : null,
         h('button', { type: 'button', style: { ...S.secondary, height: 28, padding: '0 10px', fontSize: 11.5 }, onClick: () => void runDoctor() }, '诊断包'),
         h('button', { type: 'button', style: { ...S.secondary, height: 28, padding: '0 10px', fontSize: 11.5 }, onClick: () => { void load(); }, disabled: loading }, loading ? '刷新中…' : '刷新'),
       ),
@@ -706,7 +646,7 @@ function CowActivityPanel() {
       h(StatCard, { label: '本机版本', value: instance.version ? `v${instance.version}` : '-', sub: 'dsh-cow', accent: PANEL_ACCENTS[0], icon: 'cube' }),
       h(StatCard, { label: '在线节点', value: `${connectedCount}/${peers.length}`, sub: `共 ${peers.length} 个节点`, accent: PANEL_ACCENTS[1], icon: 'network' }),
       h(StatCard, { label: '在线子 DSH', value: children.filter((child) => child.connected).length, sub: `${children.length} 个直接下级`, accent: PANEL_ACCENTS[2], icon: 'users' }),
-      h(StatCard, { label: '待回答', value: pending.length, sub: 'ask / 审批', accent: PANEL_ACCENTS[3], icon: 'alert' }),
+      h(StatCard, { label: '询问中', value: pending.length, sub: '由被询问节点 Agent 处理', accent: PANEL_ACCENTS[3], icon: 'alert' }),
       h(StatCard, { label: '加密连接', value: encryptedCount, sub: 'AES-256-GCM', accent: PANEL_ACCENTS[4], icon: 'lock' }),
       h(StatCard, { label: '活动', value: items.length, sub: '最近 200 条', accent: PANEL_ACCENTS[5], icon: 'activity' }),
     ),
@@ -738,7 +678,6 @@ function CowActivityPanel() {
     h('div', { style: { display: 'flex', gap: 20, marginBottom: 14, padding: 0, borderBottom: '1px solid var(--dsw-alias-border-l2)', width: '100%', maxWidth: '100%', overflowX: 'auto' } },
       tab('overview', '概览', null, 'network'),
       tab('nodes', '节点', peers.length, 'users'),
-      tab('asks', '询问', pending.length, 'alert'),
       tab('activity', '活动', items.length, 'clock'),
     ),
     section === 'overview'
@@ -794,14 +733,6 @@ function CowActivityPanel() {
           children.length
             ? h('div', { style: { display: 'grid', gap: 10 } }, children.map((child) => nodeDetail(child, 'child')))
             : h('div', { style: PANEL.card }, h('div', { style: PANEL.empty }, '当前没有子 DSH')),
-        )
-      : null,
-    section === 'asks'
-      ? h('div', { style: { ...PANEL.card, marginBottom: 0, borderColor: pending.length ? 'rgba(183,121,31,0.35)' : undefined } },
-          h('div', { style: PANEL.cardHead }, h('h3', { style: PANEL.cardTitle }, '待回答询问'), h(PanelChip, { tone: 'brand' }, `${pending.length} 条`)),
-          pending.length
-            ? pending.map(renderAsk)
-            : h('div', { style: PANEL.empty }, '当前没有需要人工回答的询问或审批'),
         )
       : null,
     section === 'activity'

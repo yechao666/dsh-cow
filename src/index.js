@@ -103,6 +103,7 @@ export function apply(ctx, rawConfig = {}) {
   }
 
   const activity = new ActivityLog();
+  const selfName = () => instance.displayName || instance.instanceId;
   const authorize = (password) => (verifyJoinPassword(instance, password) ? { kind: 'join', label: '' } : null);
 
   let carrier = null;
@@ -118,7 +119,7 @@ export function apply(ctx, rawConfig = {}) {
     const agent = agentOf(sessionId);
     if (!agent || typeof agent.followup !== 'function') {
       logger.warn(`[dsh-cow] 找不到可注入的原会话 ${sessionId || '(空)'}，${kind} 消息未送达 Agent`);
-      activity.add({ kind: 'message', text: `无法把 ${from} 的 ${kind} 消息注入原会话`, peer: from, status: 'dropped' });
+      activity.add({ kind: 'message', text: `无法把 ${from} 的 ${kind} 消息注入原会话`, peer: from, from, to: selfName(), status: 'dropped' });
       return false;
     }
     agent.followup({
@@ -127,7 +128,7 @@ export function apply(ctx, rawConfig = {}) {
       content: [{ type: 'text', text }],
       source: { kind: 'notification' },
     });
-    activity.add({ kind: 'message', text: `收到 ${from} 的 ${kind} 消息，已注入原会话`, peer: from, status: 'injected' });
+    activity.add({ kind: 'message', text: `收到 ${from} 的 ${kind} 消息，已注入原会话`, peer: from, from, to: selfName(), status: 'injected' });
     return true;
   };
 
@@ -138,7 +139,7 @@ export function apply(ctx, rawConfig = {}) {
       void bridge.dispatch(payload, from).catch((error) => {
         logger.warn(`[dsh-cow] 处理 ${from} 的 dispatch 失败：${error?.message ?? error}`);
       });
-      activity.add({ kind: 'message', text: `收到 ${from} 的 dispatch：${String(payload.text ?? '').slice(0, 80)}`, peer: from, status: 'received' });
+      activity.add({ kind: 'message', text: `收到 ${from} 的 dispatch：${String(payload.text ?? '').slice(0, 80)}`, peer: from, from, to: selfName(), status: 'received' });
       return;
     }
     if (type === 'msg.answer') {
@@ -147,7 +148,7 @@ export function apply(ctx, rawConfig = {}) {
       });
       return;
     }
-    if (type === 'msg.complete' || type === 'msg.ask') {
+    if (type === 'msg.complete' || type === 'msg.ask' || type === 'msg.ask.cancel') {
       router.handle(from, event);
       return;
     }
@@ -157,7 +158,7 @@ export function apply(ctx, rawConfig = {}) {
     }
     if (type === 'peer.message') {
       logger.info(`[dsh-cow] 收到 ${from} 的消息：${String(payload?.message ?? '').slice(0, 200)}`);
-      activity.add({ kind: 'message', text: `收到 ${from} 的协作消息`, peer: from, status: 'received' });
+      activity.add({ kind: 'message', text: `收到 ${from} 的协作消息`, peer: from, from, to: selfName(), status: 'received' });
     }
   };
 
@@ -167,6 +168,8 @@ export function apply(ctx, rawConfig = {}) {
       kind: 'peer',
       text: `${direction === 'in' ? '节点上线' : '已连接上级'}：${displayName || label}`,
       peer: label,
+      from: direction === 'in' ? label : selfName(),
+      to: direction === 'in' ? selfName() : label,
       status: 'connected',
     });
     if (direction === 'in') {
@@ -267,7 +270,13 @@ export function apply(ctx, rawConfig = {}) {
     finishTurn,
   });
 
-  router = new MessageRouter({ channel, inject: injectMessage, logger });
+  router = new MessageRouter({
+    channel,
+    inject: injectMessage,
+    logger,
+    selfName,
+    parentLabel: () => peers.list().find((peer) => peer.relation === 'parent')?.label ?? '',
+  });
 
   const ensureParentPeer = () => {
     const url = String(instance.parentUrl ?? '').trim();

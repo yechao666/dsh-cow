@@ -133,6 +133,12 @@ export class MessageBridge {
     const waiting = new Promise((resolve) => {
       const timer = setTimeout(() => {
         this.questions.delete(payload.questionId);
+        try {
+          this.channel.send(target, {
+            type: 'msg.ask.cancel',
+            payload: { questionId: payload.questionId, messageId: payload.messageId, session: payload.session },
+          });
+        } catch { /* 忽略 */ }
         resolve({ ok: false, error: '等待上级回答超时', questionId: payload.questionId });
       }, waitMs);
       timer.unref?.();

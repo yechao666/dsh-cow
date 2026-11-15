@@ -270,7 +270,7 @@ export function createToolDefinitions({ instance, channel, peers, files, doctor,
         if (replyTo) {
           if (typeof router?.answer !== 'function') throw new Error('当前节点不能回答提问');
           const answered = router.answer(replyTo, text);
-          activity?.add?.({ kind: 'message', text: `回答 ${replyTo}：${text.slice(0, 80)}`, peer: target, messageId: replyTo, status: answered?.status ?? 'sent' });
+          activity?.add?.({ kind: 'message', text: `回答 ${replyTo}：${text.slice(0, 80)}`, peer: target, from: instance.displayName || instance.instanceId, to: target, messageId: replyTo, status: answered?.status ?? 'sent' });
           return answered;
         }
         const kind = String(args?.kind ?? 'dispatch');
@@ -282,7 +282,7 @@ export function createToolDefinitions({ instance, channel, peers, files, doctor,
             options: Array.isArray(args?.options) ? args.options.map(String) : [],
             timeoutSec: Number(args?.timeoutSec) || 300,
           });
-          activity?.add?.({ kind: 'message', text: `向 ${target} 询问：${text.slice(0, 80)}`, peer: target, status: result?.ok ? 'answered' : 'failed' });
+          activity?.add?.({ kind: 'message', text: `向 ${target} 询问：${text.slice(0, 80)}`, peer: target, from: instance.displayName || instance.instanceId, to: target, status: result?.ok ? 'answered' : 'failed' });
           if (!result?.ok) throw new Error(result?.error ?? '提问失败');
           return result;
         }
@@ -302,7 +302,7 @@ export function createToolDefinitions({ instance, channel, peers, files, doctor,
           approvalMode: 'follow',
         });
         const sent = channel.send(peer.label, { type: 'msg.dispatch', payload: envelope });
-        activity?.add?.({ kind: 'message', text: `派给 ${peer.label}：${text.slice(0, 80)}`, peer: peer.label, messageId: envelope.messageId, status: sent?.delivered ? 'sent' : 'queued' });
+        activity?.add?.({ kind: 'message', text: `派给 ${peer.label}：${text.slice(0, 80)}`, peer: peer.label, from: instance.displayName || instance.instanceId, to: peer.label, messageId: envelope.messageId, status: sent?.delivered ? 'sent' : 'queued' });
         if (!sent?.delivered && !sent?.queued) throw new Error('消息未送达，目标节点当前不在线');
         return { messageId: envelope.messageId, peer: peer.label, kind: 'dispatch', status: sent.delivered ? 'sent' : 'queued' };
       },

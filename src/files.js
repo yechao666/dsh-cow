@@ -141,7 +141,14 @@ export class FileExchange {
     this.counters.sent += 1;
     this.counters.bytesSent += size;
     this.counters.lastAt = new Date().toISOString();
-    this.activity?.add({ kind: 'file', text: `发送文件到 ${target.label}：${result.path}（${size} B）`, peer: target.label, status: 'sent' });
+    this.activity?.add({
+      kind: 'file',
+      text: `发送文件到 ${target.label}：${result.path}（${size} B）`,
+      peer: target.label,
+      from: this.instance.displayName || this.instance.instanceId,
+      to: target.label,
+      status: 'sent',
+    });
     return { transferId, peer: target.label, direction: 'push', remotePath: result.path, bytes: size, sha256: digest, resumedFrom: offset };
   }
 
@@ -236,7 +243,14 @@ export class FileExchange {
     this.counters.received += 1;
     this.counters.bytesReceived += Number(result.bytes) || 0;
     this.counters.lastAt = new Date().toISOString();
-    this.activity?.add({ kind: 'file', text: `从 ${target.label} 取回：${result.path}（${result.bytes} B）`, peer: target.label, status: 'received' });
+    this.activity?.add({
+      kind: 'file',
+      text: `从 ${target.label} 取回：${result.path}（${result.bytes} B）`,
+      peer: target.label,
+      from: target.label,
+      to: this.instance.displayName || this.instance.instanceId,
+      status: 'received',
+    });
     return { transferId, peer: target.label, direction: 'pull', localPath: result.path, bytes: result.bytes, sha256: result.sha256 };
   }
 
