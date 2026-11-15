@@ -1258,146 +1258,7 @@ function CowNodeBadge({ wide }) {
 }
 
 
-// ── @COW：选择子 DSH 后输入消息并发送 ─────────────────────────
-
-// ── @COW 子 DSH：选择目标后输入消息并发送 ──────────────────────
-
-const cowTarget = {
-  value: null,
-  listeners: new Set(),
-  set(value) {
-    this.value = value;
-    for (const listener of this.listeners) {
-      try { listener(value); } catch { /* 忽略 */ }
-    }
-  },
-  subscribe(listener) {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
-  },
-};
-
-function CowTargetDock(props) {
-  const draft = String(props.useInput ? props.useInput((value) => value.draft) : props.input?.draft ?? '');
-  const [target, setTarget] = React.useState(cowTarget.value);
-  const [busy, setBusy] = React.useState(false);
-  const [error, setError] = React.useState('');
-  const [notice, setNotice] = React.useState('');
-  const sessionId = String(props.session?.sessionId ?? props.session?.id ?? '');
-
-  React.useEffect(() => cowTarget.subscribe(setTarget), []);
-
-  React.useEffect(() => {
-    cowTarget.set(null);
-    setTarget(null);
-  }, [sessionId]);
-
-  React.useEffect(() => () => cowTarget.set(null), []);
-
-  React.useEffect(() => {
-    if (!target) return;
-    try { props.inputActions?.setDraft?.(''); } catch { /* 忽略 */ }
-    setError('');
-  }, [target?.peerId]);
-
-  React.useEffect(() => {
-    if (!notice) return undefined;
-    const timer = setTimeout(() => setNotice(''), 2500);
-    return () => clearTimeout(timer);
-  }, [notice]);
-
-  const close = () => {
-    cowTarget.set(null);
-    setTarget(null);
-    setError('');
-  };
-
-  const send = async () => {
-    if (!target || busy) return;
-    const message = draft.trim();
-    if (!message) { setError('先输入要发送的消息'); return; }
-    if (!sessionId) { setError('找不到当前会话'); return; }
-    setBusy(true);
-    setError('');
-    try {
-      const response = await fetch(api('send'), {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ peerId: target.peerId, message, sessionId }),
-      });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload?.error?.message || `HTTP ${response.status}`);
-      try { props.inputActions?.setDraft?.(''); } catch { /* 忽略 */ }
-      setNotice(`已发送给 ${payload?.peerName || target.peerName || '子 DSH'}`);
-      cowTarget.set(null);
-      setTarget(null);
-      window.dispatchEvent(new Event('dsh-cow:state-changed'));
-    } catch (sendError) {
-      setError(sendError.message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  React.useEffect(() => {
-    if (!target) return undefined;
-    const onKeyDown = (event) => {
-      const active = document.activeElement;
-      const editing = Boolean(active?.isContentEditable || active?.closest?.('[contenteditable="true"]'));
-      if (!editing) return;
-      if (event.key === 'Escape') {
-        event.preventDefault(); event.stopPropagation(); close(); return;
-      }
-      if (event.key === 'Enter' && !event.shiftKey) {
-        event.preventDefault(); event.stopPropagation(); void send();
-      }
-    };
-    document.addEventListener('keydown', onKeyDown, true);
-    return () => document.removeEventListener('keydown', onKeyDown, true);
-  }, [target, draft, busy, sessionId]);
-
-  if (!target) {
-    return notice
-      ? h('div', { style: { margin: '0 0 8px', padding: '7px 11px', border: '1px solid rgba(52,199,89,.35)', borderRadius: 9, background: 'rgba(52,199,89,.1)', color: '#2ea043', fontSize: 12 } }, notice)
-      : null;
-  }
-
-  return h('div', {
-    style: {
-      display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap', margin: '0 0 8px',
-      padding: '8px 11px', border: '1px solid color-mix(in srgb, var(--dsw-alias-brand-primary) 35%, var(--dsw-alias-border-l2))',
-      borderRadius: 10, background: 'color-mix(in srgb, var(--dsw-alias-brand-primary) 8%, var(--dsw-alias-bg-l1))',
-    },
-  },
-    h('span', { style: { ...S.meta, fontSize: 11, fontWeight: 650 } }, '发送给'),
-    h('span', { style: {
-      display: 'inline-flex', alignItems: 'center', gap: 6, padding: '2px 8px',
-      borderRadius: 999, background: 'var(--dsw-alias-bg-l2)', border: '1px solid var(--dsw-alias-border-l2)',
-      fontSize: 12, fontWeight: 600,
-    } },
-      h('span', { style: { width: 7, height: 7, borderRadius: 999, background: target.connected ? '#34c38f' : '#94a3b8' } }),
-      `COW ${target.peerName}`,
-    ),
-    h('span', { style: S.hint }, '输入消息后按 Enter 发送；Esc 取消'),
-    error ? h('span', { style: { ...S.err, marginLeft: 'auto' } }, error) : null,
-    notice ? h('span', { style: { ...S.ok, marginLeft: 'auto' } }, notice) : null,
-    h('button', {
-      type: 'button',
-      title: '取消发送',
-      'aria-label': '取消发送',
-      onClick: close,
-      style: { ...S.secondary, marginLeft: 'auto', padding: '3px 8px', fontSize: 11 },
-    }, '取消'),
-    h('button', {
-      type: 'button',
-      disabled: busy || !draft.trim(),
-      onClick: () => void send(),
-      style: { ...S.button, padding: '4px 12px', opacity: busy || !draft.trim() ? 0.55 : 1, cursor: busy || !draft.trim() ? 'not-allowed' : 'pointer' },
-    }, busy ? '发送中…' : '发送'),
-  );
-}
-
+// ── @COW：仅首个 @ 显示子 DSH 引用 ───────────────────────────
 
 function CowMentionIcon({ size = 16 }) {
   return h(CowActivityIcon, { size });
@@ -1410,6 +1271,7 @@ function cowMentionSource() {
     order: -100,
     showGroupTitle: true,
     async candidates(_session, request) {
+      if (request?.position !== 'leading') return [];
       const response = await fetch(stateUrl(), { credentials: 'same-origin', cache: 'no-store' });
       if (!response.ok) return [];
       const data = await response.json();
@@ -1422,7 +1284,7 @@ function cowMentionSource() {
             peer,
             name: `COW ${peerName}`,
             label: `COW ${peerName}`,
-            description: `${peer.connected ? '在线' : '离线'}${peer.version ? ` · v${peer.version}` : ''} · 发送给子 DSH`,
+            description: `${peer.connected ? '在线' : '离线'}${peer.version ? ` · v${peer.version}` : ''} · 插入 [TO:] 前缀`,
             value: JSON.stringify({ peerId: peer.peerId || '', peerName, version: peer.version || '', connected: Boolean(peer.connected) }),
             icon: CowMentionIcon,
           };
@@ -1432,14 +1294,27 @@ function cowMentionSource() {
         .map(({ peer: _peer, ...candidate }) => candidate);
     },
     onPick(pick) {
+      if (pick?.position !== 'leading') return undefined;
       try {
         const target = JSON.parse(pick?.candidate?.value ?? '');
-        if (!target.peerId) return undefined;
-        cowTarget.set(target);
-        return 'handled';
+        if (!target.peerName) return undefined;
+        const mention = `[TO: ${target.peerName}]`;
+        return {
+          insert: {
+            source: 'COW 子 DSH',
+            ref: mention,
+            label: mention,
+            appearance: 'session',
+            clipboardText: `${mention} `,
+          },
+        };
       } catch {
         return undefined;
       }
+    },
+    codec: {
+      clipboardText: (ref) => ref,
+      serialize: (ref) => Promise.resolve(ref),
     },
   };
 }
@@ -1493,15 +1368,6 @@ export function apply(ctx) {
     });
   } catch (error) {
     console.error('[dsh-cow] @ COW source failed', error);
-  }
-  try {
-    ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
-      name: 'conversation.input.dock',
-      id: 'cow-target',
-      order: 50,
-    }, CowTargetDock));
-  } catch (error) {
-    console.error('[dsh-cow] composer dock slot failed', error);
   }
   try {
     ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({

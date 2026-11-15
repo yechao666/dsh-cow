@@ -29,7 +29,6 @@ import { FileExchange } from './files.js';
 import { normalizeRoots } from './paths.js';
 import { buildMachineDescription } from './machine-profile.js';
 import { MessageBridge } from './message-bridge.js';
-import { buildEnvelope } from './message-core.js';
 import { MessageRouter } from './message-router.js';
 import { resolveChildCwd, sessionInfo } from './session-info.js';
 import { PROTOCOL_VERSION, ROUTE_PREFIX } from './protocol.js';
@@ -421,39 +420,6 @@ export function apply(ctx, rawConfig = {}) {
     pluginVersion: PACKAGE.version,
     installedVersion: () => currentPackageVersion(),
     packages,
-    sendMessage: ({ peerId, message, sessionId }) => {
-      const target = peers.list().find((peer) => peer.relation === 'child' && (peer.peerId === peerId || peer.label === peerId)) ?? null;
-      if (!target) throw new Error('目标不是直接下级');
-      const agent = agentOf(sessionId);
-      if (!agent?.session) throw new Error('找不到当前会话');
-      const info = sessionInfo(ctx, agent.session);
-      const envelope = buildEnvelope({
-        kind: 'dispatch',
-        peerId: target.peerId || '',
-        peerName: target.label,
-        text: message,
-        workspace: info.workspace,
-        session: info.session,
-        approvalMode: 'follow',
-      });
-      const sent = channel.send(target.peerId || target.label, { type: 'msg.dispatch', payload: envelope });
-      if (!sent?.delivered && !sent?.queued) throw new Error('消息未送达，目标节点当前不在线');
-      activity.add({
-        kind: 'message',
-        text: `输入框发给 ${target.label}：${message.slice(0, 80)}`,
-        peerName: target.label,
-        from: instance.displayName || instance.peerId,
-        to: target.label,
-        messageId: envelope.messageId,
-        status: sent.delivered ? 'sent' : 'queued',
-      });
-      return {
-        messageId: envelope.messageId,
-        peerId: target.peerId || '',
-        peerName: target.label,
-        status: sent.delivered ? 'sent' : 'queued',
-      };
-    },
   });
 
   // ── 工具 ─────────────────────────────────────────────────────
