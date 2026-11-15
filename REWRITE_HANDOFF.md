@@ -8,8 +8,8 @@
 - answer：主 DSH 回答。
 - 每条消息带 workspace（id/name/path）、session（id/title）、approvalMode。
 
-## 当前状态（2026-11-15，v1.31.2）
-- 分支：`main`；旧 `main` 保留为 `v1`，发布标签 `v1.31.2`。
+## 当前状态（2026-11-15，v1.31.3）
+- 分支：`main`；旧 `main` 保留为 `v1`，发布标签 `v1.31.3`。
 - 测试：143 条全通过（`npm test`），含“源码不存在 CowTasks/TaskManager/taskId 任务链”守护。
 - 子会话按 `peerId + workspace.id` 复用：同一工作区只保留一个子会话，多个主会话不再各建一个；
   进程重启后用 `agents.resume` 恢复，并重新挂到对应工作区。
@@ -54,7 +54,7 @@
 - `src/message-bridge.js`：子端按工作区复用/恢复会话、preset/工作区、回合结束 complete、ask/answer。
 - `src/message-router.js`：主端 complete/ask 注入原会话、answer 回子端、messageId 去重。
 - `src/index.js`：装配与生命周期。
-- `src/package-service.js` / `src/tarball.js`：插件包生成、短期 token 下载。
+- `src/package-service.js` / `src/tarball.js`：插件包生成、公开下载。
 - `src/auto-upgrade.js`：子端接收 `msg.upgrade`，下载/校验并调用 `pluginManager` 升级。
 - `src/tools.js`：cow_send/cow_status/cow_peers/cow_doctor + 文件工具。
 - `client-src/index.js`：侧边栏底部节点标识、COW 状态面板与设置页。

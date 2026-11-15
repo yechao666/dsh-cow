@@ -160,7 +160,7 @@ test('文件工具在 files 可用时注册，且只有直接下级可设策略'
 
 test('cow_upgrade 发送带下载地址的升级消息', async () => {
   const pack = {
-    url: 'http://main:60001/cow/v1/plugin/package?token=abc',
+    url: 'http://main:60001/cow/v1/plugin/package',
     sha256: 'a'.repeat(64),
     version: '1.31.0',
   };

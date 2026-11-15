@@ -230,7 +230,7 @@ export function createToolDefinitions({ instance, channel, peers, files, doctor,
     ...(packages ? [{
       name: 'cow_upgrade',
       description:
-        '向一个直接下级发送 msg.upgrade 控制消息：主端把当前插件包暴露为短期下载地址，' +
+        '向一个直接下级发送 msg.upgrade 控制消息：主端把当前插件包暴露为公开下载地址，' +
         '消息里带下载 URL、sha256 和版本；子端插件自动下载、校验并安装，然后重连。' +
         '只发一条消息，不推送文件、不建任务、不等待安装完成。',
       parameters: {
@@ -239,6 +239,7 @@ export function createToolDefinitions({ instance, channel, peers, files, doctor,
           peerId: PEER_ID_PARAM,
           peerName: PEER_NAME_PARAM,
           url: { type: 'string', description: '可选：外部插件包 http(s) 下载地址；不传则使用本机当前插件包' },
+          baseUrl: { type: 'string', description: '可选：覆盖本机插件包下载地址前缀（如 http://192.168.1.10:60001/cow/v1）' },
           sha256: { type: 'string', description: '外部 url 必填：插件包 sha256（64 位十六进制）' },
           version: { type: 'string', description: '目标版本；不传则使用本机当前版本 / 外部包由调用方声明' },
         },
@@ -264,7 +265,7 @@ export function createToolDefinitions({ instance, channel, peers, files, doctor,
           if (!explicitVersion) throw new Error('外部 url 必须同时提供 version');
           pack = { name: 'dsh-cow', version: explicitVersion, url: explicitUrl, sha256: explicitSha };
         } else {
-          pack = packages.issue();
+          pack = packages.issue({ base: String(args?.baseUrl ?? '').trim() });
         }
         const messageId = newMessageId('upg');
         const payload = {

@@ -57,7 +57,7 @@ export function createHandler({ channel, info, api, packages }) {
       return;
     }
     if (pathname === `${ROUTE_PREFIX}/plugin/package` && req.method === 'GET') {
-      const item = packages?.download?.(url.searchParams.get('token') ?? '');
+      const item = packages?.download?.();
       if (!item) {
         sendJson(res, 404, { error: { code: 'package_not_found', message: '插件包不存在或下载链接已过期' } });
         return;

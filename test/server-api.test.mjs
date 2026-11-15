@@ -42,25 +42,25 @@ test('HTTP 文件接口：无令牌 401，有令牌转发到 FileExchange', asyn
   }
 });
 
-test('插件包下载：token 有效返回 tgz，失效返回 404', async () => {
+test('插件包下载：公开地址无需 token 返回 tgz', async () => {
   const buffer = Buffer.from('fake-tgz');
   const { server, port } = await start({}, {
-    download: (token) => token === 'ok' ? {
+    download: () => ({
       buffer,
       filename: 'dsh-cow-1.4.0.tgz',
       name: 'dsh-cow',
       version: '1.4.0',
       sha256: 'a'.repeat(64),
-    } : null,
+    }),
   });
   try {
-    const ok = await fetch(`http://127.0.0.1:${port}/cow/v1/plugin/package?token=ok`);
+    const ok = await fetch(`http://127.0.0.1:${port}/cow/v1/plugin/package`);
     assert.equal(ok.status, 200);
     assert.equal(ok.headers.get('x-cow-package'), 'dsh-cow@1.4.0');
     assert.equal(ok.headers.get('x-cow-sha256'), 'a'.repeat(64));
     assert.equal(Buffer.from(await ok.arrayBuffer()).toString(), 'fake-tgz');
-    const missing = await fetch(`http://127.0.0.1:${port}/cow/v1/plugin/package?token=bad`);
-    assert.equal(missing.status, 404);
+    const again = await fetch(`http://127.0.0.1:${port}/cow/v1/plugin/package`);
+    assert.equal(again.status, 200);
   } finally {
     await new Promise((r) => server.close(r));
   }

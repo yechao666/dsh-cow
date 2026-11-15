@@ -32,7 +32,7 @@ proof = sha256(nonce + ":" + hashJoinPassword(password, salt))
   "protocol": "cow/v1",
   "peerId": "cow_…",
   "displayName": "叶超的MacMini",
-  "node": { "uuid": "…", "version": "1.31.2", "description": "…" },
+  "node": { "uuid": "…", "version": "1.31.3", "description": "…" },
   "ackSeq": 0,
   "enc": 1,
   "proof": "…"
@@ -196,7 +196,7 @@ key = HKDF-SHA256(base = passwordHash, salt = nonce, info = "cow/v1/e2e", 32)
 
 ### 3.5 升级消息（msg.upgrade）
 
-主端 `cow_upgrade(peerId)` 生成当前插件包的短期下载 URL，然后发送一条控制消息：
+主端 `cow_upgrade(peerId)` 生成当前插件包的公开下载 URL，然后发送一条控制消息：
 
 ```json
 {
@@ -205,8 +205,8 @@ key = HKDF-SHA256(base = passwordHash, salt = nonce, info = "cow/v1/e2e", 32)
   "peerName": "子 DSH-A",
   "package": {
     "name": "dsh-cow",
-    "version": "1.31.2",
-    "url": "http://main:60001/cow/v1/plugin/package?token=…",
+    "version": "1.31.3",
+    "url": "http://main:60001/cow/v1/plugin/package",
     "sha256": "…"
   }
 }
@@ -218,8 +218,8 @@ key = HKDF-SHA256(base = passwordHash, salt = nonce, info = "cow/v1/e2e", 32)
 
 升级没有独立任务、没有等待器；主端只确认消息已发送/入队，最终以 hello 上报的新版本验收。
 要求子端 **>= 1.31.0**。插件包 URL 默认指向主端
-`/cow/v1/plugin/package?token=…`，token 只存在内存（10 分钟、最多 5 次下载）。
-主端 `url` 参数可换成外部 http(s) 包，但必须同时传 `sha256` 和 `version`。
+`/cow/v1/plugin/package`，**不带 token**：任何能访问主端端点的机器都可以下载。
+主端 `url` 参数可换成外部 http(s) 包，但必须同时传 `sha256` 和 `version`；`baseUrl` 可覆盖本机包的下载地址前缀（公网/局域网地址）。
 
 ## 4. 文件交换
 
@@ -255,7 +255,7 @@ key = HKDF-SHA256(base = passwordHash, salt = nonce, info = "cow/v1/e2e", 32)
 | POST | `/cow/v1/files/send` | 本机发文件/目录 |
 | POST | `/cow/v1/files/receive` | 本机取文件 |
 | GET | `/cow/v1/channel` | WebSocket 升级；普通 GET 返回 426 |
-| GET | `/cow/v1/plugin/package?token=…` | 短期插件包下载（升级消息里携带） |
+| GET | `/cow/v1/plugin/package` | 公开插件包下载（升级消息里携带；无需 token） |
 | GET | `/api/cow/package` | 同源浏览器下载当前插件包（COW 状态「本机版本」链接） |
 | GET | `/api/cow/state` | 设置页状态（同源） |
 | POST | `/api/cow/answer` | 程序化回答远端询问（questionId；CLI/自动化用，设置页不提供人工队列） |

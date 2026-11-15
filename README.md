@@ -19,7 +19,7 @@ WebSocket 长连接做全双工 JSON 通讯。**只有消息，没有任务层**
   complete/ask 仍按每条消息里的主会话 `session.id` 回到对应原会话；同名节点不会串线，改名也不影响在途会话；
 - 子 DSH 的 agent preset 可在设置页指定（`agentPreset`），会话会挂到对应工作区；
 - 文件交换支持单个文件、目录递归（`cow_send_file` 传目录）与目录拉取（`cow_pull_dir`），逐文件 sha256 校验；
-- 升级用 `cow_upgrade` 向直接下级 **只发一条 `msg.upgrade`**：主端临时暴露插件包下载地址（带短期 token），子端插件自动下载、校验 sha256/包内版本、移除旧包并安装，然后重连；不推文件、不建任务、不等待。要求子端 **>= 1.31.0**。
+- 升级用 `cow_upgrade` 向直接下级 **只发一条 `msg.upgrade`**：主端暴露公开插件包下载地址，子端插件自动下载、校验 sha256/包内版本、移除旧包并安装，然后重连；不推文件、不建任务、不等待。要求子端 **>= 1.31.0**。
 - 连接握手后启用 **AES-256-GCM 帧级加密**（密钥由共用密码 + 每次连接的 nonce 派生，重连即轮换）；旧客户端不支持时自动回落明文；
 - 子 DSH 执行派发会话时的**审批请求自动转给主 DSH**：由主端 Agent 处理，需要人工时在 DSH 原生界面回答「允许一次/拒绝」；超时或上级不可达时 fail-closed，设置页不提供审批队列；
 - 侧边栏底部显示本机节点的实例名称、角色与连接状态（COW 插件启用时），点击打开 COW 状态；左侧导航不再单独放「COW状态」入口，避免重复。
@@ -50,7 +50,7 @@ WebSocket 长连接做全双工 JSON 通讯。**只有消息，没有任务层**
 | `peer.message` | 双向 | 协作消息 |
 | `msg.upgrade` | 主 → 子 | 升级控制：messageId、package{name,version,url,sha256} |
 | `msg.upgrade.result` | 子 → 主 | 升级状态：installing / installed / current / failed |
-| `GET /cow/v1/plugin/package` | 主端 HTTP | 短期 token 下载插件包；升级消息里携带 URL |
+| `GET /cow/v1/plugin/package` | 主端 HTTP | 公开下载插件包；升级消息里携带 URL |
 | `GET /api/cow/package` | 主端同源 | 浏览器「本机版本」链接触发的插件包下载 |
 | `ping` / `pong` | 双向 | 心跳（20s），断线自动退避重连 |
 
@@ -80,7 +80,7 @@ node scripts/join-child.mjs --home ~/.dsh-childA --name "子DSH-A" \
 - `cow_doctor`：生成本机诊断包（版本/配置/加密状态/文件统计/活动），返回 JSON 路径；
 - `cow_send_file` / `cow_receive_file`：发/取文件（单个或目录、断点续传、sha256），用 `peerId` 指定节点；
 - `cow_pull_dir`：拉取远端整个目录（`peerId`）；
-- `cow_upgrade`：向直接下级发送升级消息，主端临时暴露当前插件包下载地址（`url` 可覆盖为外部包，需同时给 `sha256`/`version`）；
+- `cow_upgrade`：向直接下级发送升级消息，主端暴露当前插件包公开下载地址（`url` 可覆盖为外部包，需同时给 `sha256`/`version`；`baseUrl` 可覆盖本机包的公网/局域网地址前缀）；
 - `cow_cancel_file` / `cow_set_file_policy`：取消传输 / 调整对端文件策略。
 
 ## 已知限制
