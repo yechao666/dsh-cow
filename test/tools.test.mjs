@@ -101,10 +101,10 @@ test('cow_send 只认 peerId；peerName 只用于核对', async () => {
   const tool = find(defs, 'cow_send');
   await assert.rejects(tool.execute({ message: 'x' }, { agent: { session: { id: 's' } } }), /peerId/);
   await assert.rejects(tool.execute({ peerName: '不存在节点', message: 'x' }, { agent: { session: { id: 's' } } }), /未知节点 peerName/);
-  await assert.rejects(
-    tool.execute({ peerId: 'cow_child', peerName: '别的节点', message: 'x' }, { agent: { session: { id: 's' } } }),
-    /不一致/,
-  );
+  // 名字随时可能改：传旧名字也不报错，按 peerId 路由，返回当前名字。
+  const result = await tool.execute({ peerId: 'cow_child', peerName: '旧名字', message: 'x' }, { agent: { session: { id: 's' } } });
+  assert.equal(result.peerId, 'cow_child');
+  assert.equal(result.peerName, '子 DSH-x');
 });
 
 test('cow_send 不能派回上级', async () => {

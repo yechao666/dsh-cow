@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
  * dsh-cow 的模型侧工具（WebSocket 全双工，纯消息）。
  *
  * 目标节点一律用 `peerId`（稳定的 instanceId）标识；`peerName` 是可选显示名，
- * 只用于核对/展示，重名时不要使用。工具参数里不再出现模糊的 `peer`。
+ * 只作展示提示，名称可能随时变化、不参与路由与校验；工具参数里不再出现 `peer`。
  *
  *   cow_status / cow_peers / cow_send / cow_doctor + 文件交换工具
  */
@@ -53,7 +53,7 @@ const PEER_ID_PARAM = {
 
 const PEER_NAME_PARAM = {
   type: 'string',
-  description: '可选：目标节点显示名，仅用于核对；重名或改名时请只填 peerId',
+  description: '可选：目标节点的显示名提示；名称可能随时变化，不参与路由与校验，实际以 peerId 为准',
 };
 
 export function createToolDefinitions({ instance, channel, peers, files, doctor, bridge, router, activity, sessionInfoFor }) {
@@ -75,11 +75,9 @@ export function createToolDefinitions({ instance, channel, peers, files, doctor,
     if (!peerId && !peerName) throw new Error('缺少 peerId（可选 peerName）');
     let peer = null;
     if (peerId) {
+      // 只按稳定的 instanceId 路由；peerName 可能过期/被改名，忽略它，不参与校验。
       peer = peerById(peerId);
       if (!peer) throw new Error(`未知节点 peerId=${peerId}`);
-      if (peerName && peer.label !== peerName) {
-        throw new Error(`peerId 与 peerName 不一致：${peerId} 对应「${peer.label}」，不是「${peerName}」`);
-      }
     } else {
       peer = peerByName(peerName);
       if (!peer) throw new Error(`未知节点 peerName=${peerName}，请先用 cow_peers 查 peerId`);
@@ -296,7 +294,7 @@ export function createToolDefinitions({ instance, channel, peers, files, doctor,
       description:
         '发送 dsh-cow 消息，主 DSH 不等待、不轮询。kind=dispatch（默认）把消息派给直接下级，异步进入对方会话输入队列，对方回合结束自动把 complete 注入本会话；' +
         'kind=ask 向直接上级提问/审批并等待回答；带 replyTo 时作为对某条询问的回答（answer 会回到提出询问的子会话）。' +
-        '目标节点用 peerId（稳定 instanceId）指定；peerName 只是可选显示名，重名时不要使用。',
+        '目标节点只用 peerId（稳定 instanceId）路由；peerName 是可选的显示名提示，名称可能随时变化，不参与校验。',
       parameters: {
         type: 'object',
         properties: {

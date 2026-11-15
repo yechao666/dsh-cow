@@ -109,7 +109,7 @@ key = HKDF-SHA256(base = passwordHash, salt = nonce, info = "cow/v1/e2e", 32)
 ### 3.1 dispatch（主 → 子）
 
 主 DSH 用 `cow_send(peerId, message, peerName?)` 发送，`peerId` 是稳定的 `instanceId`；
-`peerName` 是可选的显示名，仅用于核对。消息**只入队、立即返回**，不等结果：
+`peerName` 是可选的显示名提示，名称可能随时变化，不参与校验。消息**只入队、立即返回**，不等结果：
 
 ```json
 {
@@ -172,7 +172,7 @@ key = HKDF-SHA256(base = passwordHash, salt = nonce, info = "cow/v1/e2e", 32)
 
 主端把询问注入原会话，由**被询问节点的 Agent** 处理：先自行判断；需要人工决定时调用
 `ask_user_question` 在 DSH 原生界面让用户输入；需要上级拍板时继续用 `cow_send(kind="ask")`
-向上级请示。最终用 `cow_send(replyTo=questionId, message=…)` 回答（可带 `peerId` 核对），
+向上级请示。最终用 `cow_send(replyTo=questionId, message=…)` 回答（可带 `peerId` 定位），
 回答以 `msg.answer` 发回同一子节点：
 
 ```json
