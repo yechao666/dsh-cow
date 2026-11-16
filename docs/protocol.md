@@ -32,7 +32,7 @@ proof = sha256(nonce + ":" + hashJoinPassword(password, salt))
   "protocol": "cow/v1",
   "peerId": "cow_…",
   "displayName": "叶超的MacMini",
-  "node": { "uuid": "…", "version": "1.31.11", "description": "…" },
+  "node": { "uuid": "…", "version": "1.31.12", "description": "…" },
   "ackSeq": 0,
   "enc": 1,
   "proof": "…"
@@ -87,7 +87,7 @@ key = HKDF-SHA256(base = passwordHash, salt = nonce, info = "cow/v1/e2e", 32)
 
 ## 3. 消息信封
 
-四条消息共用同一个信封。`peerId` 是稳定节点标识，`peerName` 是显示名；新代码只读 `peerName`，信封里的 `peer` 是给旧节点的只读别名。子端按 `peerId + workspace.id` 复用本地子会话（同一工作区一个）；每条消息里的 `session.id` 记录主端原会话，complete/ask 据此回到对应会话。
+四条消息共用同一个信封。`peerId` 是稳定节点标识，`peerName` 是显示名；新代码只读 `peerName`，信封里的 `peer` 是给旧节点的只读别名。子端按 `peerId + workspace.id + session.id` 一一映射本地子会话；每条消息里的 `session.id` 记录主端原会话，complete/ask 据此回到对应会话。
 
 ```json
 {
@@ -124,8 +124,8 @@ key = HKDF-SHA256(base = passwordHash, salt = nonce, info = "cow/v1/e2e", 32)
 }
 ```
 
-子端按工作区键（`peerId + workspace.id`）找到/新建子会话，把 `text` 作为一条用户消息交给 Agent；
-同一工作区复用同一会话，子会话标题为 `[COW] <工作区名>`。显示名重名时主端会自动追加实例后缀，peerId 始终不变。
+子端按会话键（`peerId + workspace.id + session.id`）找到/新建子会话，把 `text` 作为一条用户消息交给 Agent；
+同一主会话复用同一会话，不同主会话各自独立，子会话标题为 `[COW] <工作区名> · <主会话标题>`。显示名重名时主端会自动追加实例后缀，peerId 始终不变。
 实现上 dispatch 以普通 `user` 消息注入，模型不会从 `source.kind` 区分本地用户输入与远端 dispatch；
 插件靠 `messageId` 归属，不依赖模型判断来源。
 子端工作目录取 `workspace.path`（必须在本机 `allowedRoots` 内），不可用时落到第一个根目录下的
@@ -205,7 +205,7 @@ key = HKDF-SHA256(base = passwordHash, salt = nonce, info = "cow/v1/e2e", 32)
   "peerName": "子 DSH-A",
   "package": {
     "name": "dsh-cow",
-    "version": "1.31.11",
+    "version": "1.31.12",
     "url": "http://main:60001/cow/v1/plugin/package",
     "sha256": "…"
   }

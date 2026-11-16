@@ -54,20 +54,20 @@ agent.followup({ content: [...], source: { kind: 'notification' } })
 非 `user` 来源的输入会被 DSH 标记为唤醒型 context message，界面显示
 “这条通知触发了本轮回复。”，主 DSH 因此能用同一轮对话继续处理结论。
 
-### 3.3 复用键 = peerId + workspace.id
+### 3.3 复用键 = peerId + workspace.id + session.id
 
-子端为每个工作区维护一个子会话。`peerId` 是稳定身份，显示名只用于展示：
+子端为主 DSH 的每个会话维护一个独立子会话。`peerId` 是稳定身份，显示名只用于展示：
 
 ```text
-key       = (peerId || peer) :: workspace.id
+key       = (peerId || peer) :: workspace.id :: session.id
 sessionId = "session-cow-" + sha256(key).slice(0, 16)
 ```
 
-同一主 DSH 的同一工作区始终复用一个子会话，进程重启后用 `agents.resume` 恢复，
-不会为每个主会话分裂新会话；不同工作区仍然分开。每条消息都带 peerId、workspace
-（id/name/path）与 session（id/title），子端按 messageId 从会话事件里抽取该消息对应的一轮，
-complete/ask 仍然回到消息自己的主会话。显示名可能重复或变更，`cow_send`/通道会按 peerId
-解析到当前唯一 label；PeerRegistry 对同名不同实例自动追加后缀。
+同一主会话始终复用一个子会话，进程重启后用 `agents.resume` 恢复；不同主会话即使在同一
+工作区也会分开，避免子端上下文合并。每条消息都带 peerId、workspace（id/name/path）与
+session（id/title），子端按 messageId 从会话事件里抽取该消息对应的一轮，complete/ask
+仍然回到消息自己的主会话。显示名可能重复或变更，`cow_send`/通道会按 peerId 解析到当前
+唯一 label；PeerRegistry 对同名不同实例自动追加后缀。
 
 ### 3.4 ask / answer 不引入任务 ID
 
@@ -153,6 +153,6 @@ hello 上报的新版本即验收。要求子端 >= 1.31.0。
 - 待回答询问只在内存，进程重启丢失（子端 ask 会超时失败）。
 - 同一子会话连续 dispatch 由输入队列串行处理；complete 按 messageId 抽取对应回合，
   多条消息若被 DSH 合并进同一轮，无法再按消息精确切分（每条消息仍各带 replyTo）。
-- 子会话按工作区复用：同一工作区的多个主会话共享上下文；需要严格隔离时使用不同工作区。
+- 子会话与主会话一一对应；同一工作区的不同主会话也会各建子会话，子端会话数量随主会话数增长。
 - 发件箱每节点最多 300 条，超出丢最旧；节点长时间离线时消息可能丢失。
 - 通道去重窗口是内存 512 条；重启后窗口清空，依赖 Agent 输入队列的幂等性有限。

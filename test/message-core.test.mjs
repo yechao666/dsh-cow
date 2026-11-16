@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildEnvelope, summarizeSession, summarizeTurn, workspaceKey } from '../src/message-core.js';
+import { buildEnvelope, sessionKey, summarizeSession, summarizeTurn } from '../src/message-core.js';
 
 test('dispatch 信封完整', () => {
   const msg = buildEnvelope({ kind: 'dispatch', peerName: 'F', peerId: 'cow_f', text: 'hello', workspace: { id: 'w1', name: 'A', path: '/a' }, session: { id: 's1', title: 'T' }, approvalMode: 'follow' });
@@ -21,16 +21,21 @@ test('complete 引用 dispatch', () => {
   assert.equal(msg.peer, msg.peerName, '兼容旧节点的只读别名');
 });
 
-test('workspaceKey 按 peerId + 工作区复用，不带主会话', () => {
-  const key = workspaceKey({ peerId: 'cow_peer', peerName: '主 DSH', workspace: { id: 'w1', name: 'proj' } });
-  assert.equal(key, 'cow_peer::w1');
+test('sessionKey 按 peerId + 工作区 + 主会话一一映射', () => {
+  const key = sessionKey({ peerId: 'cow_peer', peerName: '主 DSH', workspace: { id: 'w1', name: 'proj' }, session: { id: 's1' } });
+  assert.equal(key, 'cow_peer::w1::s1');
   assert.equal(
-    workspaceKey({ peerId: 'cow_peer', workspace: { id: 'w1' } }),
-    workspaceKey({ peerId: 'cow_peer', workspace: { id: 'w1', name: 'renamed' } }),
+    sessionKey({ peerId: 'cow_peer', workspace: { id: 'w1' }, session: { id: 's1' } }),
+    sessionKey({ peerId: 'cow_peer', workspace: { id: 'w1', name: 'renamed' }, session: { id: 's1' } }),
   );
-  // peerName 只作显示名，不参与复用键；旧节点的 peer 别名仍可回退。
-  assert.throws(() => workspaceKey({ peerName: '主 DSH', workspace: { id: 'w1' } }), /peerId/);
-  assert.equal(workspaceKey({ peer: 'legacy-peer', workspace: { id: 'w1' } }), 'legacy-peer::w1');
+  assert.notEqual(
+    sessionKey({ peerId: 'cow_peer', workspace: { id: 'w1' }, session: { id: 's1' } }),
+    sessionKey({ peerId: 'cow_peer', workspace: { id: 'w1' }, session: { id: 's2' } }),
+  );
+  // peerName 只作显示名；旧节点的 peer 别名仍可回退。
+  assert.throws(() => sessionKey({ peerName: '主 DSH', workspace: { id: 'w1' }, session: { id: 's1' } }), /peerId/);
+  assert.throws(() => sessionKey({ peerId: 'cow_peer', workspace: { id: 'w1' } }), /session.id/);
+  assert.equal(sessionKey({ peer: 'legacy-peer', workspace: { id: 'w1' }, session: { id: 's1' } }), 'legacy-peer::w1::s1');
 });
 
 test('summarizeTurn 只取指定 messageId 那一轮', () => {

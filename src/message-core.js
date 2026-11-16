@@ -10,13 +10,20 @@ export function newMessageId(prefix = 'msg') {
   return `${prefix}_${Date.now().toString(36)}_${randomBytes(4).toString('hex')}`;
 }
 
-/** 子端会话的复用键：同一 peer + 工作区共用一个子会话，不再按主会话分裂。 */
-export function workspaceKey({ peerId, peer, workspace }) {
+/**
+ * 子端会话的复用键：同一 peer + 工作区 + 主会话共用一个子会话。
+ * 主 DSH 的每个会话必须映射到独立子会话，避免不同会话的上下文在子端合并。
+ */
+export function sessionKey({ peerId, peer, workspace, session }) {
   const node = String(peerId || peer || '').trim();
   const ws = String(workspace?.id ?? workspace?.name ?? '').trim();
-  if (!node || !ws) throw new Error('缺少 peerId/workspace.id，无法定位子会话');
-  return `${node}::${ws}`;
+  const sid = String(session?.id ?? '').trim();
+  if (!node || !ws || !sid) throw new Error('缺少 peerId/workspace.id/session.id，无法定位子会话');
+  return `${node}::${ws}::${sid}`;
 }
+
+/** @deprecated 使用 sessionKey；保留导出避免旧调用点直接断裂。 */
+export const workspaceKey = sessionKey;
 
 export function buildEnvelope({ kind, peerId = '', peerName, peer, text, workspace, session, approvalMode = 'follow', replyTo = '', questionId = '', options = [] }) {
   if (!MESSAGE_KINDS.includes(kind)) throw new Error(`未知消息类型：${kind}`);

@@ -2,13 +2,12 @@
  * 纯消息桥：主 DSH 的 dispatch 直接进入子 DSH 会话；回合结束自动 complete。
  * 不建任务、不维护消息队列，排队交给 DSH Agent 输入队列。
  *
- * 子端会话按 `peerId + workspace.id` 复用：同一主 DSH 的同一工作区只保留一个
- * 子会话，多个主会话不再各自分裂一个子会话。每条 dispatch 自己带着发起方的
- * session，因此 complete / ask 仍然回到正确的原会话；回合产物也按 messageId
- * 从会话事件里精确提取。
+ * 子端会话按 `peerId + workspace.id + session.id` 一一映射：主 DSH 的每个会话
+ * 对应一个独立子会话，不同主会话不会在子端合并上下文。complete / ask 仍按
+ * 发起方 session 回到正确原会话；回合产物按 messageId 从会话事件里精确提取。
  */
 import { createHash, randomBytes } from 'node:crypto';
-import { askEnvelope, completeEnvelope, summarizeSession, summarizeTurn, workspaceKey } from './message-core.js';
+import { askEnvelope, completeEnvelope, sessionKey, summarizeSession, summarizeTurn } from './message-core.js';
 
 const SEEN_LIMIT = 512;
 
@@ -32,14 +31,14 @@ export class MessageBridge {
     this.prepareAgent = prepareAgent ?? (async () => {});
     this.finishTurn = finishTurn ?? (async () => {});
     this.bindWorkspace = bindWorkspace ?? (async () => {});
-    this.sessions = new Map(); // workspace key -> record
+    this.sessions = new Map(); // peer+workspace+main session key -> record
     this.bySession = new Map(); // child sessionId -> record
     this.questions = new Map(); // questionId -> { resolve, timer, record }
     this.seen = new Set();
   }
 
   key(envelope) {
-    return workspaceKey(envelope);
+    return sessionKey(envelope);
   }
 
   #sessionId(key) {

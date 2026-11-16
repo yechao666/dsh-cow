@@ -1,6 +1,6 @@
 # dsh-cow 设计评审：纯消息多机协同
 
-> 评审对象：dsh-cow v1.31.11
+> 评审对象：dsh-cow v1.31.12
 > 评审日期：2026-11-15
 > 结论先行：**方向合理，但当前是「可信内网小团队」可用的 1.x 私有协议，不是生产级、可互操作的 Agent 协议。** 建议保留「纯消息」内核，补齐可靠投递、结构化消息语义、身份授权与 A2A 兼容层。
 
@@ -32,7 +32,7 @@ dsh-cow 把「跨机器 Agent 协同」还原成「一条消息进入对方会�
 1. **协议 v2 + 结构化状态**：`accepted/running/input-required/completed/failed/canceled`、`error{code,retryable}`、`deadline`、`cancel`、`progress`。
 2. **持久化幂等/去重**：dispatch 与 complete 的 messageId 去重不能只在内存；至少用追加日志或 SQLite 落盘。
 3. **身份从「共享密码」升级为「每节点密钥 + 签名 hello」**：共享密码只能用于首次加入，不能作为长期身份。
-4. **会话复用策略可配置**：`workspace`（当前默认，少会话但共享上下文）与 `main-session`（严格隔离）二选一，并在 UI/文档明确隐私边界。
+4. **会话复用策略已定为严格隔离**：`peerId + workspace.id + session.id`，每个主会话对应独立子会话；不再按工作区共享上下文。
 5. **A2A 兼容层**：Agent Card + Message/Task 映射 + JSON-RPC/SSE，把 dsh-cow 的私有消息核心包成标准接口。
 
 ---
@@ -94,7 +94,7 @@ sequenceDiagram
 - **dispatch 立即返回**：不等待、不轮询；
 - **complete 以通知注入原会话**：主端继续同一轮对话；
 - **peerId 为稳定身份，peerName 仅展示**；
-- **子会话按 `peerId + workspace.id` 复用**；进程重启 `agents.resume`；
+- **子会话按 `peerId + workspace.id + session.id` 一一映射**；进程重启 `agents.resume`；
 - **ask/answer 复用原消息的 workspace/session 上下文**；
 - **共享密码 + 挑战应答 + AES-256-GCM 帧级加密**；
 - **文件分块 256 KiB、断点续传、sha256**。
@@ -125,7 +125,7 @@ sequenceDiagram
 4. **peerId/peerName 分离**  
    显示名可以改、可以重名，身份用稳定 peerId；这是分布式系统的基本纪律。
 
-5. **子会话按工作区复用**  
+5. **会话键包含主会话**  
    解决了「每个主会话一个子会话」导致的会话爆炸；同时 complete 仍按每条消息的 origin session 回到正确主会话。
 
 6. **询问交给被询问节点的 Agent**  
@@ -176,7 +176,7 @@ sequenceDiagram
 当前默认 `workspace` 复用：
 
 - 优点：子 DSH 会话数量从「每个主会话一个」降到「每个工作区一个」；重启可恢复；会话列表干净。
-- 代价：同一工作区的多个主会话共享子会话上下文。对于「一台主 DSH、一个操作者、多个并行对话」通常可接受；对于「多个用户共享同一主 DSH 工作区」则是隐私/串扰风险。
+- 已修复：同一工作区的多个主会话不再共享子会话上下文；代价是子端会话数量随主会话数增长。
 - 建议：把它变成显式配置：
   - `sessionScope: "workspace"`（默认，少会话）
   - `sessionScope: "main-session"`（严格隔离，旧行为）
@@ -398,7 +398,7 @@ complete / ask / answer 增加：
 
 - 增加 `sessionScope: "workspace" | "main-session"`；
 - 默认 `workspace`（少会话），但多用户/多租户场景切 `main-session`；
-- UI 明确显示当前策略与「子会话共享上下文」提示；
+- UI 明确显示「主会话一一对应」策略；
 - 提供 `cow-cli prune-sessions`（保留每个工作区最新一个）清理历史。
 
 ### 5.9 互操作
