@@ -148,6 +148,7 @@ function PanelIcon({ name, size = 15 }) {
     alert: ['M18 8a6 6 0 00-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9', 'M10 21h4'],
     lock: ['M6 11V8a6 6 0 1112 0v3', 'M5 11h14v10H5z'],
     clock: ['M12 8v4l3 2', 'M21 12a9 9 0 11-18 0 9 9 0 0118 0z'],
+    sliders: ['M4 21v-7', 'M4 10V3', 'M12 21v-9', 'M12 8V3', 'M20 21v-5', 'M20 12V3', 'M1 14h6', 'M9 8h6', 'M17 16h6'],
   };
   return h('svg', { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': 'true' },
     (paths[name] ?? paths.cube).map((d) => h('path', { key: d, d })),
@@ -704,6 +705,7 @@ function CowActivityPanel() {
       tab('overview', '概览', null, 'network'),
       tab('nodes', '节点', peers.length, 'users'),
       tab('activity', '活动', items.length, 'clock'),
+      tab('settings', '配置', null, 'sliders'),
     ),
     section === 'overview'
       ? h(React.Fragment, null,
@@ -772,6 +774,9 @@ function CowActivityPanel() {
           activityList(200),
         )
       : null,
+    section === 'settings'
+      ? h(SettingsBoundary, null, h(CoCowSettingsPage, { embedded: true }))
+      : null,
   );
 }
 
@@ -784,7 +789,7 @@ function field(label, control) {
   );
 }
 
-function CoCowSettingsPage() {
+function CoCowSettingsPage({ embedded = false } = {}) {
   const [data, setData] = React.useState(null);
   const [form, setForm] = React.useState(null);
   const [savedForm, setSavedForm] = React.useState(null);
@@ -1136,7 +1141,7 @@ function CoCowSettingsPage() {
   );
 
   return h('div', { style: S.wrap },
-    h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 8 } },
+    embedded ? null : h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 8 } },
       h('div', { style: { display: 'grid', gap: 2 } },
         h('h2', { style: { margin: 0, fontSize: 16, fontWeight: 700, letterSpacing: '-0.2px' } }, 'COW 协同'),
         h('span', { style: S.hint }, '节点标识、主端监听与子端连接'),
