@@ -12,13 +12,19 @@ test('complete/ask 注入原会话，answer 回子端', () => {
     parentLabel: () => '更上级',
     parentId: () => 'cow_parent',
   });
-  router.handle('F', { type: 'msg.complete', payload: { messageId: 'm1', replyTo: 'd1', session: { id: 's1' }, text: 'done' } });
-  router.handle('F', { type: 'msg.ask', payload: { messageId: 'm2', questionId: 'q1', session: { id: 's1' }, text: 'ok?', options: ['允许一次'] } });
+  router.handle('F', { type: 'msg.complete', payload: { messageId: 'm1', replyTo: 'd1', session: { id: 's1' }, text: 'done' } }, 'cow_child');
+  router.handle('F', { type: 'msg.ask', payload: { messageId: 'm2', questionId: 'q1', session: { id: 's1' }, text: 'ok?', options: ['允许一次'] } }, 'cow_child');
   assert.equal(injected.length, 2);
   assert.equal(injected[0][0], 's1');
   assert.equal(injected[0][3], 'complete');
+  assert.match(injected[0][2], /\[COW 完成\] peerId=cow_child peerName="F" replyTo=d1/);
+  assert.match(injected[0][2], /<<<COW_CONTENT_BEGIN m1>>>/);
   assert.match(injected[0][2], /done/);
+  assert.match(injected[0][2], /<<<COW_CONTENT_END m1>>>/);
   assert.equal(injected[1][3], 'ask');
+  assert.match(injected[1][2], /\[COW 询问\] peerId=cow_child peerName="F" questionId=q1/);
+  assert.match(injected[1][2], /<<<COW_CONTENT_BEGIN q1>>>/);
+  assert.match(injected[1][2], /<<<COW_CONTENT_END q1>>>/);
   assert.match(injected[1][2], /replyTo="q1"/);
   // 询问交给被询问节点的 Agent 处理：本机思考 / 原生 UI / 请示上级，而不是留在设置页。
   assert.match(injected[1][2], /ask_user_question/);
@@ -28,7 +34,7 @@ test('complete/ask 注入原会话，answer 回子端', () => {
   assert.doesNotMatch(injected[1][2], /peer="更上级"/);
   assert.equal(router.pending().length, 1);
   router.answer('q1', '允许一次');
-  assert.equal(sent[0].peer, 'F');
+  assert.equal(sent[0].peer, 'cow_child');
   assert.equal(sent[0].frame.type, 'msg.answer');
   assert.equal(sent[0].frame.payload.text, '允许一次');
   assert.equal(router.pending().length, 0);

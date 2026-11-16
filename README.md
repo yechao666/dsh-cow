@@ -7,7 +7,7 @@ WebSocket 长连接做全双工 JSON 通讯。**只有消息，没有任务层**
 - 子 DSH：填写主 DSH 地址 + 密码，主动建立并维持长连接，消息直接进入会话输入队列执行；
 - **dispatch（异步）**：主 DSH 派消息后立即返回，不等待、不轮询；排队交给 DSH Agent 输入队列。模型收到返回后应继续做别的事，不要 sleep/轮询，对方完成后 complete 会自动注入原会话；
 - **complete**：子 DSH 回合结束时插件自动把本轮结论发回，主端以通知注入**派发时的原会话**，
-  显示「这条通知触发了本轮回复。」并继续这一轮；
+  显示「这条通知触发了本轮回复。」并继续这一轮；通知头带 `peerId`/`peerName`/`replyTo`，正文用消息级边界符包裹；
 - **ask / answer**：子 DSH 用 `cow_send(kind="ask")` 向直接上级提问/审批，主 DSH 用
   `cow_send(replyTo=questionId)` 回答；回答回到同一 workspace 映射的子会话，并用消息里的
   `session.id` 继续归属原主会话；不建任务、不发任务 ID；

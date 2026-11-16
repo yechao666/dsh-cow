@@ -8,8 +8,8 @@
 - answer：主 DSH 回答。
 - 每条消息带 workspace（id/name/path）、session（id/title）、approvalMode。
 
-## 当前状态（2026-11-15，v1.31.13）
-- 分支：`main`；旧 `main` 保留为 `v1`，发布标签 `v1.31.13`。
+## 当前状态（2026-11-15，v1.31.14）
+- 分支：`main`；旧 `main` 保留为 `v1`，发布标签 `v1.31.14`。
 - 测试：145 条全通过（`npm test`），含“源码不存在 CowTasks/TaskManager/taskId 任务链”守护。
 - 子会话按 `peerId + workspace.id + session.id` 一一映射：每个主会话独立子会话；
   进程重启后用 `agents.resume` 恢复，并重新挂到对应工作区。
@@ -43,7 +43,7 @@
   - 主 Agent 调用 `cow_send` 后立即结束回合（turn/end completed）；工具结果带 `async: true` 并提示不要等待/轮询。
   - 子端按工作区创建/复用 `session-cow-*` 会话并真实执行，回复后 `msg.complete` 回到主端。
   - 主会话出现 `user/message { source: { kind: "notification" } }`：
-    `[COW 完成] 来自 子 DSH-Dev（回复消息 msg_…）`，并触发新一轮回复。
+    `[COW 完成] peerId=cow_… peerName="子 DSH-Dev" replyTo=msg_…`，正文用消息级边界符包裹，并触发新一轮回复。
 - ask → answer：
   - 子端 `cow_send(kind="ask")` → 主会话注入 `[COW 询问]`（带 questionId）。
   - 主端 `cow_send(replyTo=questionId, message="A")` → 子会话工具返回 A，

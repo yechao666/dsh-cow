@@ -4,6 +4,18 @@
  */
 const SEEN_LIMIT = 512;
 
+/** JSON string quoting for header fields such as peerName. */
+function quote(value) {
+  return JSON.stringify(String(value ?? ''));
+}
+
+/** Wrap remote text in a message-scoped boundary so the model can tell it apart from the header. */
+function contentBlock(text, messageId) {
+  const suffix = String(messageId ?? '').replace(/[^A-Za-z0-9_.-]/g, '').slice(0, 64);
+  const marker = suffix ? ` ${suffix}` : '';
+  return `<<<COW_CONTENT_BEGIN${marker}>>>\n${text}\n<<<COW_CONTENT_END${marker}>>>`;
+}
+
 export class MessageRouter {
   constructor({ channel, inject, logger, selfName, parentLabel, parentId, questionTtlMs = 10 * 60_000 }) {
     this.channel = channel;
@@ -33,7 +45,11 @@ export class MessageRouter {
       if (!this.#firstSeen(payload?.messageId)) return true;
       const origin = payload?.session?.id;
       const text = String(payload?.text ?? '');
-      if (origin) this.inject(origin, from, `[COW 完成] 来自 ${from}${payload?.replyTo ? `（回复消息 ${payload.replyTo}）` : ''}\n\n${text}`, 'complete', payload);
+      const senderId = String(fromId || payload?.peerId || '').trim() || '(unknown)';
+      if (origin) {
+        const header = `[COW 完成] peerId=${senderId} peerName=${quote(from)}${payload?.replyTo ? ` replyTo=${payload.replyTo}` : ''}`;
+        this.inject(origin, from, `${header}\n${contentBlock(text, payload?.messageId)}`, 'complete', payload);
+      }
       return true;
     }
     if (type === 'msg.ask.cancel') {
@@ -51,10 +67,10 @@ export class MessageRouter {
         const self = this.selfName();
         const parent = this.parentId() || this.parentLabel();
         const asker = String(payload?.peerId || fromId || from);
+        const header = `[COW 询问] peerId=${asker} peerName=${quote(from)} questionId=${questionId}`;
         const lines = [
-          `[COW 询问] 来自 ${from}（questionId: ${questionId}）`,
-          '',
-          String(payload.text ?? ''),
+          header,
+          contentBlock(String(payload.text ?? ''), questionId),
           '',
           `这条询问由你（${self}）处理，不要留给设置页：`,
           '1. 先自己判断能否直接答复；',
