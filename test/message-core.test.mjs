@@ -71,3 +71,31 @@ test('summarizeSession 在本轮 turn/end 报错时抛出（complete 会带失�
   const session = { seq: events.length, eventAt: (seq) => events[seq] };
   assert.throws(() => summarizeSession(session, 0), /目录不存在/);
 });
+
+test('nextChain：首次派发开新链，后续继承并递增', async () => {
+  const { nextChain, buildEnvelope, completeEnvelope, DEFAULT_MAX_CHAIN_DEPTH } = await import('../src/message-core.js');
+  const first = nextChain(null);
+  assert.equal(first.depth, 1);
+  assert.equal(first.maxDepth, DEFAULT_MAX_CHAIN_DEPTH);
+  assert.ok(first.id);
+  assert.equal(first.overLimit, false);
+
+  const again = nextChain(first);
+  assert.equal(again.id, first.id, '同一条链要复用 id');
+  assert.equal(again.depth, 2);
+
+  const capped = nextChain({ id: 'c1', depth: 3, maxDepth: 3 });
+  assert.equal(capped.overLimit, true);
+});
+
+test('complete / ask 回执原样带回 chain，供上级继续计数', async () => {
+  const { buildEnvelope, completeEnvelope, askEnvelope } = await import('../src/message-core.js');
+  const dispatch = buildEnvelope({
+    kind: 'dispatch', peerId: 'cow_child', peerName: '子', text: 'hi',
+    workspace: { id: 'w', name: 'w', path: '/w' }, session: { id: 's', title: '' },
+    chain: { id: 'chain-9', depth: 2, maxDepth: 3 },
+  });
+  assert.deepEqual(dispatch.chain, { id: 'chain-9', depth: 2, maxDepth: 3 });
+  assert.deepEqual(completeEnvelope(dispatch, 'done').chain, dispatch.chain);
+  assert.deepEqual(askEnvelope(dispatch, '要吗？').chain, dispatch.chain);
+});

@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
  *
  *   cow_status / cow_peers / cow_send / cow_doctor + 文件交换工具
  */
-import { buildEnvelope, newMessageId } from './message-core.js';
+import { buildEnvelope, newMessageId, nextChain } from './message-core.js';
 
 function textOutput(value) {
   return [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) }];
@@ -65,7 +65,20 @@ const PEER_NAME_PARAM = {
   description: '可选：目标节点的显示名提示；名称可能随时变化，不参与路由与校验，实际以 peerId 为准',
 };
 
-export function createToolDefinitions({ instance, channel, peers, files, doctor, bridge, router, activity, packages, sessionInfoFor }) {
+export function createToolDefinitions({ instance, channel, peers, files, doctor, bridge, router, activity, packages, sessionInfoFor, chainForSession }) {
+  // 每个会话的派发时间戳：一分钟内派太多说明在自我循环，直接刹车。
+  const sendWindow = new Map();
+  const guardSendRate = (sessionId) => {
+    const key = String(sessionId ?? '');
+    const now = Date.now();
+    const recent = (sendWindow.get(key) ?? []).filter((stamp) => now - stamp < 60_000);
+    if (recent.length >= 12) {
+      throw new Error('本会话一分钟内派发已超过 12 次，疑似循环转发，已暂停发送；请直接汇总结果，不要继续派发下级。');
+    }
+    recent.push(now);
+    sendWindow.set(key, recent);
+    if (sendWindow.size > 200) sendWindow.delete(sendWindow.keys().next().value);
+  };
   const peerById = (id) => {
     const needle = String(id ?? '').trim();
     if (!needle) return null;
@@ -448,6 +461,17 @@ export function createToolDefinitions({ instance, channel, peers, files, doctor,
         const info = typeof sessionInfoFor === 'function'
           ? sessionInfoFor(exec?.agent?.session)
           : { session: { id: sessionIdOf(exec), title: '' }, workspace: { id: '', name: '', path: '' } };
+        const sessionId = sessionIdOf(exec);
+        guardSendRate(sessionId);
+        // 这一轮如果是由下级回执触发的，就继承那条链再往下走一跳；
+        // 超过上限说明在自己喂自己，直接拒绝，让 Agent 回到汇总。
+        const inherited = typeof chainForSession === 'function' ? chainForSession(sessionId) : null;
+        const chain = nextChain(inherited);
+        if (chain.overLimit) {
+          throw new Error(
+            `转发链已达上限（第 ${chain.depth} 跳，限制 ${chain.maxDepth} 跳）。这通常意味着消息在上下级之间循环；不要再派发下级，直接把结果汇总给上级。`,
+          );
+        }
         const envelope = buildEnvelope({
           kind: 'dispatch',
           peerId: target.peerId || '',
@@ -456,6 +480,7 @@ export function createToolDefinitions({ instance, channel, peers, files, doctor,
           workspace: info.workspace,
           session: info.session,
           approvalMode: 'follow',
+          chain,
         });
         const sent = channel.send(target.peerId || target.label, { type: 'msg.dispatch', payload: envelope });
         const shortId = target.peerId ? `（${target.peerId}）` : '';

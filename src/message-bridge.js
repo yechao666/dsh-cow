@@ -22,7 +22,8 @@ function messageObject({ id, text, source = 'user' }) {
 }
 
 export class MessageBridge {
-  constructor({ channel, agents, logger, agentOptions, summarize, workspacePath, prepareAgent, finishTurn, bindWorkspace }) {
+  constructor({ channel, agents, logger, agentOptions, summarize, workspacePath, prepareAgent, finishTurn, bindWorkspace, rememberChain }) {
+    this.rememberChain = typeof rememberChain === 'function' ? rememberChain : () => {};
     this.channel = channel;
     this.agents = agents; // 只要求 get(sessionId)
     this.logger = logger ?? console;
@@ -122,6 +123,8 @@ export class MessageBridge {
     }
     const record = await this.ensure(envelope);
     record.envelopes.set(envelope.messageId, envelope);
+    // 记下这条入站消息带进来的转发链：本会话下一轮再派发时据此 +1。
+    this.rememberChain(record.sessionId, envelope.chain);
     record.parent = fromId || from;
     record.parentLabel = from;
     // 必须在 followup 之前取水位，否则会漏掉这条消息的 user/message 事件。
@@ -243,6 +246,7 @@ export class MessageBridge {
   async answer(envelope, from, fromId = '') {
     if (!this.#remember(envelope.messageId)) return { messageId: envelope.messageId, status: 'duplicate' };
     const record = await this.ensure(envelope);
+    this.rememberChain(record.sessionId, envelope.chain);
     record.parent = record.parent || fromId || from;
     record.agent.followup(messageObject({ id: envelope.messageId, text: `[COW 回答] ${envelope.text}` }));
     return { messageId: envelope.messageId, sessionId: record.sessionId, status: 'sent' };

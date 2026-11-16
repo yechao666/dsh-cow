@@ -131,7 +131,20 @@ export function apply(ctx, rawConfig = {}) {
 
   const agentOf = (sessionId) => service('agents')?.get?.(sessionId) ?? null;
 
-  const injectMessage = (sessionId, from, text, kind = 'complete') => {
+  // 入站消息把「转发链」带进来：本会话下一轮再派发时继承它并 +1，避免 A→B→C→A 无限循环。
+  const inboundChain = new Map();
+  const chainForSession = (sessionId) => inboundChain.get(String(sessionId ?? '')) ?? null;
+  // 注意：必须按「本地会话 id」记账——envelope.session 是发送方的会话，
+  // 拿它当键会让本机 Agent 永远查不到链，深度每轮都从 1 重来。
+  const rememberChain = (sessionId, chain) => {
+    const key = String(sessionId ?? '');
+    if (!key || !chain) return;
+    inboundChain.set(key, chain);
+    if (inboundChain.size > 500) inboundChain.delete(inboundChain.keys().next().value);
+  };
+
+  const injectMessage = (sessionId, from, text, kind = 'complete', payload = null) => {
+    rememberChain(sessionId, payload?.chain);
     const agent = agentOf(sessionId);
     if (!agent || typeof agent.followup !== 'function') {
       logger.warn(`[dsh-cow] 找不到可注入的原会话 ${sessionId || '(空)'}，${kind} 消息未送达 Agent`);
@@ -287,6 +300,7 @@ export function apply(ctx, rawConfig = {}) {
 
   bridge = new MessageBridge({
     channel,
+    rememberChain,
     agents: {
       get: (sessionId) => service('agents')?.get?.(sessionId) ?? null,
       create: (options) => service('agents')?.create?.(options),
@@ -436,6 +450,7 @@ export function apply(ctx, rawConfig = {}) {
       activity,
       packages,
       sessionInfoFor: (session) => sessionInfo(ctx, session),
+      chainForSession,
     }),
   );
 

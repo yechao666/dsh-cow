@@ -6,6 +6,9 @@ import { randomBytes } from 'node:crypto';
 
 export const MESSAGE_KINDS = ['dispatch', 'complete', 'ask', 'answer'];
 
+/** 一条转发链最多几跳：超过就认为在自我循环，必须停下来汇报。 */
+export const DEFAULT_MAX_CHAIN_DEPTH = 3;
+
 export function newMessageId(prefix = 'msg') {
   return `${prefix}_${Date.now().toString(36)}_${randomBytes(4).toString('hex')}`;
 }
@@ -18,7 +21,33 @@ export function workspaceKey({ peerId, peer, workspace }) {
   return `${node}::${ws}`;
 }
 
-export function buildEnvelope({ kind, peerId = '', peerName, peer, text, workspace, session, approvalMode = 'follow', replyTo = '', questionId = '', options = [] }) {
+/**
+ * 计算下一次派发所属的链：从「触发本轮的那条消息」继承 chain.id 并 +1。
+ * 没有上下文（用户直接发起）时开一条新链，depth=1。
+ */
+export function nextChain(current, { maxDepth = DEFAULT_MAX_CHAIN_DEPTH } = {}) {
+  const depth = (Number(current?.depth) || 0) + 1;
+  const limit = Number(current?.maxDepth) > 0 ? Number(current.maxDepth) : maxDepth;
+  return {
+    id: String(current?.id || '') || newMessageId('chain'),
+    depth,
+    maxDepth: limit,
+    overLimit: depth > limit,
+  };
+}
+
+function normalizeChain(chain) {
+  if (!chain || typeof chain !== 'object') return null;
+  const depth = Number(chain.depth);
+  const maxDepth = Number(chain.maxDepth);
+  return {
+    id: String(chain.id ?? ''),
+    depth: Number.isFinite(depth) && depth >= 0 ? Math.floor(depth) : 0,
+    maxDepth: Number.isFinite(maxDepth) && maxDepth > 0 ? Math.floor(maxDepth) : DEFAULT_MAX_CHAIN_DEPTH,
+  };
+}
+
+export function buildEnvelope({ kind, peerId = '', peerName, peer, text, workspace, session, approvalMode = 'follow', replyTo = '', questionId = '', options = [], chain = null }) {
   if (!MESSAGE_KINDS.includes(kind)) throw new Error(`未知消息类型：${kind}`);
   const displayName = String(peerName ?? peer ?? '').trim();
   if (!peerId && !displayName) throw new Error('缺少 peerId（可选 peerName）');
@@ -38,6 +67,7 @@ export function buildEnvelope({ kind, peerId = '', peerName, peer, text, workspa
     workspace: { id: String(workspace?.id ?? ''), name: String(workspace?.name ?? ''), path: String(workspace?.path ?? '') },
     session: { id: String(session?.id ?? ''), title: String(session?.title ?? '') },
     approvalMode,
+    chain: normalizeChain(chain),
     createdAt: new Date().toISOString(),
   };
 }
@@ -53,6 +83,7 @@ export function completeEnvelope(dispatchMessage, text) {
     session: dispatchMessage.session,
     approvalMode: dispatchMessage.approvalMode,
     replyTo: dispatchMessage.messageId,
+    chain: dispatchMessage.chain ?? null,
   });
 }
 
@@ -67,6 +98,7 @@ export function askEnvelope(dispatchMessage, text, options = []) {
     workspace: dispatchMessage.workspace,
     session: dispatchMessage.session,
     approvalMode: dispatchMessage.approvalMode,
+    chain: dispatchMessage.chain ?? null,
   });
 }
 
@@ -81,6 +113,7 @@ export function answerEnvelope(askMessage, text) {
     session: askMessage.session,
     approvalMode: askMessage.approvalMode,
     replyTo: askMessage.questionId || askMessage.messageId,
+    chain: askMessage.chain ?? null,
   });
 }
 

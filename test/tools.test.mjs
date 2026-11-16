@@ -186,3 +186,30 @@ test('cow_upgrade 外部地址必须带 sha256 和 version', async () => {
   await assert.rejects(tool.execute({ peerId: 'cow_child', url: 'https://example.com/dsh-cow.tgz' }, { agent: { session: { id: 's' } } }), /sha256/);
   await assert.rejects(tool.execute({ peerId: 'cow_child', url: 'https://example.com/dsh-cow.tgz', sha256: 'b'.repeat(64) }, { agent: { session: { id: 's' } } }), /version/);
 });
+
+test('cow_send 继承转发链并 +1 跳', async () => {
+  const { defs, sent } = deps({ chainForSession: () => ({ id: 'chain-1', depth: 1, maxDepth: 3 }) });
+  const tool = find(defs, 'cow_send');
+  await tool.execute({ peerId: 'cow_child', message: '往下传' }, { agent: { session: { id: 'session-chain' } } });
+  assert.deepEqual(sent[0].frame.payload.chain, { id: 'chain-1', depth: 2, maxDepth: 3 });
+});
+
+test('cow_send 超过转发链上限时拒绝，并提示直接汇报', async () => {
+  const { defs, sent } = deps({ chainForSession: () => ({ id: 'chain-1', depth: 3, maxDepth: 3 }) });
+  const tool = find(defs, 'cow_send');
+  await assert.rejects(
+    tool.execute({ peerId: 'cow_child', message: '再传一次' }, { agent: { session: { id: 'session-over' } } }),
+    /转发链已达上限/,
+  );
+  assert.equal(sent.length, 0, '超限时不应该真的发出消息');
+});
+
+test('同一会话一分钟内派发超过 12 次会被限流', async () => {
+  const { defs } = deps();
+  const tool = find(defs, 'cow_send');
+  const exec = { agent: { session: { id: 'session-flood' } } };
+  for (let i = 0; i < 12; i += 1) {
+    await tool.execute({ peerId: 'cow_child', message: `第 ${i} 次` }, exec);
+  }
+  await assert.rejects(tool.execute({ peerId: 'cow_child', message: '第 13 次' }, exec), /疑似循环转发/);
+});
