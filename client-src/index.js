@@ -148,6 +148,7 @@ function PanelIcon({ name, size = 15 }) {
     alert: ['M18 8a6 6 0 00-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9', 'M10 21h4'],
     lock: ['M6 11V8a6 6 0 1112 0v3', 'M5 11h14v10H5z'],
     clock: ['M12 8v4l3 2', 'M21 12a9 9 0 11-18 0 9 9 0 0118 0z'],
+    tree: ['M12 4v5', 'M12 9H6v4', 'M12 9h6v4', 'M6 13v7', 'M18 13v7'],
   };
   return h('svg', { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': 'true' },
     (paths[name] ?? paths.cube).map((d) => h('path', { key: d, d })),
@@ -437,6 +438,172 @@ function CowTopology({ state }) {
   );
 }
 
+// ── 下级地图（插件层采集，只向下、不向上） ──────────────────────
+
+const MAP_NODE_W = 156;
+const MAP_NODE_H = 56;
+const MAP_COL_GAP = 188;
+const MAP_ROW_GAP = 108;
+const MAP_PAD = 30;
+
+function DownstreamMap() {
+  const [map, setMap] = React.useState(null);
+  const [depth, setDepth] = React.useState(3);
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState('');
+
+  const load = React.useCallback(async (nextDepth = depth) => {
+    setLoading(true);
+    try {
+      const response = await fetch(api(`topology?depth=${nextDepth}`), { credentials: 'same-origin' });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body?.error?.message || `HTTP ${response.status}`);
+      setMap(body);
+      setError('');
+    } catch (loadError) {
+      setError(loadError.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [depth]);
+
+  React.useEffect(() => { void load(depth); }, [load, depth]);
+
+  const nodes = map?.nodes ?? [];
+  const stats = map?.stats ?? {};
+  const meta = map?.meta ?? {};
+  const levels = [];
+  for (const node of nodes) {
+    if (!levels[node.depth]) levels[node.depth] = [];
+    levels[node.depth].push(node);
+  }
+  const rowCount = levels.length;
+  const cols = Math.max(1, ...levels.map((row) => row?.length ?? 0));
+  const width = Math.max(760, cols * MAP_COL_GAP + MAP_PAD * 2);
+  const height = Math.max(240, rowCount * MAP_ROW_GAP + MAP_PAD * 2);
+
+  const positionOf = (node) => {
+    const row = levels[node.depth] ?? [node];
+    const index = Math.max(0, row.indexOf(node));
+    const rowWidth = row.length * MAP_COL_GAP;
+    const startX = (width - rowWidth) / 2 + (MAP_COL_GAP - MAP_NODE_W) / 2;
+    return { x: startX + index * MAP_COL_GAP, y: MAP_PAD + node.depth * MAP_ROW_GAP };
+  };
+  const positions = new Map(nodes.map((node) => [node.id, positionOf(node)]));
+  const edges = nodes
+    .filter((node) => node.parentId && positions.has(node.parentId))
+    .map((node) => {
+      const from = positions.get(node.parentId);
+      const to = positions.get(node.id);
+      const fromX = from.x + MAP_NODE_W / 2;
+      const toX = to.x + MAP_NODE_W / 2;
+      return {
+        key: `${node.parentId}->${node.id}`,
+        d: `M ${fromX} ${from.y + MAP_NODE_H} C ${fromX} ${from.y + MAP_NODE_H + 40}, ${toX} ${to.y - 40}, ${toX} ${to.y}`,
+        stale: node.stale === true || node.online === false,
+      };
+    });
+
+  const depthControl = h('select', {
+    value: depth,
+    onChange: (event) => setDepth(Number(event.target.value)),
+    style: { ...S.secondary, height: 26, padding: '0 6px', fontSize: 11 },
+  }, [1, 2, 3, 4, 5].map((value) => h('option', { key: value, value }, `${value} 层`)));
+
+  return h('div', { style: PANEL.card },
+    h('div', { style: PANEL.cardHead },
+      h('div', { style: { display: 'grid', gap: 2 } },
+        h('h3', { style: PANEL.cardTitle }, '下级地图'),
+        h('span', { style: { ...S.meta, fontSize: 11 } },
+          '只沿下级方向递归采集，不询问任何上级；不经过智能体工具，无需模型参与'),
+      ),
+      h('div', { style: { display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' } },
+        depthControl,
+        h('button', {
+          type: 'button',
+          style: { ...S.secondary, height: 26, padding: '0 10px', fontSize: 11 },
+          disabled: loading,
+          onClick: () => { void load(depth); },
+        }, loading ? '采集中…' : '重新采集'),
+      ),
+    ),
+    h('div', { style: { display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 } },
+      h(PanelChip, { tone: 'brand' }, `共 ${stats.total ?? 0} 个节点`),
+      h(PanelChip, { tone: 'on' }, `在线 ${stats.online ?? 0}`),
+      h(PanelChip, { tone: 'off' }, `离线 ${stats.offline ?? 0}`),
+      h(PanelChip, null, `直接下级 ${stats.direct ?? 0}`),
+      h(PanelChip, null, `最深 ${stats.depth ?? 0} 层`),
+      meta.elapsedMs === undefined ? null : h(PanelChip, null, `${meta.elapsedMs}ms`),
+      meta.truncated ? h(PanelChip, { tone: 'off' }, '已截断') : null,
+    ),
+    error ? h('div', { style: { ...S.meta, color: 'var(--dsw-alias-label-error)', marginBottom: 8 } }, error) : null,
+    nodes.length <= 1 && !error
+      ? h('div', { style: PANEL.empty }, loading ? '正在采集下级…' : '当前没有下级节点')
+      : h('div', {
+          style: {
+            position: 'relative', width: '100%', overflow: 'auto', borderRadius: 10,
+            border: '1px solid var(--dsw-alias-border-l2)',
+            backgroundImage: 'radial-gradient(circle, var(--dsw-alias-border-l2) 1px, transparent 1px)',
+            backgroundSize: '20px 20px',
+          },
+        },
+          h('div', { style: { position: 'relative', width, height } },
+            h('svg', { width, height, style: { position: 'absolute', left: 0, top: 0, pointerEvents: 'none' } },
+              edges.map((edge) => h('path', {
+                key: edge.key,
+                d: edge.d,
+                fill: 'none',
+                stroke: edge.stale ? 'var(--dsw-alias-border-l2)' : 'var(--dsw-alias-brand-primary)',
+                strokeWidth: 1.4,
+                strokeOpacity: edge.stale ? 0.6 : 0.45,
+                strokeDasharray: edge.stale ? '3 5' : '5 5',
+              })),
+            ),
+            nodes.map((node) => {
+              const position = positions.get(node.id);
+              const isSelf = node.depth === 0;
+              const tone = isSelf
+                ? { border: 'var(--dsw-alias-brand-primary)', background: 'color-mix(in srgb, var(--dsw-alias-brand-primary) 8%, var(--dsw-alias-bg-l1))' }
+                : node.stale
+                  ? { border: 'var(--dsw-alias-border-l2)', background: 'var(--dsw-alias-bg-l2)' }
+                  : { border: 'var(--dsw-alias-border-l1)', background: 'var(--dsw-alias-bg-l1)' };
+              return h('div', {
+                key: node.id,
+                title: [node.description, node.id].filter(Boolean).join('\n'),
+                style: {
+                  position: 'absolute', left: position.x, top: position.y, width: MAP_NODE_W,
+                  boxSizing: 'border-box', padding: '8px 10px', borderRadius: 11,
+                  border: `1px ${node.stale ? 'dashed' : 'solid'} ${tone.border}`,
+                  background: tone.background,
+                  display: 'grid', gap: 4,
+                  boxShadow: isSelf ? '0 8px 20px rgba(0,0,0,0.10)' : '0 3px 10px rgba(0,0,0,0.05)',
+                },
+              },
+                h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 } },
+                  h('span', {
+                    style: {
+                      width: 7, height: 7, borderRadius: 99, flex: '0 0 auto',
+                      background: node.online ? '#34c38f' : 'var(--dsw-alias-label-tertiary)',
+                    },
+                  }),
+                  h('span', {
+                    style: { fontSize: 12, fontWeight: 650, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+                  }, node.label || node.id),
+                  isSelf ? h(PanelChip, { tone: 'brand' }, '本机') : null,
+                ),
+                h('div', { style: { display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' } },
+                  h('span', { style: { ...S.meta, fontSize: 10 } }, node.version ? `v${node.version}` : '版本未知'),
+                  node.stale ? h(PanelChip, { tone: 'off' }, '未响应') : null,
+                  node.encrypted ? h(E2EChip, { compact: true }) : null,
+                  !isSelf && node.depth > 0 ? h(PanelChip, null, `第 ${node.depth} 层`) : null,
+                ),
+              );
+            }),
+          ),
+        ),
+  );
+}
+
 // ── COW 状态面板 ────────────────────────────────────────────────
 
 function CowActivityPanel() {
@@ -703,6 +870,7 @@ function CowActivityPanel() {
     h('div', { style: { display: 'flex', gap: 20, marginBottom: 14, padding: 0, borderBottom: '1px solid var(--dsw-alias-border-l2)', width: '100%', maxWidth: '100%', overflowX: 'auto' } },
       tab('overview', '概览', null, 'network'),
       tab('nodes', '节点', peers.length, 'users'),
+      tab('map', '下级地图', null, 'tree'),
       tab('activity', '活动', items.length, 'clock'),
     ),
     section === 'overview'
@@ -759,6 +927,9 @@ function CowActivityPanel() {
             ? h('div', { style: { display: 'grid', gap: 10 } }, children.map((child) => nodeDetail(child, 'child')))
             : h('div', { style: PANEL.card }, h('div', { style: PANEL.empty }, '当前没有子 DSH')),
         )
+      : null,
+    section === 'map'
+      ? h(DownstreamMap, null)
       : null,
     section === 'activity'
       ? h('div', { style: PANEL.card },

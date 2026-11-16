@@ -64,7 +64,17 @@ export function buildPluginTarball(root, { name, version }) {
   entries.sort((a, b) => a.path.localeCompare(b.path));
   const chunks = [];
   for (const entry of entries) {
-    const content = readFileSync(join(root, entry.path));
+    let content = readFileSync(join(root, entry.path));
+    // 包名/版本以调用方传入的为准：升级校验读的是包内 package.json，
+    // 若直接拷贝磁盘上的旧 package.json，打出来的包会带着过时版本号。
+    if (entry.path === 'package.json') {
+      try {
+        const manifest = JSON.parse(content.toString('utf8'));
+        content = Buffer.from(`${JSON.stringify({ ...manifest, name, version }, null, 2)}\n`, 'utf8');
+      } catch {
+        /* 解析失败就按原样打包 */
+      }
+    }
     chunks.push(header(`package/${entry.path}`, content.length, Math.floor(entry.stat.mtimeMs / 1000)));
     chunks.push(content);
     chunks.push(pad(content));

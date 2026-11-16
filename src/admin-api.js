@@ -249,5 +249,23 @@ export function createAdminHandlers(deps) {
       deps.peers.remove(peerName);
       sendJson(res, 200, state());
     }),
+
+    /**
+     * 下级地图：纯插件层采集，只向下、不向上，不调用任何智能体工具。
+     * `?depth=3&timeoutMs=900` 可调；结果含 nodes/edges/stats，前端直接画图。
+     */
+    '/api/cow/topology': wrap(async (req, res) => {
+      if (req.method !== 'GET') return sendJson(res, 405, { error: { code: 'method_not_allowed', message: '只支持 GET' } });
+      if (typeof deps.channel?.collectDownstream !== 'function') {
+        return sendJson(res, 503, { error: { code: 'unavailable', message: '通道未就绪，暂时无法采集下级' } });
+      }
+      const params = new URL(req.url ?? '/', 'http://cow.local').searchParams;
+      const map = await deps.channel.collectDownstream({
+        depth: params.get('depth') ?? undefined,
+        timeoutMs: params.get('timeoutMs') ?? undefined,
+        maxNodes: params.get('maxNodes') ?? undefined,
+      });
+      sendJson(res, 200, map);
+    }),
   };
 }

@@ -18,6 +18,7 @@ import { hashJoinPassword, makeJoinProof, verifyJoinProof } from './identity.js'
 import { readJson, writeJsonAtomic } from './store.js';
 import { acceptUpgrade, connect as wsConnect } from './ws.js';
 import { deriveSessionKey, open as openSealed, seal } from './crypto.js';
+import { buildMap, childNode, resolveLimits, sanitizeSubtree, selfNode } from './topology.js';
 
 const HEARTBEAT_MS = 20_000;
 const DEAD_MS = 65_000;
@@ -65,6 +66,12 @@ export class Channel {
     this.timer = null;
     this.stateSaveAt = 0;
     this.loaded = false;
+    /** 在途的下级拓扑请求：id -> {resolve, timer}。 */
+    this.topoPending = new Map();
+    /** 拓扑请求自增序号，避免同一毫秒重复。 */
+    this.topoSeq = 0;
+    /** 每个连接的最近拓扑请求时间戳，用来限速。 */
+    this.topoHits = new WeakMap();
   }
 
   // ── 生命周期 ──────────────────────────────────────────────────
@@ -446,6 +453,13 @@ export class Channel {
 
   #onClosed(state) {
     if (this.conns.get(state.label) === state) this.conns.delete(state.label);
+    // 连接断了：这条链路上还没回来的拓扑请求立即失败，不要让调用方等到超时。
+    for (const [id, pending] of this.topoPending) {
+      if (pending.state !== state) continue;
+      clearTimeout(pending.timer);
+      this.topoPending.delete(id);
+      pending.resolve(null);
+    }
     if (state.ready) {
       try { this.onOffline?.(state.label); } catch (error) { this.logger.warn?.(`[dsh-cow] 处理对端离线失败：${error?.message ?? error}`); }
     }
@@ -653,6 +667,19 @@ export class Channel {
         this.#dropAcked(label, state.outAckSeq);
         break;
       }
+      case 'topo.req': {
+        // 插件层的下级地图请求：只有认证过的连接才应答，报文超限直接丢弃。
+        if (text.length > 256 * 1024) return;
+        const plain = this.#openTopoFrame(state, frame);
+        if (plain) void this.#onTopologyRequest(state, plain);
+        break;
+      }
+      case 'topo.res': {
+        if (text.length > 512 * 1024) return;
+        const plain = this.#openTopoFrame(state, frame);
+        if (plain) this.#onTopologyResponse(state, plain);
+        break;
+      }
       case 'ping':
         this.#write(state.conn, { type: 'pong', t: frame.t ?? null });
         break;
@@ -808,5 +835,234 @@ export class Channel {
       since: state.since ? new Date(state.since).toISOString() : null,
       lastSeenAt: new Date(state.lastSeenAt).toISOString(),
     }));
+  }
+
+  // ── 下级拓扑（纯插件层，不经过任何智能体工具） ──────────────────
+  //
+  // 方向：只向下。给直接下级发 topo.req，对方用自己的下级继续递归，
+  // 把子树塞进 topo.res 回传；任何节点都不会去访问自己的上级。
+
+  /**
+   * 采集全部下级地图。
+   * @param {{depth?: number, timeoutMs?: number, maxNodes?: number}} input
+   * @returns {Promise<ReturnType<import('./topology.js').buildMap>>}
+   */
+  async collectDownstream(input = {}) {
+    const limits = resolveLimits(input);
+    const startedAt = this.now();
+    const budget = { remaining: limits.maxNodes, truncated: false };
+    // seen：随请求下发，用来防环（谁问过我）；dedupe：本地收到结果时去重。
+    const seen = new Set();
+    const dedupe = new Set();
+    if (this.instance.peerId) {
+      seen.add(String(this.instance.peerId));
+      dedupe.add(String(this.instance.peerId));
+    }
+    const children = await this.#collectChildren({
+      depth: limits.depth,
+      timeoutMs: limits.timeoutMs,
+      seen,
+      dedupe,
+      budget,
+    });
+    const elapsedMs = this.now() - startedAt;
+    return buildMap({
+      self: this.instance,
+      children,
+      meta: {
+        generatedAt: new Date(this.now()).toISOString(),
+        elapsedMs,
+        depth: limits.depth,
+        timeoutMs: limits.timeoutMs,
+        truncated: budget.truncated,
+      },
+    });
+  }
+
+  /** 直接下级：登记表里除上级以外的节点 + 已连上但没登记的入站连接。 */
+  #directChildren() {
+    const parentId = String(this.instance.parent?.peerId ?? '');
+    const entries = [];
+    for (const peer of this.peers.list()) {
+      if (peer.relation === 'parent') continue;
+      if (parentId && peer.peerId === parentId) continue;
+      const node = childNode({ peer, status: this.status(peer.label) });
+      if (!node.id) continue;
+      entries.push(node);
+    }
+    // 未登记但已经连上的入站连接也要画出来，否则地图会漏人。
+    for (const [label, state] of this.conns) {
+      if (!state.ready || state.direction !== 'in') continue;
+      if (state.peerId && (state.peerId === parentId || state.peerId === this.instance.peerId)) continue;
+      if (entries.some((item) => item.id === state.peerId || item.label === label)) continue;
+      entries.push({
+        id: String(state.peerId || label),
+        label: String(label),
+        version: String(state.node?.version ?? ''),
+        role: 'member',
+        relation: 'child',
+        online: true,
+        direct: true,
+        description: String(state.node?.description ?? ''),
+        encrypted: Boolean(state.e2eKey),
+      });
+    }
+    return entries;
+  }
+
+  /**
+   * 一层：并发向下级要子树。断线 / 超时 / 预算耗尽都保留节点本身，
+   * 只是 children 为空并打上 stale，避免地图上「人突然消失」。
+   */
+  async #collectChildren({ depth, timeoutMs, seen, dedupe, budget }) {
+    const entries = this.#directChildren();
+    const results = await Promise.all(entries.map(async (entry) => {
+      if (budget.remaining <= 0) {
+        budget.truncated = true;
+        return { ...entry, children: [], stale: true };
+      }
+      budget.remaining -= 1;
+      if (depth <= 0) return { ...entry, children: [], stale: true };
+      if (!entry.online) return { ...entry, children: [] };
+      const raw = await this.#askTopology(entry, { depth: depth - 1, timeoutMs, seen });
+      if (!raw) return { ...entry, children: [], stale: true };
+      const { tree, truncated, remaining } = sanitizeSubtree(
+        { ...raw.node, children: raw.children ?? [] },
+        { remaining: budget.remaining, depth: 1, maxDepth: depth, seen: dedupe },
+      );
+      budget.remaining = remaining;
+      if (truncated || raw.truncated) budget.truncated = true;
+      if (!tree) return { ...entry, children: [], stale: true };
+      return {
+        ...entry,
+        ...tree,
+        id: entry.id,
+        label: entry.label || tree.label,
+        relation: entry.relation,
+        online: true,
+        encrypted: entry.encrypted === true,
+        children: tree.children,
+      };
+    }));
+    return results.filter(Boolean);
+  }
+
+  /** 拓扑帧与业务事件同样受 E2E 保护：有会话密钥时把正文密封，只留 type/id 明文。 */
+  #writeTopo(state, frame) {
+    if (!state?.e2eKey) return this.#write(state.conn, frame);
+    const { id, ...body } = frame;
+    return this.#write(state.conn, { type: frame.type, id, enc: seal(state.e2eKey, body) });
+  }
+
+  /** 解开收到的拓扑帧；密钥缺失或解密失败返回 null。 */
+  #openTopoFrame(state, frame) {
+    if (!frame.enc) return frame;
+    if (!state.e2eKey) {
+      this.logger.warn?.('[dsh-cow] 收到加密拓扑帧但没有会话密钥，已丢弃');
+      return null;
+    }
+    try {
+      return { type: frame.type, id: frame.id, ...openSealed(state.e2eKey, frame.enc) };
+    } catch (error) {
+      this.logger.warn?.(`[dsh-cow] 拓扑帧解密失败：${error?.message ?? error}`);
+      return null;
+    }
+  }
+
+  /** 向一个直接下级要它的子树；超时、断线都返回 null。 */
+  #askTopology(entry, { depth, timeoutMs, seen }) {
+    const state = this.conns.get(entry.label);
+    if (!state?.ready) return Promise.resolve(null);
+    const id = `topo_${this.instance.peerId}_${this.now().toString(36)}_${this.topoSeq += 1}`;
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        this.topoPending.delete(id);
+        resolve(null);
+      }, timeoutMs);
+      timer.unref?.();
+      this.topoPending.set(id, { resolve, timer, state });
+      const sent = this.#writeTopo(state, {
+        type: 'topo.req',
+        id,
+        depth,
+        timeoutMs,
+        // 下发时把目标节点一起带上：对端据此知道哪些节点不必再问。
+        seen: [...seen, entry.id].slice(0, 200),
+      });
+      if (!sent) {
+        clearTimeout(timer);
+        this.topoPending.delete(id);
+        resolve(null);
+      }
+    });
+  }
+
+  /** 收到下级回传：只接受这条链路上的应答，并立刻结束等待。 */
+  #onTopologyResponse(state, frame) {
+    const id = String(frame.id ?? '');
+    if (!id) return;
+    const pending = this.topoPending.get(id);
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    this.topoPending.delete(id);
+    if (pending.state !== state) {
+      pending.resolve(null);
+      return;
+    }
+    if (frame.ok === false || !frame.node) {
+      pending.resolve(null);
+      return;
+    }
+    pending.resolve({
+      node: frame.node,
+      children: Array.isArray(frame.children) ? frame.children : [],
+      truncated: frame.truncated === true,
+    });
+  }
+
+  /**
+   * 作为一个节点被上级询问：只向下递归采集，绝不把请求转给自己的上级。
+   * 同一连接每秒最多 20 次，防止被当成放大器。
+   */
+  async #onTopologyRequest(state, frame) {
+    if (!state.authenticated) return;
+    const id = String(frame.id ?? '');
+    if (!id) return;
+    const now = this.now();
+    const recent = (this.topoHits.get(state) ?? []).filter((stamp) => now - stamp < 1000);
+    if (recent.length >= 20) {
+      this.#writeTopo(state, { type: 'topo.res', id, ok: false, error: 'rate_limited' });
+      return;
+    }
+    recent.push(now);
+    this.topoHits.set(state, recent);
+
+    const limits = resolveLimits({
+      depth: frame.depth,
+      timeoutMs: frame.timeoutMs,
+      maxNodes: frame.maxNodes,
+    });
+    const seen = new Set(
+      (Array.isArray(frame.seen) ? frame.seen : []).map((item) => String(item)).slice(0, 200),
+    );
+    if (this.instance.peerId) seen.add(String(this.instance.peerId));
+    const dedupe = new Set(seen);
+    // 应答方把单跳超时压到 800ms 以内，避免上级等太久。
+    const budget = { remaining: limits.maxNodes, truncated: false };
+    const children = await this.#collectChildren({
+      depth: limits.depth,
+      timeoutMs: Math.min(limits.timeoutMs, 800),
+      seen,
+      dedupe,
+      budget,
+    });
+    this.#writeTopo(state, {
+      type: 'topo.res',
+      id,
+      ok: true,
+      node: selfNode(this.instance),
+      children,
+      truncated: budget.truncated,
+    });
   }
 }
