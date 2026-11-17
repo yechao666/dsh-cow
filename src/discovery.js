@@ -29,7 +29,8 @@ function intToIpv4(value) {
 
 /** 每个 IPv4 非内网网卡的定向广播地址，最后加 255.255.255.255 兜底。 */
 export function broadcastTargets() {
-  const targets = new Set(['255.255.255.255']);
+  // 同机主/子 DSH 的局域网测试；真实局域网仍靠下面的定向广播。
+  const targets = new Set(['127.0.0.1', '255.255.255.255']);
   let interfaces = {};
   try { interfaces = networkInterfaces(); } catch { interfaces = {}; }
   for (const list of Object.values(interfaces)) {

@@ -32,7 +32,7 @@ proof = sha256(nonce + ":" + hashJoinPassword(password, salt))
   "protocol": "cow/v1",
   "peerId": "cow_…",
   "displayName": "叶超的MacMini",
-  "node": { "uuid": "…", "version": "1.32.3", "description": "…" },
+  "node": { "uuid": "…", "version": "1.32.4", "description": "…" },
   "ackSeq": 0,
   "enc": 1,
   "proof": "…"
@@ -205,7 +205,7 @@ key = HKDF-SHA256(base = passwordHash, salt = nonce, info = "cow/v1/e2e", 32)
   "peerName": "子 DSH-A",
   "package": {
     "name": "dsh-cow",
-    "version": "1.32.3",
+    "version": "1.32.4",
     "url": "http://main:60001/cow/v1/plugin/package",
     "sha256": "…"
   }
