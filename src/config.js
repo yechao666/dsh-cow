@@ -97,6 +97,16 @@ export const Config = z.object({
     .default(50)
     .volatile()
     .description('代理工作日志在内存中保留的最近条数（10–200）'),
+  discoveryEnabled: z
+    .boolean()
+    .default(false)
+    .volatile()
+    .description('在局域网内响应子 DSH 的 UDP 发现请求（默认关闭）'),
+  discoveryPort: z
+    .number()
+    .default(60002)
+    .volatile()
+    .description('UDP 发现端口，主机与子机需一致（默认 60002）'),
   capabilityRefreshMinutes: z.number().default(10).volatile().description('对端能力文档缓存时长（分钟）'),
 
   // ── 能力声明 ──────────────────────────────────────────────────
@@ -165,6 +175,8 @@ export function resolveConfig(input = {}) {
     proxyAllowPrivate: Boolean(raw(input, 'proxyAllowPrivate', false)),
     proxyViaParent: Boolean(raw(input, 'proxyViaParent', false)),
     proxyLogLimit: Math.max(10, Math.min(200, Math.round(positive(raw(input, 'proxyLogLimit', 50), 50)))),
+    discoveryEnabled: Boolean(raw(input, 'discoveryEnabled', false)),
+    discoveryPort: Math.max(1024, Math.min(65535, Math.round(positive(raw(input, 'discoveryPort', 60002), 60002)))),
     capabilityRefreshMinutes: positive(raw(input, 'capabilityRefreshMinutes', 10), 10),
     autoDetect: Boolean(raw(input, 'autoDetect', true)),
     probes: String(raw(input, 'probes', '')),

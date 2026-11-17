@@ -8,14 +8,15 @@
 - answer：主 DSH 回答。
 - 每条消息带 workspace（id/name/path）、session（id/title）、approvalMode。
 
-## 当前状态（2026-11-18，v1.32.2）
-- 分支：`main`；旧 `main` 保留为 `v1`，发布标签 `v1.32.2`。
-- 测试：147 条全通过（`npm test`），含“源码不存在 CowTasks/TaskManager/taskId 任务链”守护。
+## 当前状态（2026-11-18，v1.32.3）
+- 分支：`main`；旧 `main` 保留为 `v1`，发布标签 `v1.32.3`。
+- 测试：148 条全通过（`npm test`），含“源码不存在 CowTasks/TaskManager/taskId 任务链”守护。
 - 子会话按 `peerId + workspace.id + session.id` 一一映射：每个主会话独立子会话；
   进程重启后用 `agents.resume` 恢复，并重新挂到对应工作区。
 - complete 按 `messageId` 从会话事件里抽取该条消息对应的一轮；多条 dispatch 若被 DSH
   合并进同一轮，无法再按消息切分。
 - 询问由被询问节点的 Agent 处理；设置页不提供人工回答/审批队列，状态面板只显示「询问中」计数。
+- 局域网发现：UDP 广播 DISCOVER/OFFER，零依赖，手动选择候选，不自动连接。
 - 网络出口代理：子端本地 HTTP 代理 + 独立 `/cow/v1/net` 加密隧道；默认只放行公网 80/443，禁止私网；主端/子端各有开关。COW 状态页「代理」tab 显示状态和最近 n 条日志；在线子节点拓扑/详情显示「走代理」TAG。
 - 仅输入框首字符为 @ 时，原生 @ 菜单显示 COW 子 DSH 组；选中后插入 [TO: 名称] 引用前缀，作为普通消息内容发送。
 - COW 状态页新增「配置」tab，内嵌同一套节点/主端/子端设置。

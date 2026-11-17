@@ -25,6 +25,7 @@ import { createUpgradeService } from './auto-upgrade.js';
 import { createDoctor } from './doctor.js';
 import { NetGateway } from './net-gateway.js';
 import { ProxyRuntime } from './proxy-runtime.js';
+import { DiscoveryResponder, localAddressFor, scanForMain } from './discovery.js';
 import { registerApprovalTakeover } from './approval-takeover.js';
 import { ActivityLog } from './activity.js';
 import { FileExchange } from './files.js';
@@ -132,6 +133,7 @@ export function apply(ctx, rawConfig = {}) {
   let doctor = null;
   let netGateway = null;
   let proxyRuntime = null;
+  let discovery = null;
 
   const agentOf = (sessionId) => service('agents')?.get?.(sessionId) ?? null;
 
@@ -374,6 +376,52 @@ export function apply(ctx, rawConfig = {}) {
     if (!instance.uuid) instance.uuid = '';
   };
 
+  const discoveryEndpointFor = (remoteAddress) => {
+    const endpoint = String(carrier?.endpoint?.() ?? '').trim();
+    if (!endpoint) return '';
+    const cfg = resolve();
+    if (cfg.listenHost === '127.0.0.1' || cfg.listenHost === '::1') return '';
+    let url;
+    try { url = new URL(endpoint); } catch { return ''; }
+    const host = localAddressFor(remoteAddress) || url.hostname;
+    if (!host || host === '127.0.0.1' || host === '::1') return '';
+    url.hostname = host;
+    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+    let path = url.pathname.replace(/\/+$/, '');
+    if (!path.endsWith('/channel')) path = `${path}/channel`;
+    url.pathname = path;
+    url.search = '';
+    url.hash = '';
+    return url.toString();
+  };
+
+  const ensureDiscovery = async () => {
+    const cfg = resolve();
+    if (!cfg.discoveryEnabled) {
+      const current = discovery;
+      discovery = null;
+      await current?.stop?.();
+      return null;
+    }
+    if (!carrier?.endpoint?.()) return null;
+    if (discovery && discovery.port === cfg.discoveryPort) return discovery;
+    const current = discovery;
+    discovery = new DiscoveryResponder({
+      instance,
+      resolveConfig: resolve,
+      endpointFor: discoveryEndpointFor,
+      logger,
+    });
+    try {
+      await discovery.start(cfg.discoveryPort);
+    } catch (error) {
+      discovery = null;
+      logger.warn?.(`[dsh-cow] 局域网发现启动失败：${error?.message ?? error}`);
+    }
+    await current?.stop?.();
+    return discovery;
+  };
+
   const applySettings = async () => {
     const cfg = resolve();
     ensureParentPeer();
@@ -382,6 +430,7 @@ export function apply(ctx, rawConfig = {}) {
     if (!cfg.proxyEnabled) netGateway?.dispose();
     netGateway?.setLogLimit?.(cfg.proxyLogLimit);
     await proxyRuntime?.refresh(true);
+    await ensureDiscovery();
   };
 
   try { ensureDir(DEFAULT_ALLOWED_ROOT); } catch { /* 默认数据目录创建失败时保留给用户手动处理 */ }
@@ -441,6 +490,13 @@ export function apply(ctx, rawConfig = {}) {
         ? (proxyRuntime?.status?.().logs ?? [])
         : (netGateway?.logs?.() ?? []),
       logLimit: resolve().proxyLogLimit,
+    }),
+    discoveryStatus: () => discovery?.status?.() ?? { running: false, port: 0, requests: 0, offers: 0, errors: 0, lastError: '', startedAt: '' },
+    discover: async ({ timeoutMs } = {}) => scanForMain({
+      port: resolve().discoveryPort,
+      timeoutMs,
+      selfPeerId: instance.peerId,
+      logger,
     }),
   });
 
@@ -569,6 +625,7 @@ export function apply(ctx, rawConfig = {}) {
           config: { listenHost: cfg.listenHost, listenPort: cfg.listenPort },
           logger,
         });
+        void ensureDiscovery();
         logger.info(
           `[dsh-cow] 已启动 ${instance.displayName || instance.peerId} v${instance.version}；` +
             `监听 ${cfg.listenHost}:${cfg.listenPort}；已连接 ${channel.connectedCount()}；` +
@@ -581,6 +638,8 @@ export function apply(ctx, rawConfig = {}) {
         channel.stop();
         netGateway?.dispose();
         void proxyRuntime?.dispose();
+        void discovery?.stop();
+        discovery = null;
         carrier?.dispose();
         carrier = null;
         bridge?.dispose();

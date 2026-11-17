@@ -22,10 +22,11 @@ export const EDITABLE_KEYS = [
   'listenHost',
   'maxFileMB', 'maxConcurrentFiles',
   'proxyEnabled', 'proxyAllowHosts', 'proxyAllowPrivate', 'proxyViaParent', 'proxyLogLimit',
+  'discoveryEnabled', 'discoveryPort',
 ];
 
-const BOOLEAN_KEYS = new Set(['serverEnabled', 'channelEnabled', 'autoDetect', 'proxyEnabled', 'proxyAllowPrivate', 'proxyViaParent']);
-const NUMBER_KEYS = new Set(['listenPort', 'maxFileMB', 'maxConcurrentFiles', 'capabilityRefreshMinutes', 'proxyLogLimit']);
+const BOOLEAN_KEYS = new Set(['serverEnabled', 'channelEnabled', 'autoDetect', 'proxyEnabled', 'proxyAllowPrivate', 'proxyViaParent', 'discoveryEnabled']);
+const NUMBER_KEYS = new Set(['listenPort', 'maxFileMB', 'maxConcurrentFiles', 'capabilityRefreshMinutes', 'proxyLogLimit', 'discoveryPort']);
 
 let cache = { file: '', stamp: 0, value: null };
 

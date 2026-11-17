@@ -115,12 +115,15 @@ export function createAdminHandlers(deps) {
         proxyAllowPrivate: Boolean(cfg.proxyAllowPrivate),
         proxyViaParent: Boolean(cfg.proxyViaParent),
         proxyLogLimit: cfg.proxyLogLimit ?? 50,
+        discoveryEnabled: Boolean(cfg.discoveryEnabled),
+        discoveryPort: cfg.discoveryPort ?? 60002,
       },
       pluginVersion: deps.pluginVersion ?? '',
       installedVersion,
       defaultAllowedRoot: DEFAULT_ALLOWED_ROOT,
       passwordConfigured: deps.passwordConfigured?.() ?? false,
       proxy: typeof deps.proxyStatus === 'function' ? deps.proxyStatus() : null,
+      discovery: typeof deps.discoveryStatus === 'function' ? deps.discoveryStatus() : null,
       peers: peerList,
       connections,
       pendingAsks,
@@ -167,6 +170,19 @@ export function createAdminHandlers(deps) {
       sendJson(res, 200, { configured: true });
     }),
 
+    '/api/cow/discover': wrap(async (req, res) => {
+      if (req.method !== 'POST') {
+        sendJson(res, 405, { error: { code: 'method_not_allowed', message: '只支持 POST' } });
+        return;
+      }
+      const body = await readBody(req).catch(() => ({}));
+      const timeoutMs = Number(body?.timeoutMs) || 3000;
+      const offers = await deps.discover({ timeoutMs });
+      sendJson(res, 200, {
+        offers,
+        discovery: typeof deps.discoveryStatus === 'function' ? deps.discoveryStatus() : null,
+      });
+    }),
     '/api/cow/parent': wrap(async (req, res) => {
       if (req.method === 'GET') {
         return sendJson(res, 200, { url: deps.instance.parentUrl ?? '', password: deps.getParentPassword?.() ?? '' });

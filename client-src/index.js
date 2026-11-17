@@ -894,6 +894,9 @@ function CoCowSettingsPage({ embedded = false } = {}) {
   const [parentPassword, setParentPassword] = React.useState('');
   const [savedParent, setSavedParent] = React.useState({ url: '', password: '' });
   const [showParentPwd, setShowParentPwd] = React.useState(false);
+  const [discoveryOffers, setDiscoveryOffers] = React.useState([]);
+  const [discoveryBusy, setDiscoveryBusy] = React.useState(false);
+  const [discoveryMessage, setDiscoveryMessage] = React.useState('');
 
   const makeForm = (next) => ({
     displayName: next?.config?.displayName ?? '',
@@ -909,6 +912,8 @@ function CoCowSettingsPage({ embedded = false } = {}) {
     proxyAllowPrivate: Boolean(next?.config?.proxyAllowPrivate),
     proxyViaParent: Boolean(next?.config?.proxyViaParent),
     proxyLogLimit: next?.config?.proxyLogLimit ?? 50,
+    discoveryEnabled: Boolean(next?.config?.discoveryEnabled),
+    discoveryPort: next?.config?.discoveryPort ?? 60002,
   });
 
   const apply = React.useCallback((next) => {
@@ -1010,6 +1015,35 @@ function CoCowSettingsPage({ embedded = false } = {}) {
     } finally {
       setBusy('');
     }
+  };
+
+  const scanDiscovery = async () => {
+    if (discoveryBusy) return;
+    setDiscoveryBusy(true);
+    setDiscoveryMessage('正在广播发现主 DSH…');
+    try {
+      const response = await fetch(api('discover'), {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ timeoutMs: 3000 }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload?.error?.message || `HTTP ${response.status}`);
+      const offers = Array.isArray(payload?.offers) ? payload.offers : [];
+      setDiscoveryOffers(offers);
+      setDiscoveryMessage(offers.length ? `发现 ${offers.length} 个主 DSH` : '没有发现主 DSH（检查同一局域网/防火墙）');
+    } catch (scanError) {
+      setDiscoveryOffers([]);
+      setDiscoveryMessage(`扫描失败：${scanError.message}`);
+    } finally {
+      setDiscoveryBusy(false);
+    }
+  };
+
+  const useDiscovered = (offer) => {
+    setParentUrl(String(offer.endpoint || ''));
+    setDiscoveryMessage(`已填入 ${offer.displayName || offer.peerId}；请输入连接密码后保存。`);
   };
 
   const saveParent = async () => {
@@ -1228,6 +1262,22 @@ function CoCowSettingsPage({ embedded = false } = {}) {
       h('div', { style: { marginTop: 10, maxWidth: 220 } }, field('日志保留条数', h('input', { style: S.inputFlex, type: 'number', min: 10, max: 200, value: form.proxyLogLimit, onChange: (event) => update('proxyLogLimit', event.target.value) }))),
       saveRow(!dirty, '保存网络代理'),
     ),
+    h('div', { style: S.card },
+      h('div', { style: S.cardHead },
+        h('h3', { style: S.cardTitle }, '局域网发现'),
+        h('span', { style: form.discoveryEnabled ? S.badgeOn : S.badgeOff }, form.discoveryEnabled ? '已开启' : '未开启'),
+      ),
+      h('label', { style: { display: 'flex', gap: 8, alignItems: 'flex-start', cursor: 'pointer', marginBottom: 10 } },
+        h('input', { type: 'checkbox', checked: Boolean(form.discoveryEnabled), onChange: (event) => update('discoveryEnabled', event.target.checked), style: { marginTop: 3 } }),
+        h('span', { style: { display: 'grid', gap: 2 } },
+          h('span', { style: { fontSize: 12.5, fontWeight: 600 } }, '响应局域网内子 DSH 的发现请求'),
+          h('span', { style: S.hint }, 'UDP 广播发现只用于列出候选；发现后仍需密码握手，不自动连接。'),
+        ),
+      ),
+      h('div', { style: { maxWidth: 220 } }, field('UDP 端口', h('input', { style: S.inputFlex, type: 'number', min: 1024, max: 65535, value: form.discoveryPort, onChange: (event) => update('discoveryPort', event.target.value) }))),
+      h('div', { style: { ...S.hint, marginTop: 8 } }, data.discovery?.running ? `正在监听 UDP ${data.discovery.port}，已响应 ${data.discovery.offers} 次` : '未监听；局域网发现关闭。'),
+      saveRow(!dirty, '保存发现设置'),
+    ),
   );
 
   const childPanel = h('div', { style: S.card },
@@ -1255,6 +1305,25 @@ function CoCowSettingsPage({ embedded = false } = {}) {
       h('button', { type: 'button', style: actionStyle(Boolean(busy) || !parentDirty), disabled: Boolean(busy) || !parentDirty, onClick: () => void saveParent() }, busy === 'parent' ? '连接中…' : '保存并连接'),
     ),
     h('div', { style: { ...S.hint, marginTop: 8 } }, '保存后子 DSH 会主动建立并维持 WebSocket 长连接；断线自动重连。'),
+    h('div', { style: { ...S.card, marginTop: 12, marginBottom: 0, padding: '12px 14px' } },
+      h('div', { style: S.cardHead },
+        h('h3', { style: S.cardTitle }, '发现主 DSH'),
+        h('button', { type: 'button', style: { ...S.secondary, padding: '4px 10px', fontSize: 11 }, disabled: discoveryBusy, onClick: () => void scanDiscovery() }, discoveryBusy ? '扫描中…' : '扫描局域网'),
+      ),
+      h('div', { style: { ...S.hint, marginBottom: discoveryOffers.length ? 8 : 0 } }, discoveryMessage || '向本机各网卡广播 UDP；找到主 DSH 后填入上级地址，仍需密码。'),
+      discoveryOffers.length
+        ? h('div', { style: { display: 'grid', gap: 6 } },
+            discoveryOffers.map((offer) => h('div', { key: `${offer.peerId}:${offer.endpoint}`, style: { display: 'flex', alignItems: 'center', gap: 9, padding: '7px 9px', borderRadius: 8, background: 'var(--dsw-alias-bg-l2)', border: '1px solid var(--dsw-alias-border-l2)' } },
+              h('div', { style: { display: 'grid', gap: 2, minWidth: 0, flex: '1 1 auto' } },
+                h('span', { style: { fontSize: 12, fontWeight: 600 } }, offer.displayName || offer.peerId, offer.version ? h('span', { style: { ...S.meta, fontWeight: 400 } }, ` · v${offer.version}`) : null),
+                h('span', { style: { ...S.meta, fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, offer.endpoint),
+                h('span', { style: { ...S.meta, fontSize: 9.5 } }, `${offer.peerId}${offer.passwordRequired ? ' · 需要密码' : ''}`),
+              ),
+              h('button', { type: 'button', style: { ...S.secondary, flex: '0 0 auto', padding: '4px 9px', fontSize: 11 }, onClick: () => useDiscovered(offer) }, '使用'),
+            )),
+          )
+        : null,
+    ),
     h('div', { style: { ...S.card, marginTop: 12, marginBottom: 0, padding: '12px 14px' } },
       h('div', { style: S.cardHead },
         h('h3', { style: S.cardTitle }, '通过主 DSH 上网'),
