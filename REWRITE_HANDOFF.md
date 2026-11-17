@@ -8,8 +8,8 @@
 - answer：主 DSH 回答。
 - 每条消息带 workspace（id/name/path）、session（id/title）、approvalMode。
 
-## 当前状态（2026-11-18，v1.32.4）
-- 分支：`main`；旧 `main` 保留为 `v1`，发布标签 `v1.32.4`。
+## 当前状态（2026-11-18，v1.32.5）
+- 分支：`main`；旧 `main` 保留为 `v1`，发布标签 `v1.32.5`。
 - 测试：148 条全通过（`npm test`），含“源码不存在 CowTasks/TaskManager/taskId 任务链”守护。
 - 子会话按 `peerId + workspace.id + session.id` 一一映射：每个主会话独立子会话；
   进程重启后用 `agents.resume` 恢复，并重新挂到对应工作区。

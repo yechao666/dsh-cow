@@ -403,7 +403,11 @@ export function apply(ctx, rawConfig = {}) {
       await current?.stop?.();
       return null;
     }
-    if (!carrier?.endpoint?.()) return null;
+    if (!carrier?.endpoint?.()) {
+      const timer = setTimeout(() => { void ensureDiscovery(); }, 800);
+      timer.unref?.();
+      return null;
+    }
     if (discovery && discovery.port === cfg.discoveryPort) return discovery;
     const current = discovery;
     discovery = new DiscoveryResponder({
