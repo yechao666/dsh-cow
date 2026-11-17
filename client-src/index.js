@@ -68,6 +68,24 @@ class SettingsBoundary extends React.Component {
 
 // ── 面板视觉 ────────────────────────────────────────────────────
 
+const PROXY_EVENT = {
+  auth_ok: { label: '认证通过', level: 'info' },
+  auth_failed: { label: '认证失败', level: 'warn' },
+  connected: { label: '已连接目标', level: 'info' },
+  closed: { label: '连接结束', level: 'info' },
+  denied: { label: '策略拒绝', level: 'warn' },
+  target_error: { label: '目标错误', level: 'error' },
+  tunnel_open: { label: '打开隧道', level: 'info' },
+  tunnel_failed: { label: '隧道失败', level: 'warn' },
+  listening: { label: '代理监听', level: 'info' },
+  stopped: { label: '代理停止', level: 'info' },
+  runtime_started: { label: '代理启动', level: 'info' },
+  runtime_stopped: { label: '代理停止', level: 'info' },
+  runtime_failed: { label: '代理启动失败', level: 'error' },
+  dispatcher_active: { label: 'DSH 网络已接入', level: 'info' },
+  dispatcher_restart_required: { label: '需要重启子 DSH', level: 'warn' },
+};
+
 const ACTIVITY_KIND = {
   message: { label: '消息', short: '消', color: '#4f8df7' },
   peer: { label: '节点', short: '节', color: '#34c38f' },
@@ -497,6 +515,9 @@ function CowActivityPanel() {
   const parentPeer = peers.find((peer) => peer.relation === 'parent') ?? null;
   const parent = state.parent ?? {};
   const stats = state.stats ?? {};
+  const proxy = state.proxy ?? {};
+  const proxyLogs = Array.isArray(proxy.logs) ? proxy.logs : [];
+  const proxyIsMember = instance.role === 'member';
   const pending = state.pendingAsks ?? [];
   const items = data?.activity?.items ?? [];
   const connectedCount = stats.connected ?? peers.filter((peer) => peer.connected).length;
@@ -705,6 +726,7 @@ function CowActivityPanel() {
       tab('overview', '概览', null, 'network'),
       tab('nodes', '节点', peers.length, 'users'),
       tab('activity', '活动', items.length, 'clock'),
+      tab('proxy', '代理', proxyLogs.length || null, 'network'),
       tab('settings', '配置', null, 'sliders'),
     ),
     section === 'overview'
@@ -774,6 +796,55 @@ function CowActivityPanel() {
           activityList(200),
         )
       : null,
+    section === 'proxy'
+      ? h('div', { style: { display: 'grid', gap: 12 } },
+          h('div', { style: PANEL.card },
+            h('div', { style: PANEL.cardHead },
+              h('h3', { style: PANEL.cardTitle }, '网络代理'),
+              h('div', { style: S.row },
+                proxyIsMember
+                  ? h(PanelChip, { tone: proxy.mode === 'active' ? 'on' : proxy.mode === 'error' ? 'off' : 'neutral' }, proxy.mode === 'active' ? '通过主 DSH 已生效' : proxy.mode === 'restart' ? '需要重启子 DSH' : proxy.mode === 'error' ? '启动失败' : '未开启')
+                  : h(PanelChip, { tone: proxy.gateway?.enabled ? 'on' : 'off' }, proxy.gateway?.enabled ? '出口已开启' : '出口未开启'),
+                h(PanelChip, null, `${proxyLogs.length}/${proxy.logLimit ?? 50} 条日志`),
+              ),
+            ),
+            h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 } },
+              h('div', { style: { display: 'grid', gap: 2 } }, h('span', { style: S.hint }, proxyIsMember ? '本地代理端口' : '出口端点'), h('b', { style: { fontSize: 18, fontFamily: 'var(--dsw-font-mono, ui-monospace, monospace)' } }, proxyIsMember ? (proxy.local?.running ? proxy.local.port : '-') : (instance.endpoint ? '同端口 /cow/v1/net' : '-'))),
+              h('div', { style: { display: 'grid', gap: 2 } }, h('span', { style: S.hint }, '活动连接'), h('b', { style: { fontSize: 18 } }, proxyIsMember ? (proxy.local?.active ?? 0) : (proxy.gateway?.connections ?? 0))),
+              h('div', { style: { display: 'grid', gap: 2 } }, h('span', { style: S.hint }, '成功 / 失败'), h('b', { style: { fontSize: 18 } }, proxyIsMember ? `${proxy.local?.opened ?? 0} / ${proxy.local?.failed ?? 0}` : `${proxy.logs?.filter((item) => item.event === 'connected').length ?? 0} / ${proxy.logs?.filter((item) => item.event === 'denied').length ?? 0}`)),
+              h('div', { style: { display: 'grid', gap: 2 } }, h('span', { style: S.hint }, proxyIsMember ? '上级连接' : '在线子节点'), h('b', { style: { fontSize: 18, color: proxyIsMember ? (proxy.parentConnected ? '#34c38f' : 'var(--dsw-alias-label-secondary)') : '#34c38f' } }, proxyIsMember ? (proxy.parentConnected ? '已连接' : '未连接') : `${children.filter((child) => child.connected).length} 个`)),
+            ),
+            proxy.error ? h('div', { style: { ...S.err, marginTop: 10 } }, proxy.error) : null,
+            h('div', { style: { ...S.hint, marginTop: 10 } }, proxyIsMember ? 'DSH 原生 fetch、web_search、web_fetch、MCP，以及继承代理环境变量的 curl/git/npm 走这里。' : '只接受直接子节点；默认只放行公网 80/443，私网/环回在策略层拒绝。'),
+          ),
+          h('div', { style: PANEL.card },
+            h('div', { style: PANEL.cardHead }, h('h3', { style: PANEL.cardTitle }, '代理工作日志'), h('span', { style: S.hint }, `保留最近 ${proxy.logLimit ?? 50} 条`)),
+            proxyLogs.length
+              ? h('div', { style: { display: 'grid', gap: 0, maxHeight: 300, overflowY: 'auto' } },
+                  proxyLogs.slice().reverse().map((entry, index) => {
+                    const meta = PROXY_EVENT[entry.event] ?? { label: entry.event, level: entry.level };
+                    const level = meta.level ?? entry.level ?? 'info';
+                    const color = level === 'error' ? '#ef4444' : level === 'warn' ? '#f59e0b' : '#34c38f';
+                    const detail = [
+                      entry.peerName || entry.peerId || '',
+                      entry.host ? `${entry.host}${entry.port ? `:${entry.port}` : ''}` : '',
+                      entry.bytes ? `${Math.round(entry.bytes / 1024)} KB` : '',
+                      entry.ms ? `${entry.ms} ms` : '',
+                    ].filter(Boolean).join(' · ');
+                    return h('div', { key: `${entry.at}:${entry.event}:${index}`, style: { display: 'grid', gridTemplateColumns: '52px 8px minmax(0, 1fr)', gap: 9, alignItems: 'start', padding: '6px 0', borderTop: index ? '1px solid var(--dsw-alias-border-l2)' : 'none' } },
+                      h('span', { style: { ...S.mono, paddingTop: 2 } }, timeOf(entry.at)),
+                      h('span', { style: { width: 6, height: 6, marginTop: 5, borderRadius: 999, background: color, boxShadow: `0 0 8px ${color}55` } }),
+                      h('div', { style: { minWidth: 0 } },
+                        h('div', { style: { fontSize: 11.5, fontWeight: 600 } }, meta.label, detail ? h('span', { style: { ...S.meta, fontWeight: 400 } }, ` · ${detail}`) : null),
+                        entry.message ? h('div', { style: { ...S.meta, marginTop: 2, wordBreak: 'break-all' } }, String(entry.message).slice(0, 180)) : null,
+                      ),
+                    );
+                  }),
+                )
+              : h('div', { style: PANEL.empty }, '暂无代理日志'),
+          ),
+        )
+      : null,
     section === 'settings'
       ? h(SettingsBoundary, null, h(CoCowSettingsPage, { embedded: true }))
       : null,
@@ -819,6 +890,7 @@ function CoCowSettingsPage({ embedded = false } = {}) {
     proxyAllowHosts: next?.config?.proxyAllowHosts ?? '',
     proxyAllowPrivate: Boolean(next?.config?.proxyAllowPrivate),
     proxyViaParent: Boolean(next?.config?.proxyViaParent),
+    proxyLogLimit: next?.config?.proxyLogLimit ?? 50,
   });
 
   const apply = React.useCallback((next) => {
@@ -1135,6 +1207,7 @@ function CoCowSettingsPage({ embedded = false } = {}) {
         ),
       ),
       h('div', { style: { ...S.hint, marginTop: 8 } }, '主端会按 peerId 校验直接子节点；关闭后已建立的代理连接会被断开。'),
+      h('div', { style: { marginTop: 10, maxWidth: 220 } }, field('日志保留条数', h('input', { style: S.inputFlex, type: 'number', min: 10, max: 200, value: form.proxyLogLimit, onChange: (event) => update('proxyLogLimit', event.target.value) }))),
       saveRow(!dirty, '保存网络代理'),
     ),
   );
@@ -1182,6 +1255,7 @@ function CoCowSettingsPage({ embedded = false } = {}) {
             : null,
         ),
       ),
+      h('div', { style: { marginTop: 10, maxWidth: 220 } }, field('日志保留条数', h('input', { style: S.inputFlex, type: 'number', min: 10, max: 200, value: form.proxyLogLimit, onChange: (event) => update('proxyLogLimit', event.target.value) }))),
       saveRow(!dirty, '保存网络开关'),
     ),
   );

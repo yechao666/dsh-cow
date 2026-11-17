@@ -8,6 +8,7 @@ import { acceptUpgrade } from './ws.js';
 import { verifyJoinProof } from './identity.js';
 import { deriveSessionKey, open as openSealed, seal } from './crypto.js';
 import { DEFAULT_PROXY_PORTS, parseAllowHosts, resolveProxyTarget } from './net-policy.js';
+import { ProxyLog } from './proxy-log.js';
 
 const AUTH_TIMEOUT_MS = 10_000;
 const CONNECT_TIMEOUT_MS = 15_000;
@@ -31,17 +32,19 @@ function parseFrame(text) {
 }
 
 export class NetGateway {
-  constructor({ instance, peers, resolveConfig, logger }) {
+  constructor({ instance, peers, resolveConfig, logger, logLimit }) {
     this.instance = instance;
     this.peers = peers;
     this.resolveConfig = resolveConfig;
     this.logger = logger ?? console;
     this.tunnels = new Set();
+    this.log = new ProxyLog(logLimit ?? resolveConfig?.().proxyLogLimit ?? 50);
   }
 
   handleUpgrade(req, socket, head) {
     const config = this.resolveConfig();
     if (!config.proxyEnabled) {
+      this.log.add('warn', 'denied', { message: '主端代理已关闭' });
       this.#reject(socket, 403, 'proxy disabled');
       return;
     }
@@ -102,6 +105,7 @@ export class NetGateway {
     if (!state.authenticated) {
       if (outer.type !== 'auth.proof') return;
       if (!verifyJoinProof(this.instance, state.nonce, String(outer.proof ?? ''))) {
+        this.log.add('warn', 'auth_failed', { message: 'proof 不匹配' });
         sendJson(state.conn, { type: 'auth.error', message: 'proof 不匹配' });
         try { state.conn.close(1000, 'auth failed'); } catch { state.conn.destroy(); }
         return;
@@ -109,15 +113,18 @@ export class NetGateway {
       const peerId = String(outer.peerId ?? '').trim();
       const peer = this.peers.list().find((item) => item.peerId === peerId && item.relation === 'child');
       if (!peer) {
+        this.log.add('warn', 'auth_failed', { peerId, message: '不是直接子节点' });
         sendJson(state.conn, { type: 'auth.error', message: '只有直接子节点可以使用代理' });
         try { state.conn.close(1000, 'not a child'); } catch { state.conn.destroy(); }
         return;
       }
       state.peerId = peerId;
+      state.peerName = peer.label;
       state.authenticated = true;
       clearTimeout(state.timer);
       state.key = deriveSessionKey(String(this.instance.passwordHash), state.nonce);
       sendJson(state.conn, { type: 'auth.ok', peerId });
+      this.log.add('info', 'auth_ok', { peerId, peerName: peer.label });
       return;
     }
     if (!outer.enc) return;
@@ -130,7 +137,10 @@ export class NetGateway {
     if (frame.type === 'data') {
       if (!state.target) return;
       const chunk = Buffer.from(String(frame.data ?? ''), 'base64');
-      if (chunk.length) state.target.write(chunk);
+      if (chunk.length) {
+        state.bytes = (state.bytes ?? 0) + chunk.length;
+        state.target.write(chunk);
+      }
       return;
     }
     if (frame.type === 'close') {
@@ -160,10 +170,15 @@ export class NetGateway {
         allowedPorts: ports,
       });
     } catch (error) {
+      this.log.add('warn', 'denied', { peerId: state.peerId, peerName: state.peerName, host, port, message: String(error?.message ?? error) });
       sendSealed(state.conn, state.key, { type: 'error', message: String(error?.message ?? error) });
+      state.error = true;
       this.#dispose(state);
       return;
     }
+    state.host = target.host;
+    state.port = target.port;
+    state.startedAt = Date.now();
     const socket = netConnect({ host: target.address, port: target.port, family: target.family });
     state.target = socket;
     const timer = setTimeout(() => {
@@ -175,6 +190,7 @@ export class NetGateway {
     timer.unref?.();
     socket.on('connect', () => {
       clearTimeout(timer);
+      this.log.add('info', 'connected', { peerId: state.peerId, peerName: state.peerName, host: target.host, port: target.port });
       sendSealed(state.conn, state.key, { type: 'connected', host: target.host, port: target.port });
     });
     socket.on('data', (chunk) => {
@@ -191,6 +207,7 @@ export class NetGateway {
     });
     socket.on('error', (error) => {
       clearTimeout(timer);
+      this.log.add('error', 'target_error', { peerId: state.peerId, peerName: state.peerName, host: target.host, port: target.port, message: String(error?.message ?? error) });
       if (state.key) sendSealed(state.conn, state.key, { type: 'error', message: String(error?.message ?? error) });
       this.#dispose(state);
     });
@@ -210,6 +227,16 @@ export class NetGateway {
       state.target = null;
     }
     try { state.conn.close(1000, 'proxy closed'); } catch { state.conn.destroy(); }
+    if (state.authenticated) {
+      this.log.add(state.error ? 'warn' : 'info', 'closed', {
+        peerId: state.peerId,
+        peerName: state.peerName,
+        host: state.host ?? '',
+        port: state.port ?? 0,
+        bytes: state.bytes ?? 0,
+        ms: state.startedAt ? Date.now() - state.startedAt : 0,
+      });
+    }
     this.tunnels.delete(state);
   }
 
@@ -219,5 +246,13 @@ export class NetGateway {
 
   stats() {
     return { enabled: Boolean(this.resolveConfig().proxyEnabled), connections: this.tunnels.size };
+  }
+
+  logs(limit = this.log.limit) {
+    return this.log.list(limit);
+  }
+
+  setLogLimit(limit) {
+    this.log.setLimit(limit);
   }
 }

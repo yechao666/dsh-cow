@@ -8,6 +8,7 @@
 import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
 import { LocalProxy } from './local-proxy.js';
+import { ProxyLog } from './proxy-log.js';
 
 const PROXY_ENV = ['http_proxy', 'HTTP_PROXY', 'https_proxy', 'HTTPS_PROXY', 'no_proxy', 'NO_PROXY', 'all_proxy', 'ALL_PROXY', 'NODE_USE_ENV_PROXY'];
 
@@ -24,6 +25,7 @@ export class ProxyRuntime {
     this.mode = 'off';
     this.error = '';
     this.parentSignature = '';
+    this.log = new ProxyLog(resolveConfig?.().proxyLogLimit ?? 50);
     this.refreshing = null;
   }
 
@@ -79,11 +81,13 @@ export class ProxyRuntime {
         const mod = await import(pathToFileURL(file).href);
         if (typeof mod.installProxyFromEnvironment !== 'function') continue;
         this.disposer = await mod.installProxyFromEnvironment(lookup, (message) => this.logger.warn?.(`[dsh-cow] ${message}`));
+        this.log.add('info', 'dispatcher_active', {});
         return 'active';
       } catch {
         /* try next */
       }
     }
+    this.log.add('warn', 'dispatcher_restart_required', {});
     return 'restart';
   }
 
@@ -95,6 +99,7 @@ export class ProxyRuntime {
 
   async #refresh(force) {
     const config = this.resolveConfig();
+    this.log.setLimit(config.proxyLogLimit ?? this.log.limit);
     if (!config.proxyViaParent) {
       await this.stop();
       return this.status();
@@ -113,16 +118,18 @@ export class ProxyRuntime {
     // 重新安装前先撤销旧 dispatcher / 环境，避免多层安装泄漏。
     await this.stop();
     try {
-      this.local = new LocalProxy({ getParent: () => this.#parent(), logger: this.logger });
+      this.local = new LocalProxy({ getParent: () => this.#parent(), logger: this.logger, log: this.log });
       const port = await this.local.start();
       this.parentSignature = signature;
       this.#setEnv(port, parent);
       this.mode = await this.#installDispatcher();
       this.error = this.mode === 'restart' ? '当前 DSH 不支持运行时重装代理，请重启子 DSH 生效' : '';
+      this.log.add('info', 'runtime_started', { port, mode: this.mode });
       this.logger.info?.(`[dsh-cow] 子端代理已启动：127.0.0.1:${port} → ${parent.url}`);
     } catch (error) {
       this.mode = 'error';
       this.error = String(error?.message ?? error);
+      this.log.add('error', 'runtime_failed', { message: this.error });
       this.logger.warn?.(`[dsh-cow] 子端代理启动失败：${this.error}`);
     }
     return this.status();
@@ -137,6 +144,7 @@ export class ProxyRuntime {
   }
 
   async stop() {
+    const wasActive = this.mode !== 'off' || Boolean(this.local?.server);
     const disposer = this.disposer;
     this.disposer = null;
     if (disposer) {
@@ -147,6 +155,7 @@ export class ProxyRuntime {
     this.mode = 'off';
     this.error = '';
     this.parentSignature = '';
+    if (wasActive) this.log?.add?.('info', 'runtime_stopped', {});
     return this.status();
   }
 
@@ -158,6 +167,8 @@ export class ProxyRuntime {
       error: this.error,
       parentConnected: Boolean(parent && this.channel?.status?.(parent.label)?.state === 'connected'),
       local: this.local?.status?.() ?? { running: false, port: 0, opened: 0, failed: 0, active: 0 },
+      logs: this.log.list(),
+      logLimit: this.log.limit,
     };
   }
 

@@ -380,6 +380,7 @@ export function apply(ctx, rawConfig = {}) {
     carrier?.restart({ listenHost: cfg.listenHost, listenPort: cfg.listenPort });
     channel.tick?.();
     if (!cfg.proxyEnabled) netGateway?.dispose();
+    netGateway?.setLogLimit?.(cfg.proxyLogLimit);
     await proxyRuntime?.refresh(true);
   };
 
@@ -433,7 +434,14 @@ export function apply(ctx, rawConfig = {}) {
     pluginVersion: PACKAGE.version,
     installedVersion: () => currentPackageVersion(),
     packages,
-    proxyStatus: () => proxyRuntime?.status() ?? null,
+    proxyStatus: () => ({
+      ...(proxyRuntime?.status() ?? {}),
+      gateway: netGateway?.stats?.() ?? { enabled: false, connections: 0 },
+      logs: instance.role === 'member'
+        ? (proxyRuntime?.status?.().logs ?? [])
+        : (netGateway?.logs?.() ?? []),
+      logLimit: resolve().proxyLogLimit,
+    }),
   });
 
   // ── 工具 ─────────────────────────────────────────────────────

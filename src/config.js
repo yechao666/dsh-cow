@@ -92,6 +92,11 @@ export const Config = z.object({
     .default(false)
     .volatile()
     .description('本机作为子 DSH 时，通过主 DSH 访问网络（需要主 DSH 开启代理）'),
+  proxyLogLimit: z
+    .number()
+    .default(50)
+    .volatile()
+    .description('代理工作日志在内存中保留的最近条数（10–200）'),
   capabilityRefreshMinutes: z.number().default(10).volatile().description('对端能力文档缓存时长（分钟）'),
 
   // ── 能力声明 ──────────────────────────────────────────────────
@@ -159,6 +164,7 @@ export function resolveConfig(input = {}) {
     proxyAllowHosts: String(raw(input, 'proxyAllowHosts', '')).trim(),
     proxyAllowPrivate: Boolean(raw(input, 'proxyAllowPrivate', false)),
     proxyViaParent: Boolean(raw(input, 'proxyViaParent', false)),
+    proxyLogLimit: Math.max(10, Math.min(200, Math.round(positive(raw(input, 'proxyLogLimit', 50), 50)))),
     capabilityRefreshMinutes: positive(raw(input, 'capabilityRefreshMinutes', 10), 10),
     autoDetect: Boolean(raw(input, 'autoDetect', true)),
     probes: String(raw(input, 'probes', '')),

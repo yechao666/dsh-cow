@@ -48,9 +48,10 @@ function sendError(socket, status, message) {
 }
 
 export class LocalProxy {
-  constructor({ getParent, logger }) {
+  constructor({ getParent, logger, log }) {
     this.getParent = getParent;
     this.logger = logger ?? console;
+    this.log = log ?? null;
     this.server = null;
     this.port = 0;
     this.stats = { opened: 0, failed: 0, active: 0 };
@@ -74,6 +75,7 @@ export class LocalProxy {
       });
     });
     this.server = server;
+    this.log?.add?.('info', 'listening', { port: this.port });
     this.logger.info?.(`[dsh-cow] 本地代理监听 127.0.0.1:${this.port}`);
     return this.port;
   }
@@ -93,6 +95,7 @@ export class LocalProxy {
       });
     }
     this.stats.active = 0;
+    this.log?.add?.('info', 'stopped', {});
   }
 
   #parent() {
@@ -106,16 +109,19 @@ export class LocalProxy {
     this.stats.opened += 1;
     this.stats.active += 1;
     try {
-      return await openProxyTunnel({
+      const tunnel = await openProxyTunnel({
         parentUrl: parent.url,
         password: parent.password,
         peerId: parent.peerId || '',
         host,
         port,
       });
+      this.log?.add?.('info', 'tunnel_open', { host, port });
+      return tunnel;
     } catch (error) {
       this.stats.failed += 1;
       this.stats.active = Math.max(0, this.stats.active - 1);
+      this.log?.add?.('warn', 'tunnel_failed', { host, port, message: String(error?.message ?? error) });
       throw error;
     }
   }

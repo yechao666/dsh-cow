@@ -113,6 +113,7 @@ export function createAdminHandlers(deps) {
         proxyAllowHosts: cfg.proxyAllowHosts ?? '',
         proxyAllowPrivate: Boolean(cfg.proxyAllowPrivate),
         proxyViaParent: Boolean(cfg.proxyViaParent),
+        proxyLogLimit: cfg.proxyLogLimit ?? 50,
       },
       pluginVersion: deps.pluginVersion ?? '',
       installedVersion,
