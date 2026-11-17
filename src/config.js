@@ -72,6 +72,26 @@ export const Config = z.object({
     .default('auto')
     .volatile()
     .description('长连接由谁拨号：auto（peerId 小的一方拨）| always（本机总是拨）| never（只接受对方连接）'),
+  proxyEnabled: z
+    .boolean()
+    .default(false)
+    .volatile()
+    .description('允许直接子 DSH 通过本机访问网络（默认关闭；只允许公网 80/443）'),
+  proxyAllowHosts: z
+    .string()
+    .default('')
+    .volatile()
+    .description('代理域名白名单，换行或逗号分隔；空表示允许公网，支持 *.example.com。私网目标必须显式列在这里'),
+  proxyAllowPrivate: z
+    .boolean()
+    .default(false)
+    .volatile()
+    .description('允许子 DSH 代理访问私网/内网目标（必须同时配置白名单；默认禁止）'),
+  proxyViaParent: z
+    .boolean()
+    .default(false)
+    .volatile()
+    .description('本机作为子 DSH 时，通过主 DSH 访问网络（需要主 DSH 开启代理）'),
   capabilityRefreshMinutes: z.number().default(10).volatile().description('对端能力文档缓存时长（分钟）'),
 
   // ── 能力声明 ──────────────────────────────────────────────────
@@ -135,6 +155,10 @@ export function resolveConfig(input = {}) {
     channelDial: ['auto', 'always', 'never'].includes(String(raw(input, 'channelDial', 'auto')))
       ? String(raw(input, 'channelDial', 'auto'))
       : 'auto',
+    proxyEnabled: Boolean(raw(input, 'proxyEnabled', false)),
+    proxyAllowHosts: String(raw(input, 'proxyAllowHosts', '')).trim(),
+    proxyAllowPrivate: Boolean(raw(input, 'proxyAllowPrivate', false)),
+    proxyViaParent: Boolean(raw(input, 'proxyViaParent', false)),
     capabilityRefreshMinutes: positive(raw(input, 'capabilityRefreshMinutes', 10), 10),
     autoDetect: Boolean(raw(input, 'autoDetect', true)),
     probes: String(raw(input, 'probes', '')),

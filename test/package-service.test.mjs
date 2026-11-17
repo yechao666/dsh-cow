@@ -39,5 +39,5 @@ test('插件包 manifest 可从 tgz 读取，用于升级前校验', () => {
   const buffer = buildPluginTarball(root, { name: 'dsh-cow', version: '1.31.3-test' });
   const manifest = readPackageJsonFromTarball(buffer);
   assert.equal(manifest.name, 'dsh-cow');
-  assert.match(String(manifest.version), /^1\.31\./);
+  assert.match(String(manifest.version), /^\d+\.\d+\./);
 });

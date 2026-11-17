@@ -174,7 +174,7 @@ const HEADER_LIMIT = 16 * 1024;
  */
 function wrapSocket({ socket, head, isClient, maxPayload = MAX_FRAME_BYTES }) {
   const parser = createFrameParser({ expectMasked: !isClient, maxPayload });
-  const handlers = { message: new Set(), close: new Set(), error: new Set(), pong: new Set() };
+  const handlers = { message: new Set(), close: new Set(), error: new Set(), pong: new Set(), drain: new Set() };
   let closed = false;
 
   const on = (name, fn) => {
@@ -193,8 +193,7 @@ function wrapSocket({ socket, head, isClient, maxPayload = MAX_FRAME_BYTES }) {
   const sendFrame = (opcode, payload) => {
     if (closed) return false;
     try {
-      socket.write(encodeFrame({ opcode, payload, masked: isClient }));
-      return true;
+      return socket.write(encodeFrame({ opcode, payload, masked: isClient }));
     } catch (error) {
       emit('error', error);
       return false;
@@ -204,6 +203,9 @@ function wrapSocket({ socket, head, isClient, maxPayload = MAX_FRAME_BYTES }) {
   const connection = {
     get closed() {
       return closed;
+    },
+    get bufferedAmount() {
+      return Number(socket.writableLength ?? 0);
     },
     on,
     send(text) {
@@ -255,6 +257,7 @@ function wrapSocket({ socket, head, isClient, maxPayload = MAX_FRAME_BYTES }) {
       connection.destroy();
     }
   });
+  socket.on('drain', () => emit('drain'));
   socket.on('error', (error) => emit('error', error));
   socket.on('close', () => {
     if (closed) return;

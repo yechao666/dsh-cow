@@ -23,6 +23,8 @@ import { createToolDefinitions, registerTools } from './tools.js';
 import { createPackageService } from './package-service.js';
 import { createUpgradeService } from './auto-upgrade.js';
 import { createDoctor } from './doctor.js';
+import { NetGateway } from './net-gateway.js';
+import { ProxyRuntime } from './proxy-runtime.js';
 import { registerApprovalTakeover } from './approval-takeover.js';
 import { ActivityLog } from './activity.js';
 import { FileExchange } from './files.js';
@@ -128,6 +130,8 @@ export function apply(ctx, rawConfig = {}) {
   let router = null;
   let upgrade = null;
   let doctor = null;
+  let netGateway = null;
+  let proxyRuntime = null;
 
   const agentOf = (sessionId) => service('agents')?.get?.(sessionId) ?? null;
 
@@ -236,6 +240,8 @@ export function apply(ctx, rawConfig = {}) {
   };
 
   channel = new Channel({ ctx, resolveConfig: resolve, peers, instance, authorize, onEvent, onPeer, logger, home });
+  netGateway = new NetGateway({ instance, peers, resolveConfig: resolve, logger });
+  proxyRuntime = new ProxyRuntime({ instance, resolveConfig: resolve, peers, channel, logger });
   files = new FileExchange({ instance, channel, peers, resolveConfig: resolve, logger, activity });
 
   /** 新会话选 preset：web/desktop 的工具体在 preset 里，不选可能没有 bash。 */
@@ -357,6 +363,7 @@ export function apply(ctx, rawConfig = {}) {
     Object.assign(instance, { parentUrl: url, parentPassword: password, role: 'member' });
     const label = ensureParentPeer();
     channel.reconnect?.(label);
+    void proxyRuntime?.refresh(true);
   };
 
   const passwordConfigured = () => Boolean(instance.passwordHash);
@@ -372,6 +379,8 @@ export function apply(ctx, rawConfig = {}) {
     ensureParentPeer();
     carrier?.restart({ listenHost: cfg.listenHost, listenPort: cfg.listenPort });
     channel.tick?.();
+    if (!cfg.proxyEnabled) netGateway?.dispose();
+    await proxyRuntime?.refresh(true);
   };
 
   try { ensureDir(DEFAULT_ALLOWED_ROOT); } catch { /* 默认数据目录创建失败时保留给用户手动处理 */ }
@@ -424,6 +433,7 @@ export function apply(ctx, rawConfig = {}) {
     pluginVersion: PACKAGE.version,
     installedVersion: () => currentPackageVersion(),
     packages,
+    proxyStatus: () => proxyRuntime?.status() ?? null,
   });
 
   // ── 工具 ─────────────────────────────────────────────────────
@@ -512,6 +522,7 @@ export function apply(ctx, rawConfig = {}) {
         const cfg = resolve();
         ensureParentPeer();
         channel.start();
+        void proxyRuntime.refresh(true);
         const tokenFile = join(coDshDir(home), 'http.token');
         let httpToken = '';
         try {
@@ -543,7 +554,10 @@ export function apply(ctx, rawConfig = {}) {
         carrier = mountCarrier({
           ctx,
           handler,
-          upgrade: { path: `${ROUTE_PREFIX}/channel`, handler: (req, socket, head) => channel.handleUpgrade(req, socket, head) },
+          upgrades: [
+            { path: `${ROUTE_PREFIX}/channel`, handler: (req, socket, head) => channel.handleUpgrade(req, socket, head) },
+            { path: `${ROUTE_PREFIX}/net`, handler: (req, socket, head) => netGateway.handleUpgrade(req, socket, head) },
+          ],
           config: { listenHost: cfg.listenHost, listenPort: cfg.listenPort },
           logger,
         });
@@ -557,6 +571,8 @@ export function apply(ctx, rawConfig = {}) {
       return () => {
         disposeApproval?.();
         channel.stop();
+        netGateway?.dispose();
+        void proxyRuntime?.dispose();
         carrier?.dispose();
         carrier = null;
         bridge?.dispose();

@@ -815,6 +815,10 @@ function CoCowSettingsPage({ embedded = false } = {}) {
     maxFileMB: next?.config?.maxFileMB ?? 50,
     maxConcurrentFiles: next?.config?.maxConcurrentFiles ?? 4,
     agentPreset: next?.config?.agentPreset ?? '',
+    proxyEnabled: Boolean(next?.config?.proxyEnabled),
+    proxyAllowHosts: next?.config?.proxyAllowHosts ?? '',
+    proxyAllowPrivate: Boolean(next?.config?.proxyAllowPrivate),
+    proxyViaParent: Boolean(next?.config?.proxyViaParent),
   });
 
   const apply = React.useCallback((next) => {
@@ -1111,6 +1115,28 @@ function CoCowSettingsPage({ embedded = false } = {}) {
         h('span', { style: S.hint }, '公开下载，无 token；子端自动升级要求 >= 1.31.0。'),
       ),
     ),
+    h('div', { style: S.card },
+      h('div', { style: S.cardHead },
+        h('h3', { style: S.cardTitle }, '网络出口代理'),
+        h('span', { style: form.proxyEnabled ? S.badgeOn : S.badgeOff }, form.proxyEnabled ? '已开启' : '未开启'),
+      ),
+      h('label', { style: { display: 'flex', gap: 8, alignItems: 'flex-start', cursor: 'pointer', marginBottom: 10 } },
+        h('input', { type: 'checkbox', checked: Boolean(form.proxyEnabled), onChange: (event) => update('proxyEnabled', event.target.checked), style: { marginTop: 3 } }),
+        h('span', { style: { display: 'grid', gap: 2 } },
+          h('span', { style: { fontSize: 12.5, fontWeight: 600 } }, '允许直接子 DSH 通过本机访问网络'),
+          h('span', { style: S.hint }, '默认只允许公网 80/443；私网目标必须写入白名单。'),
+        ),
+      ),
+      h('div', { style: { ...S.row, alignItems: 'flex-start' } },
+        h('div', { style: { flex: '1 1 260px' } }, field('域名白名单', h('textarea', { style: { ...S.textarea, minHeight: 58 }, value: form.proxyAllowHosts, placeholder: '每行一个域名，支持 *.example.com；留空允许公网 80/443', onChange: (event) => update('proxyAllowHosts', event.target.value) }))),
+        h('label', { style: { display: 'flex', gap: 6, alignItems: 'flex-start', paddingTop: 20, cursor: 'pointer', flex: '0 0 auto' } },
+          h('input', { type: 'checkbox', checked: Boolean(form.proxyAllowPrivate), onChange: (event) => update('proxyAllowPrivate', event.target.checked), style: { marginTop: 3 } }),
+          h('span', { style: { display: 'grid', gap: 2 } }, h('span', { style: { fontSize: 12 } }, '允许私网'), h('span', { style: S.hint }, '需白名单')),
+        ),
+      ),
+      h('div', { style: { ...S.hint, marginTop: 8 } }, '主端会按 peerId 校验直接子节点；关闭后已建立的代理连接会被断开。'),
+      saveRow(!dirty, '保存网络代理'),
+    ),
   );
 
   const childPanel = h('div', { style: S.card },
@@ -1138,6 +1164,26 @@ function CoCowSettingsPage({ embedded = false } = {}) {
       h('button', { type: 'button', style: actionStyle(Boolean(busy) || !parentDirty), disabled: Boolean(busy) || !parentDirty, onClick: () => void saveParent() }, busy === 'parent' ? '连接中…' : '保存并连接'),
     ),
     h('div', { style: { ...S.hint, marginTop: 8 } }, '保存后子 DSH 会主动建立并维持 WebSocket 长连接；断线自动重连。'),
+    h('div', { style: { ...S.card, marginTop: 12, marginBottom: 0, padding: '12px 14px' } },
+      h('div', { style: S.cardHead },
+        h('h3', { style: S.cardTitle }, '通过主 DSH 上网'),
+        h('span', { style: form.proxyViaParent ? S.badgeOn : S.badgeOff }, form.proxyViaParent ? '已开启' : '未开启'),
+      ),
+      h('label', { style: { display: 'flex', gap: 8, alignItems: 'flex-start', cursor: 'pointer' } },
+        h('input', { type: 'checkbox', checked: Boolean(form.proxyViaParent), onChange: (event) => update('proxyViaParent', event.target.checked), style: { marginTop: 3 } }),
+        h('span', { style: { display: 'grid', gap: 3 } },
+          h('span', { style: { fontSize: 12.5, fontWeight: 600 } }, '通过主 DSH 访问网络'),
+          h('span', { style: S.hint }, '启动本地 127.0.0.1 代理，DSH / curl / git / npm 走主端出口；主端离线时 fail-closed。'),
+          (data.proxy?.mode === 'active' || data.proxy?.mode === 'restart' || data.proxy?.mode === 'error')
+            ? h('span', { style: { ...S.meta, fontSize: 10.5 } },
+                data.proxy.mode === 'active' ? `已生效 · 127.0.0.1:${data.proxy.local?.port || '-'}`
+                  : data.proxy.mode === 'restart' ? '已写入环境变量 · 重启子 DSH 生效'
+                    : `启动失败：${data.proxy.error || '-'}`)
+            : null,
+        ),
+      ),
+      saveRow(!dirty, '保存网络开关'),
+    ),
   );
 
   return h('div', { style: S.wrap },

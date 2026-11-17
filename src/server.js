@@ -99,7 +99,7 @@ export function createHandler({ channel, info, api, packages }) {
       }
       return;
     }
-    if (pathname === `${ROUTE_PREFIX}/ws` || pathname === `${ROUTE_PREFIX}/channel`) {
+    if (pathname === `${ROUTE_PREFIX}/ws` || pathname === `${ROUTE_PREFIX}/channel` || pathname === `${ROUTE_PREFIX}/net`) {
       sendJson(res, 426, { error: { code: 'upgrade_required', message: '该端点只接受 WebSocket 升级' } });
       return;
     }
@@ -131,13 +131,14 @@ function firstLanIPv4() {
  *   - `/cow/v1/*` 与 WebSocket 升级挂到宿主 webServer（只注册一次）；
  *   - `listenPort > 0` 时另起独立监听，可以随设置变更 `restart()`（端口/监听地址改动即时生效）。
  */
-export function mountCarrier({ ctx, handler, upgrade, config, logger }) {
+export function mountCarrier({ ctx, handler, upgrade, upgrades, config, logger }) {
   const log = logger ?? console;
   let settings = { ...config };
   let ownServer = null;
   let ownOrigin = '';
   let hostOrigin = '';
   let disposed = false;
+  const upgradeList = Array.isArray(upgrades) ? upgrades : upgrade ? [upgrade] : [];
 
   const startOwn = () => {
     if (disposed || !(settings.listenPort > 0) || ownServer) return;
@@ -147,8 +148,9 @@ export function mountCarrier({ ctx, handler, upgrade, config, logger }) {
       server.on('upgrade', (req, socket, head) => {
         try {
           const pathname = new URL(req.url ?? '/', 'http://cow.local').pathname;
-          if (upgrade && pathname === upgrade.path) {
-            void upgrade.handler(req, socket, head);
+          const matched = upgradeList.find((item) => item?.path === pathname);
+          if (matched) {
+            void matched.handler(req, socket, head);
             return;
           }
         } catch {
@@ -191,8 +193,10 @@ export function mountCarrier({ ctx, handler, upgrade, config, logger }) {
         sctx.effect(() => {
           const disposers = [];
           disposers.push(webServer.register({ kind: 'prefix', path: ROUTE_PREFIX, handler }));
-          if (upgrade && typeof webServer.registerUpgrade === 'function') {
-            disposers.push(webServer.registerUpgrade({ path: upgrade.path, handler: upgrade.handler }));
+          if (typeof webServer.registerUpgrade === 'function') {
+            for (const item of upgradeList) {
+              if (item?.path && item?.handler) disposers.push(webServer.registerUpgrade({ path: item.path, handler: item.handler }));
+            }
           }
           try {
             hostOrigin = webServer.getOrigin?.() ?? '';
