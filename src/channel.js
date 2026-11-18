@@ -18,6 +18,7 @@ import { hashJoinPassword, makeJoinProof, verifyJoinProof } from './identity.js'
 import { readJson, writeJsonAtomic } from './store.js';
 import { acceptUpgrade, connect as wsConnect } from './ws.js';
 import { deriveSessionKey, open as openSealed, seal } from './crypto.js';
+import { buildMap, childNode, resolveLimits, sanitizeSubtree, selfNode } from './topology.js';
 
 const HEARTBEAT_MS = 20_000;
 const DEAD_MS = 65_000;
@@ -65,6 +66,12 @@ export class Channel {
     this.timer = null;
     this.stateSaveAt = 0;
     this.loaded = false;
+    /** 在途的下级拓扑请求：id -> {resolve, timer, state}。 */
+    this.topoPending = new Map();
+    /** 拓扑请求自增序号，避免同一毫秒重复。 */
+    this.topoSeq = 0;
+    /** 每个连接的最近拓扑请求时间戳，用来限速。 */
+    this.topoHits = new WeakMap();
   }
 
   // ── 生命周期 ──────────────────────────────────────────────────
@@ -448,6 +455,13 @@ export class Channel {
 
   #onClosed(state) {
     if (this.conns.get(state.label) === state) this.conns.delete(state.label);
+    // 连接断了：这条链路上还没回来的拓扑请求立即失败，不要让调用方等到超时。
+    for (const [id, pending] of this.topoPending) {
+      if (pending.state !== state) continue;
+      clearTimeout(pending.timer);
+      this.topoPending.delete(id);
+      pending.resolve(null);
+    }
     if (state.ready) {
       try { this.onOffline?.(state.label); } catch (error) { this.logger.warn?.(`[dsh-cow] 处理对端离线失败：${error?.message ?? error}`); }
     }
@@ -652,6 +666,14 @@ export class Channel {
         }
         break;
       }
+      case 'topo.req': {
+        void this.#handleTopoReq(state, label, frame);
+        break;
+      }
+      case 'topo.res': {
+        this.#handleTopoRes(state, frame);
+        break;
+      }
       case 'ack': {
         state.outAckSeq = Math.max(state.outAckSeq, Number(frame.seq) || 0);
         this.#dropAcked(label, state.outAckSeq);
@@ -668,6 +690,143 @@ export class Channel {
       default:
         break;
     }
+  }
+
+  // ── 下级拓扑采集 ──────────────────────────────────────────────
+
+  /**
+   * 采集「下级方向」拓扑：只向自己的直接下级发 topo.req，绝不向上调查。
+   * 返回 { root, nodes, edges, stats, meta }；离线直接下级也会保留在图上。
+   */
+  async collectTopology(input = {}) {
+    const limits = resolveLimits(input);
+    const self = {
+      peerId: this.instance.peerId,
+      displayName: this.instance.displayName,
+      version: this.instance.version,
+      role: this.instance.role,
+    };
+    if (limits.depth <= 0) return buildMap({ self, children: [], meta: { ...limits, collectedAt: new Date(this.now()).toISOString() } });
+
+    const peers = this.peers.list().filter((peer) => peer.relation !== 'parent');
+    let truncated = false;
+    const children = await Promise.all(peers.map(async (peer) => {
+      const status = this.status(peer.label);
+      const base = childNode({ peer, status });
+      const connState = this.conns.get(peer.label);
+      if (status.state !== 'connected' || !connState?.ready) return base;
+      const subtree = await this.#requestTopology(peer.label, connState, limits);
+      if (!subtree) return { ...base, stale: true };
+      base.children = subtree.children ?? [];
+      base.truncated = subtree.truncated === true;
+      if (base.truncated) truncated = true;
+      return base;
+    }));
+
+    return buildMap({
+      self,
+      children,
+      meta: {
+        ...limits,
+        truncated,
+        collectedAt: new Date(this.now()).toISOString(),
+      },
+    });
+  }
+
+  #requestTopology(label, state, limits) {
+    if (!state?.ready || !state.conn) return Promise.resolve(null);
+    const id = `topo-${this.instance.peerId}-${++this.topoSeq}`;
+    const payload = {
+      depth: Math.max(0, limits.depth - 1),
+      timeoutMs: limits.timeoutMs,
+      maxNodes: limits.maxNodes,
+    };
+    const frame = { type: 'topo.req', id };
+    if (state.e2eKey) frame.enc = seal(state.e2eKey, payload);
+    else Object.assign(frame, payload);
+
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        if (!this.topoPending.has(id)) return;
+        this.topoPending.delete(id);
+        resolve(null);
+      }, limits.timeoutMs + 150);
+      timer.unref?.();
+      this.topoPending.set(id, {
+        resolve, timer, state,
+        remaining: Math.max(0, limits.maxNodes - 1),
+        maxDepth: Math.max(0, limits.depth),
+      });
+      if (!this.#write(state.conn, frame)) {
+        clearTimeout(timer);
+        this.topoPending.delete(id);
+        resolve(null);
+      }
+    });
+  }
+
+  async #handleTopoReq(state, label, frame) {
+    const id = String(frame.id ?? '');
+    if (!id) return;
+    const peer = this.peers.get(label);
+    // 只接受“上级问我”的下级采集；子节点不能反向调查父节点。
+    if (!peer || peer.relation !== 'parent') return;
+    const hit = this.topoHits.get(state);
+    const now = this.now();
+    if (hit && now - hit.at < 10_000) {
+      hit.count += 1;
+      if (hit.count > 20) return;
+    } else {
+      this.topoHits.set(state, { at: now, count: 1 });
+    }
+
+    let input = frame;
+    if (frame.enc) {
+      if (!state.e2eKey) return;
+      try { input = openSealed(state.e2eKey, frame.enc); } catch { return; }
+    }
+    const limits = resolveLimits(input);
+    let tree;
+    try {
+      tree = await this.collectTopology(limits);
+    } catch (error) {
+      this.logger.warn?.(`[dsh-cow] 采集下级拓扑失败：${error?.message ?? error}`);
+      tree = buildMap({ self: selfNode(this.instance), children: [] });
+    }
+    const payload = {
+      children: tree.root?.children ?? [],
+      truncated: tree.meta?.truncated === true,
+    };
+    const response = { type: 'topo.res', id };
+    if (state.e2eKey) response.enc = seal(state.e2eKey, payload);
+    else Object.assign(response, payload);
+    this.#write(state.conn, response);
+  }
+
+  #handleTopoRes(state, frame) {
+    const id = String(frame.id ?? '');
+    const pending = this.topoPending.get(id);
+    if (!pending || pending.state !== state) return;
+    clearTimeout(pending.timer);
+    this.topoPending.delete(id);
+    let payload = frame;
+    if (frame.enc) {
+      if (!state.e2eKey) return pending.resolve(null);
+      try { payload = openSealed(state.e2eKey, frame.enc); } catch { return pending.resolve(null); }
+    }
+    const sanitized = sanitizeSubtree(
+      { id: '__topo_response__', children: Array.isArray(payload.children) ? payload.children : [] },
+      {
+        remaining: pending.remaining ?? 499,
+        maxDepth: pending.maxDepth ?? 8,
+        seen: new Set([this.instance.peerId, state.peerId].filter(Boolean)),
+      },
+    );
+    pending.resolve({
+      children: sanitized.tree?.children ?? [],
+      truncated: payload.truncated === true || sanitized.truncated === true,
+    });
   }
 
   #markReady(label, state) {

@@ -199,6 +199,18 @@ export function createAdminHandlers(deps) {
       sendJson(res, 200, { url, passwordConfigured: Boolean(password) });
     }),
 
+    '/api/cow/topology': wrap(async (req, res) => {
+      if (req.method !== 'GET') return sendJson(res, 405, { error: { code: 'method_not_allowed', message: '只支持 GET' } });
+      const url = new URL(req.url ?? '/', 'http://cow.local');
+      const options = {
+        depth: Number(url.searchParams.get('depth')) || undefined,
+        timeoutMs: Number(url.searchParams.get('timeoutMs')) || undefined,
+        maxNodes: Number(url.searchParams.get('maxNodes')) || undefined,
+      };
+      const topology = await deps.collectTopology?.(options);
+      sendJson(res, 200, topology ?? { error: { code: 'topology_unavailable', message: '拓扑采集不可用' } });
+    }),
+
     '/api/cow/activity': wrap(async (req, res) => {
       if (req.method !== 'GET') return sendJson(res, 405, { error: { code: 'method_not_allowed', message: '只支持 GET' } });
       const limit = Math.max(1, Math.min(200, Number(new URL(req.url ?? '/', 'http://cow.local').searchParams.get('limit')) || 100));

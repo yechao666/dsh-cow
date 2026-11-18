@@ -39,6 +39,7 @@ function fakeDeps() {
     activity: { list: () => [{ id: 1, at: '2026-01-01T00:00:00.000Z', kind: 'message', text: '派发消息', peerName: '子 B', status: 'sent' }] },
     files: { stats: () => ({ sent: 1, received: 2 }) },
     doctor: null,
+    collectTopology: async (options) => ({ root: { id: 'cow_self' }, nodes: [{ id: 'cow_self', label: 'self', depth: 0 }], edges: [], stats: { total: 1, online: 0, offline: 0, direct: 0, depth: 0 }, meta: { ...options, depth: 3 } }),
     passwordConfigured: () => true,
     setPassword: () => {},
     getParentPassword: () => 'secret-value',
@@ -157,3 +158,24 @@ test('admin state 区分运行中版本与磁盘已安装版本', async () => {
   assert.equal(body.installedVersion, '1.31.3');
 });
 
+
+
+test('admin topology 返回下级拓扑并接受查询参数', async () => {
+  const deps = fakeDeps();
+  let received = null;
+  deps.collectTopology = async (options) => {
+    received = options;
+    return { root: { id: 'cow_self' }, nodes: [{ id: 'cow_self', label: 'self', depth: 0 }], edges: [], stats: { total: 1, online: 0, offline: 0, direct: 0, depth: 0 }, meta: { depth: 2 } };
+  };
+  const handlers = createAdminHandlers(deps);
+  const res = {
+    status: 0,
+    headers: {},
+    writeHead(status) { this.status = status; },
+    end(body) { this.body = body; },
+  };
+  await handlers['/api/cow/topology']({ method: 'GET', url: '/api/cow/topology?depth=2&timeoutMs=300' }, res);
+  assert.equal(res.status, 200);
+  assert.deepEqual(received, { depth: 2, timeoutMs: 300, maxNodes: undefined });
+  assert.equal(JSON.parse(res.body).meta.depth, 2);
+});

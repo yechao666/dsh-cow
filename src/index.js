@@ -473,6 +473,7 @@ export function apply(ctx, rawConfig = {}) {
     resolveConfig: resolve,
     peers,
     channel,
+    collectTopology: (options) => channel.collectTopology(options),
     router,
     bridge,
     doctor,

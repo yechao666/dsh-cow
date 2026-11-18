@@ -351,3 +351,39 @@ test('send 支持 peerId：先解析成唯一 label 再入发件箱', () => {
   assert.ok(channel.outbox.has('子 DSH'), '按唯一 label 入发件箱');
   assert.ok(!channel.outbox.has('cow_child_1'), '不按 peerId 直接入队');
 });
+
+test('下级拓扑只沿下级方向采集，不向上调查', async () => {
+  const a = await startAcceptor();
+  const homeB = mkdtempSync(join(tmpdir(), 'cow-topo-b-'));
+  const peersB = new PeerRegistry({ file: join(homeB, 'peers.json') });
+  peersB.upsert({ url: a.url, token: a.token, label: 'a-host', peerId: 'cods_aaaa', relation: 'parent' });
+  const b = new Channel({
+    ctx: {},
+    resolveConfig: () => ({ channelEnabled: true, serverEnabled: true, channelDial: 'always' }),
+    peers: peersB,
+    instance: { peerId: 'cods_bbbb', displayName: 'B', version: '1.0.0' },
+    authorize: () => null,
+    logger: silent,
+    home: homeB,
+  });
+  try {
+    b.start();
+    await waitFor(() => a.channel.connectedCount() === 1);
+    await waitFor(() => b.connectedCount() === 1);
+
+    const map = await a.channel.collectTopology({ depth: 2, timeoutMs: 900 });
+    assert.equal(map.root.id, 'cods_aaaa');
+    assert.equal(map.root.children.length, 1);
+    assert.equal(map.root.children[0].id, 'cods_bbbb');
+    assert.equal(map.root.children[0].online, true);
+    assert.equal(map.stats.total, 2);
+
+    // B 的“下级方向”只有自己的子节点；上级 A 不会被当成下级调查。
+    const reverse = await b.collectTopology({ depth: 2, timeoutMs: 900 });
+    assert.equal(reverse.root.id, 'cods_bbbb');
+    assert.equal(reverse.root.children.length, 0);
+  } finally {
+    b.stop();
+    await a.close();
+  }
+});

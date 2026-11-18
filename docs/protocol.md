@@ -32,7 +32,7 @@ proof = sha256(nonce + ":" + hashJoinPassword(password, salt))
   "protocol": "cow/v1",
   "peerId": "cow_…",
   "displayName": "叶超的MacMini",
-  "node": { "uuid": "…", "version": "1.32.9", "description": "…" },
+  "node": { "uuid": "…", "version": "1.33.0", "description": "…" },
   "ackSeq": 0,
   "enc": 1,
   "proof": "…"
@@ -56,6 +56,8 @@ proof = sha256(nonce + ":" + hashJoinPassword(password, salt))
 | `hello` / `welcome` | 双向 | `protocol, peerId, instanceId（旧别名）, displayName, node{uuid,version,description}, ackSeq, enc, proof` | 握手 |
 | `auth.challenge` | 接受方 → 拨号方 | `nonce, salt` | 挑战 |
 | `event` | 双向 | `seq, msgId, at, event, payload` | 业务事件 |
+| `topo.req` | 上级 → 直接下级 | `id, depth, timeoutMs, maxNodes`（加密时 `enc`） | 只向下采集子树；子端不能反向调查父端 |
+| `topo.res` | 直接下级 → 上级 | `id, children[], truncated`（加密时 `enc`） | 回传下级子树；超时/断线由请求方标记 |
 | `ack` | 双向 | `seq` | 累计确认 ≤ seq 已收到 |
 | `ping` / `pong` | 双向 | `t` | 20s 心跳，65s 无活动判死 |
 | `bye` | 双向 | `reason` | 优雅关闭 |
@@ -205,7 +207,7 @@ key = HKDF-SHA256(base = passwordHash, salt = nonce, info = "cow/v1/e2e", 32)
   "peerName": "子 DSH-A",
   "package": {
     "name": "dsh-cow",
-    "version": "1.32.9",
+    "version": "1.33.0",
     "url": "http://main:60001/cow/v1/plugin/package",
     "sha256": "…"
   }
