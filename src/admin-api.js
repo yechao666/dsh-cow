@@ -79,6 +79,7 @@ export function createAdminHandlers(deps) {
         direction: status.direction ?? null,
         node: status.node ?? null,
         version: status.node?.version ?? '',
+        proxyEnabled: status.node?.proxyEnabled === true,
         proxyViaParent: status.node?.proxyViaParent === true,
         upgradeAvailable: peer.relation === 'child'
           && status.state === 'connected'

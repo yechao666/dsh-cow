@@ -203,6 +203,20 @@ function ProxyChip({ compact = false }) {
   );
 }
 
+function ProxyExitChip({ compact = false }) {
+  return h('span', {
+    title: '允许直接子 DSH 通过本机访问网络',
+    style: {
+      ...PANEL.chip, display: 'inline-flex', alignItems: 'center', gap: 3,
+      color: '#f59e0b', borderColor: 'rgba(245,158,11,0.35)',
+      background: 'rgba(245,158,11,0.10)', whiteSpace: 'nowrap',
+    },
+  },
+    h(PanelIcon, { name: 'network', size: 10 }),
+    h('span', null, compact ? '代理出口' : '代理出口'),
+  );
+}
+
 function StatCard({ label, value, sub, accent, icon }) {
   return h('div', {
     style: {
@@ -409,6 +423,7 @@ function CowTopology({ state }) {
         h(PanelChip, { tone: options.connected ? 'on' : 'off' }, options.connected ? '在线' : '离线'),
         meta.version ? h(PanelChip, null, `v${meta.version}`) : null,
         meta.encrypted ? h(E2EChip, { compact: true }) : null,
+        meta.proxyEnabled ? h(ProxyExitChip, { compact: true }) : null,
         meta.proxyViaParent ? h(ProxyChip, { compact: true }) : null,
       ),
       meta.note
@@ -460,9 +475,9 @@ function CowTopology({ state }) {
         h('svg', { width: canvasWidth, height: canvasHeight, style: { position: 'absolute', left: 0, top: 0, pointerEvents: 'none' } },
           edges.map((edge) => h('path', { key: edge.key, d: edge.d, fill: 'none', stroke: 'var(--dsw-alias-brand-primary)', strokeWidth: 1.4, strokeOpacity: 0.35, strokeDasharray: '4 5' })),
         ),
-        parent ? nodeCard(`parent:${parent.peerName}`, parent.peerName, { version: parent.version, encrypted: parent.encrypted, note: parent.description }, { connected: parent.connected, role: 'parent' }) : null,
-        nodeCard('self', instance.displayName || '本机', { version: instance.version, encrypted: (state.stats?.encrypted ?? 0) > 0, proxyViaParent: Boolean(config.proxyViaParent), note: instance.endpoint }, { self: true, connected: true }),
-        children.map((child) => nodeCard(`child:${child.peerName}`, child.peerName, { version: child.version, encrypted: child.encrypted, proxyViaParent: Boolean(child.proxyViaParent), note: child.description }, { connected: child.connected, role: 'child' })),
+        parent ? nodeCard(`parent:${parent.peerName}`, parent.peerName, { version: parent.version, encrypted: parent.encrypted, proxyEnabled: Boolean(parent.proxyEnabled), proxyViaParent: Boolean(parent.proxyViaParent), note: parent.description }, { connected: parent.connected, role: 'parent' }) : null,
+        nodeCard('self', instance.displayName || '本机', { version: instance.version, encrypted: (state.stats?.encrypted ?? 0) > 0, proxyEnabled: Boolean(config.proxyEnabled), proxyViaParent: Boolean(config.proxyViaParent), note: instance.endpoint }, { self: true, connected: true }),
+        children.map((child) => nodeCard(`child:${child.peerName}`, child.peerName, { version: child.version, encrypted: child.encrypted, proxyEnabled: Boolean(child.proxyEnabled), proxyViaParent: Boolean(child.proxyViaParent), note: child.description }, { connected: child.connected, role: 'child' })),
         !parent ? h('div', { style: { position: 'absolute', left: (canvasWidth - 150) / 2, top: 18, ...PANEL.chip, color: 'var(--dsw-alias-label-tertiary)', borderStyle: 'dashed' } }, '无直接上级') : null,
         children.length === 0
           ? h('div', { style: { position: 'absolute', left: (canvasWidth - 150) / 2, top: 332, ...PANEL.chip, color: 'var(--dsw-alias-label-tertiary)', borderStyle: 'dashed' } }, '无直接下级')
@@ -623,6 +638,7 @@ function CowActivityPanel() {
         h(PanelChip, { tone: peer.connected ? 'on' : 'off' }, peer.connected ? '在线' : '离线'),
         peer.version ? h(PanelChip, null, `v${peer.version}`) : null,
         peer.encrypted ? h(E2EChip, { compact: true }) : null,
+        peer.proxyEnabled ? h(ProxyExitChip, { compact: true }) : null,
         peer.proxyViaParent ? h(ProxyChip, { compact: true }) : null,
         h('span', { style: { ...S.meta, fontSize: 10.5, marginLeft: 'auto' } }, roleText),
       ),
@@ -792,6 +808,7 @@ function CowActivityPanel() {
             uuid: instance.uuid,
             peerId: instance.peerId,
             encrypted: encryptedCount > 0,
+            proxyEnabled: Boolean(config.proxyEnabled),
             proxyViaParent: instance.role === 'member' && Boolean(config.proxyViaParent),
             direction: '',
             description: instance.description || '',
