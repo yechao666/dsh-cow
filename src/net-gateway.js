@@ -7,7 +7,8 @@ import { randomBytes } from 'node:crypto';
 import { acceptUpgrade } from './ws.js';
 import { verifyJoinProof } from './identity.js';
 import { deriveSessionKey, open as openSealed, seal } from './crypto.js';
-import { DEFAULT_PROXY_PORTS, parseAllowHosts, resolveProxyTarget } from './net-policy.js';
+import { DEFAULT_PROXY_PORTS, assertTargetShape, parseAllowHosts, resolveProxyTarget } from './net-policy.js';
+import { openProxyTunnel } from './net-tunnel.js';
 import { ProxyLog } from './proxy-log.js';
 
 const AUTH_TIMEOUT_MS = 10_000;
@@ -131,7 +132,7 @@ export class NetGateway {
     let frame;
     try { frame = openSealed(state.key, outer.enc); } catch { return; }
     if (frame.type === 'connect') {
-      void this.#connect(state, String(frame.host ?? ''), Number(frame.port));
+      void this.#connect(state, String(frame.host ?? ''), Number(frame.port), Array.isArray(frame.chain) ? frame.chain : []);
       return;
     }
     if (frame.type === 'data') {
@@ -148,7 +149,7 @@ export class NetGateway {
     }
   }
 
-  async #connect(state, host, port) {
+  async #connect(state, host, port, incomingChain = []) {
     if (!state.authenticated || !state.key) return;
     if (state.target) return;
     const config = this.resolveConfig();
@@ -157,15 +158,107 @@ export class NetGateway {
       this.#dispose(state);
       return;
     }
+    const chain = incomingChain.map(String).filter(Boolean);
+    if (chain.length > 8 || chain.includes(this.instance.peerId)) {
+      const message = '代理链路检测到循环或层级过深';
+      this.log.add('warn', 'denied', { peerId: state.peerId, peerName: state.peerName, host, port, message });
+      sendSealed(state.conn, state.key, { type: 'error', message });
+      state.error = true;
+      this.#dispose(state);
+      return;
+    }
+    const ports = Array.isArray(config.proxyAllowedPorts) && config.proxyAllowedPorts.length
+      ? config.proxyAllowedPorts.map(Number).filter(Number.isInteger)
+      : DEFAULT_PROXY_PORTS;
+    const allowHosts = parseAllowHosts(config.proxyAllowHosts);
+    const parentUrl = String(this.instance.parentUrl || '').trim();
+    const parentPassword = String(this.instance.parentPassword || '');
+    const viaParent = Boolean(config.proxyViaParent && parentUrl && parentPassword);
+
+    // 有上级且本节点也选择了「通过主 DSH 上网」时，C→A 的流继续走 A→B，
+    // 不在 A 直接出网；这样整棵组织树会自然一直向上走到根。
+    if (viaParent) {
+      let shape;
+      try {
+        shape = assertTargetShape({
+          host,
+          port,
+          allowHosts,
+          allowPrivate: config.proxyAllowPrivate,
+          allowedPorts: ports,
+        });
+      } catch (error) {
+        this.log.add('warn', 'denied', { peerId: state.peerId, peerName: state.peerName, host, port, message: String(error?.message ?? error) });
+        sendSealed(state.conn, state.key, { type: 'error', message: String(error?.message ?? error) });
+        state.error = true;
+        this.#dispose(state);
+        return;
+      }
+      const nextChain = [...new Set([...chain, state.peerId, this.instance.peerId])];
+      let upstream;
+      try {
+        upstream = await openProxyTunnel({
+          parentUrl,
+          password: parentPassword,
+          peerId: this.instance.peerId,
+          host: shape.host,
+          port: shape.port,
+          chain: nextChain,
+        });
+      } catch (error) {
+        const message = String(error?.message ?? error);
+        this.log.add('error', 'target_error', { peerId: state.peerId, peerName: state.peerName, host, port, message });
+        sendSealed(state.conn, state.key, { type: 'error', message: `上级代理不可用：${message}` });
+        state.error = true;
+        this.#dispose(state);
+        return;
+      }
+      state.host = shape.host;
+      state.port = shape.port;
+      state.chain = nextChain;
+      state.upstream = true;
+      state.startedAt = Date.now();
+      state.target = upstream;
+      this.log.add('info', 'connected', {
+        peerId: state.peerId,
+        peerName: state.peerName,
+        host: shape.host,
+        port: shape.port,
+        chain: nextChain,
+        upstream: true,
+      });
+      sendSealed(state.conn, state.key, { type: 'connected', host: shape.host, port: shape.port });
+      upstream.on('data', (chunk) => {
+        if (!state.key) return;
+        if (state.conn.bufferedAmount > CHUNK_LIMIT) {
+          upstream.pause();
+          const resume = () => {
+            state.conn.off?.('drain', resume);
+            upstream.resume();
+          };
+          state.conn.on?.('drain', resume);
+          return;
+        }
+        sendSealed(state.conn, state.key, { type: 'data', data: Buffer.from(chunk).toString('base64') });
+      });
+      upstream.on('error', (error) => {
+        this.log.add('error', 'target_error', { peerId: state.peerId, peerName: state.peerName, host: shape.host, port: shape.port, message: String(error?.message ?? error) });
+        if (state.key) sendSealed(state.conn, state.key, { type: 'error', message: String(error?.message ?? error) });
+        this.#dispose(state);
+      });
+      upstream.on('close', () => {
+        if (state.key) sendSealed(state.conn, state.key, { type: 'close' });
+        this.#dispose(state);
+      });
+      return;
+    }
+
     let target;
     try {
-      const ports = Array.isArray(config.proxyAllowedPorts) && config.proxyAllowedPorts.length
-        ? config.proxyAllowedPorts.map(Number).filter(Number.isInteger)
-        : DEFAULT_PROXY_PORTS;
       target = await resolveProxyTarget({
         host,
         port,
-        allowHosts: parseAllowHosts(config.proxyAllowHosts),
+        allowHosts,
         allowPrivate: config.proxyAllowPrivate,
         allowedPorts: ports,
       });
@@ -235,6 +328,8 @@ export class NetGateway {
         port: state.port ?? 0,
         bytes: state.bytes ?? 0,
         ms: state.startedAt ? Date.now() - state.startedAt : 0,
+        chain: state.chain ?? [],
+        upstream: Boolean(state.upstream),
       });
     }
     this.tunnels.delete(state);

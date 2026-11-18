@@ -848,6 +848,7 @@ function CowActivityPanel() {
                       entry.host ? `${entry.host}${entry.port ? `:${entry.port}` : ''}` : '',
                       entry.bytes ? `${Math.round(entry.bytes / 1024)} KB` : '',
                       entry.ms ? `${entry.ms} ms` : '',
+                      Array.isArray(entry.chain) && entry.chain.length ? `chain ${entry.chain.join('→')}` : '',
                     ].filter(Boolean).join(' · ');
                     return h('div', { key: `${entry.at}:${entry.event}:${index}`, style: { display: 'grid', gridTemplateColumns: '52px 8px minmax(0, 1fr)', gap: 9, alignItems: 'start', padding: '6px 0', borderTop: index ? '1px solid var(--dsw-alias-border-l2)' : 'none' } },
                       h('span', { style: { ...S.mono, paddingTop: 2 } }, timeOf(entry.at)),

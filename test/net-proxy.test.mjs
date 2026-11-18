@@ -122,3 +122,75 @@ test('加密代理隧道 + 本地 HTTP 代理转发', async () => {
   await new Promise((resolve) => main.close(resolve));
   await new Promise((resolve) => target.close(resolve));
 });
+
+test('多级代理：C → A → B 一直向上走', async () => {
+  const target = http.createServer((req, res) => {
+    res.writeHead(200, { 'content-type': 'text/plain' });
+    res.end(`chain ${req.url}`);
+  });
+  const targetPort = await listen(target);
+  const targetPassword = 'root-password';
+  const middlePassword = 'middle-password';
+
+  const rootInstance = { peerId: 'cow_root', passwordSalt: 's1', passwordHash: hashJoinPassword(targetPassword, 's1') };
+  const rootGateway = new NetGateway({
+    instance: rootInstance,
+    peers: { list: () => [{ peerId: 'cow_middle', relation: 'child' }] },
+    resolveConfig: () => ({
+      proxyEnabled: true,
+      proxyAllowPrivate: true,
+      proxyAllowHosts: '127.0.0.1',
+      proxyAllowedPorts: [targetPort],
+    }),
+    logger: { info() {}, warn() {} },
+  });
+  const rootServer = http.createServer();
+  rootServer.on('upgrade', (req, socket, head) => rootGateway.handleUpgrade(req, socket, head));
+  const rootPort = await listen(rootServer);
+
+  const middleInstance = {
+    peerId: 'cow_middle',
+    passwordSalt: 's2',
+    passwordHash: hashJoinPassword(middlePassword, 's2'),
+    parentUrl: `ws://127.0.0.1:${rootPort}/cow/v1/channel`,
+    parentPassword: targetPassword,
+  };
+  const middleGateway = new NetGateway({
+    instance: middleInstance,
+    peers: { list: () => [{ peerId: 'cow_child', relation: 'child' }] },
+    resolveConfig: () => ({
+      proxyEnabled: true,
+      proxyViaParent: true,
+      proxyAllowPrivate: true,
+      proxyAllowHosts: '127.0.0.1',
+      proxyAllowedPorts: [targetPort],
+    }),
+    logger: { info() {}, warn() {} },
+  });
+  const middleServer = http.createServer();
+  middleServer.on('upgrade', (req, socket, head) => middleGateway.handleUpgrade(req, socket, head));
+  const middlePort = await listen(middleServer);
+
+  const tunnel = await openProxyTunnel({
+    parentUrl: `ws://127.0.0.1:${middlePort}/cow/v1/channel`,
+    password: middlePassword,
+    peerId: 'cow_child',
+    host: '127.0.0.1',
+    port: targetPort,
+  });
+  let raw = '';
+  tunnel.on('data', (chunk) => { raw += chunk.toString('utf8'); });
+  tunnel.write(`GET /multi-hop HTTP/1.1\r\nHost: 127.0.0.1:${targetPort}\r\nconnection: close\r\n\r\n`);
+  await new Promise((resolve) => setTimeout(resolve, 700));
+  assert.match(raw, /chain \/multi-hop/);
+  const middleConnected = middleGateway.logs().find((entry) => entry.event === 'connected');
+  assert.equal(middleConnected?.upstream, true);
+  assert.deepEqual(middleConnected?.chain, ['cow_child', 'cow_middle']);
+
+  tunnel.destroy();
+  middleGateway.dispose();
+  rootGateway.dispose();
+  await new Promise((resolve) => middleServer.close(resolve));
+  await new Promise((resolve) => rootServer.close(resolve));
+  await new Promise((resolve) => target.close(resolve));
+});

@@ -187,7 +187,7 @@ export class NetTunnel extends Duplex {
  * @param {{parentUrl: string, password: string, peerId: string, host: string, port: number, timeoutMs?: number}} options
  * @returns {Promise<NetTunnel>}
  */
-export async function openProxyTunnel({ parentUrl, password, peerId, host, port, timeoutMs = DEFAULT_TIMEOUT }) {
+export async function openProxyTunnel({ parentUrl, password, peerId, host, port, chain = [], timeoutMs = DEFAULT_TIMEOUT }) {
   if (!parentUrl) throw new Error('未配置上级地址');
   if (!password) throw new Error('未配置上级连接密码');
   const url = proxyUrlForParent(parentUrl);
@@ -195,7 +195,7 @@ export async function openProxyTunnel({ parentUrl, password, peerId, host, port,
   try {
     const key = await authenticate(conn, { password, peerId, timeoutMs });
     if (!key) throw new Error('代理握手没有拿到会话密钥');
-    sendSealed(conn, key, { type: 'connect', host, port });
+    sendSealed(conn, key, { type: 'connect', host, port, chain: Array.isArray(chain) ? chain.map(String) : [] });
     const response = await new Promise((resolve, reject) => {
       let settled = false;
       const timer = setTimeout(() => {
