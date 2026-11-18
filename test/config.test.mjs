@@ -11,10 +11,10 @@ test('maxFileMB 默认 50，可配置并夹在 1..1024 之间', () => {
   assert.equal(resolveConfig({ maxFileMB: 5000 }).maxFileMB, 1024);
 });
 
-test('allowedRoots 默认/留空都回落到主目录下的 dsh-cow-root（跨平台由代码解析）', () => {
-  assert.equal(DEFAULT_ALLOWED_ROOT, join(homedir(), 'dsh-cow-root'));
+test('allowedRoots 默认/留空都回落到 ~/.dsh/.dsh-cow-root（跨平台由代码解析）', () => {
+  assert.equal(DEFAULT_ALLOWED_ROOT, join(homedir(), '.dsh', '.dsh-cow-root'));
   assert.equal(DEFAULT_ALLOWED_ROOT.startsWith('~'), false);
-  assert.equal(DEFAULT_ALLOWED_ROOT.endsWith('dsh-cow-root'), true);
+  assert.equal(DEFAULT_ALLOWED_ROOT.endsWith(join('.dsh', '.dsh-cow-root')), true);
   assert.equal(resolveConfig({}).allowedRoots, DEFAULT_ALLOWED_ROOT);
   assert.equal(resolveConfig({ allowedRoots: '   ' }).allowedRoots, DEFAULT_ALLOWED_ROOT);
   assert.equal(resolveConfig({ allowedRoots: '/tmp/other' }).allowedRoots, '/tmp/other');

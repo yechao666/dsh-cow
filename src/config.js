@@ -13,10 +13,10 @@ import z from '@deepseek-ai/schemastery';
 export const SETTINGS_NAMESPACE = 'dsh-cow';
 
 /**
- * 默认工作区根目录（数据目录）：当前用户 home 下的 dsh-cow-root。
+ * 默认工作区根目录（数据目录）：当前用户 home 下的 .dsh/.dsh-cow-root。
  * 用户可在设置页覆盖；保存空值时也回落这里。
  */
-export const DEFAULT_ALLOWED_ROOT = join(homedir(), 'dsh-cow-root');
+export const DEFAULT_ALLOWED_ROOT = join(homedir(), '.dsh', '.dsh-cow-root');
 
 /** 默认实例名：优先 macOS「计算机名」，其次系统 hostname。 */
 function defaultDisplayName() {
@@ -51,7 +51,7 @@ export const Config = z.object({
     .string()
     .default(DEFAULT_ALLOWED_ROOT)
     .volatile()
-    .description('远端消息派来的会话允许使用的工作目录根，换行分隔。留空自动使用用户主目录下的 dsh-cow-root（由代码按平台解析）'),
+    .description('远端消息派来的会话允许使用的工作目录根，换行分隔。留空自动使用用户主目录下的 .dsh/.dsh-cow-root（由代码按平台解析）'),
   maxFileMB: z.number().default(50).volatile().description('单个交换文件的上限（MB）'),
   maxConcurrentFiles: z.number().default(4).volatile().description('同时进行的文件传输上限'),
   agentPreset: z
