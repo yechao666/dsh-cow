@@ -1054,6 +1054,8 @@ function CoCowSettingsPage({ embedded = false } = {}) {
 
   const makeForm = (next) => ({
     displayName: next?.config?.displayName ?? '',
+    department: next?.config?.department ?? '',
+    owner: next?.config?.owner ?? '',
     capabilityNote: next?.config?.capabilityNote ?? '',
     allowedRoots: next?.config?.allowedRoots ?? '',
     listenHost: next?.config?.listenHost ?? '127.0.0.1',
@@ -1323,6 +1325,8 @@ function CoCowSettingsPage({ embedded = false } = {}) {
     ),
     h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12 } },
       field('节点名称', h('input', { style: S.inputFlex, value: form.displayName, placeholder: '留空用计算机名', onChange: (event) => update('displayName', event.target.value) })),
+      field('部门', h('input', { style: S.inputFlex, value: form.department, placeholder: '例如：引擎组', onChange: (event) => update('department', event.target.value) })),
+      field('姓名', h('input', { style: S.inputFlex, value: form.owner, placeholder: '例如：高远', onChange: (event) => update('owner', event.target.value) })),
       field('子会话 preset', h('input', { style: S.inputFlex, value: form.agentPreset, placeholder: '留空用 profile 默认', onChange: (event) => update('agentPreset', event.target.value) })),
       h('div', { style: { gridColumn: '1 / -1' } }, field('工作区根目录', h('textarea', {
         style: { ...S.textarea, minHeight: 64 },
