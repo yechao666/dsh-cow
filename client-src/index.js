@@ -341,12 +341,10 @@ function CowFullTopology({ topology, loading = false }) {
       return next;
     });
   };
-  const row = (node, depth, isLast, prefix) => {
+  const row = (node, depth, isLast, ancestorLast = []) => {
     const children = Array.isArray(node.children) ? node.children : [];
     const hasChildren = children.length > 0;
     const isCollapsed = collapsed.has(node.id);
-    const branch = depth === 0 ? '' : `${prefix}${isLast ? '└─ ' : '├─ '}`;
-    const nextPrefix = depth === 0 ? '' : `${prefix}${isLast ? '   ' : '│  '}`;
     const owner = String(node.owner || '').trim();
     const department = String(node.department || '').trim();
     const label = String(node.label || node.id || '未命名');
@@ -354,12 +352,23 @@ function CowFullTopology({ topology, loading = false }) {
       h('div', {
         title: node.description || node.id,
         style: {
-          display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap',
-          minHeight: 30, padding: '2px 5px',
+          position: 'relative', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap',
+          minHeight: 30, padding: `2px 5px 2px ${depth * 16 + 20}px`,
           borderRadius: 6,
           background: node.depth === 0 ? 'color-mix(in srgb, var(--dsw-alias-brand-primary) 7%, transparent)' : 'transparent',
         },
       },
+        ...Array.from({ length: Math.max(0, depth - 1) }, (_, index) => (
+          ancestorLast[index]
+            ? null
+            : h('span', {
+                key: `v-${index}`,
+                style: { position: 'absolute', left: index * 16, top: 0, bottom: 0, borderLeft: '1px solid color-mix(in srgb, var(--dsw-alias-label-secondary) 38%, transparent)' },
+              })
+        )),
+        depth > 0 ? h('span', { style: { position: 'absolute', left: (depth - 1) * 16, top: 0, height: '50%', borderLeft: '1px solid color-mix(in srgb, var(--dsw-alias-label-secondary) 38%, transparent)' } }) : null,
+        depth > 0 ? h('span', { style: { position: 'absolute', left: (depth - 1) * 16, top: '50%', width: 36, borderTop: '1px solid color-mix(in srgb, var(--dsw-alias-label-secondary) 38%, transparent)' } }) : null,
+        depth > 0 && !isLast ? h('span', { style: { position: 'absolute', left: (depth - 1) * 16, top: '50%', bottom: 0, borderLeft: '1px solid color-mix(in srgb, var(--dsw-alias-label-secondary) 38%, transparent)' } }) : null,
         hasChildren
           ? h('button', {
               type: 'button',
@@ -374,7 +383,6 @@ function CowFullTopology({ topology, loading = false }) {
               },
             }, isCollapsed ? '+' : '−')
           : h('span', { style: { width: 17, flex: '0 0 auto' } }),
-        depth === 0 ? null : h('span', { style: { ...S.mono, color: 'var(--dsw-alias-label-tertiary)', whiteSpace: 'pre', fontSize: 10 } }, branch),
         h('span', { style: { width: 6, height: 6, borderRadius: 99, background: node.online ? '#34c38f' : 'var(--dsw-alias-label-tertiary)', flex: '0 0 auto' } }),
         department
           ? h('span', { style: { ...PANEL.chip, fontSize: 9.5, padding: '0 6px', height: 18, color: 'var(--dsw-alias-label-secondary)' } }, department)
@@ -394,7 +402,7 @@ function CowFullTopology({ topology, loading = false }) {
         node.stale ? h(PanelChip, { tone: 'off' }, '超时') : null,
         node.truncated ? h(PanelChip, { tone: 'off' }, '截断') : null,
       ),
-      isCollapsed ? null : children.map((child, index) => row(child, depth + 1, index === children.length - 1, nextPrefix)),
+      isCollapsed ? null : children.map((child, index) => row(child, depth + 1, index === children.length - 1, [...ancestorLast, !isLast])),
     );
   };
   return h('div', { style: { ...PANEL.card, marginBottom: 0 } },
@@ -411,7 +419,7 @@ function CowFullTopology({ topology, loading = false }) {
         h('button', { type: 'button', style: { ...S.secondary, height: 24, padding: '0 7px', fontSize: 10.5 }, onClick: () => setCollapsed(new Set(parentIds)) }, '收拢全部'),
       ),
     ),
-    h('div', { style: { display: 'grid', gap: 0, overflowX: 'auto', padding: '4px 4px' } }, row(root, 0, true, '')),
+    h('div', { style: { display: 'grid', gap: 0, overflowX: 'auto', padding: '4px 4px' } }, row(root, 0, true, [])),
     h('div', { style: { ...S.meta, fontSize: 9.5, marginTop: 6 } },
       `采集于 ${topology?.meta?.collectedAt ? new Date(topology.meta.collectedAt).toLocaleTimeString('zh-CN', { hour12: false }) : '-'} · 每 15 秒刷新`,
     ),
