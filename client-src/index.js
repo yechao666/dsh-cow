@@ -311,7 +311,87 @@ function CowActivityIcon({ size = 16 }) {
 
 // ── 拓扑图 ──────────────────────────────────────────────────────
 
-function CowTopology({ state }) {
+function CowFullTopology({ topology, loading = false }) {
+  const nodes = Array.isArray(topology?.nodes) ? topology.nodes : [];
+  const stats = topology?.stats ?? {};
+  if (!nodes.length) {
+    return h('div', { style: { ...PANEL.card, marginBottom: 0 } },
+      h('div', { style: PANEL.cardHead },
+        h('h3', { style: PANEL.cardTitle }, '节点拓扑'),
+        h(PanelChip, { tone: loading ? 'neutral' : 'off' }, loading ? '采集中' : '暂无数据'),
+      ),
+      h('div', { style: PANEL.empty }, loading ? '正在向下级采集完整拓扑…' : '没有可展示的拓扑数据'),
+    );
+  }
+  const levels = [];
+  for (const node of nodes) {
+    const depth = Math.max(0, Number(node.depth) || 0);
+    (levels[depth] ??= []).push(node);
+  }
+  const card = (node) => h('div', {
+    key: node.id,
+    title: node.description || node.id,
+    style: {
+      width: 208, minHeight: 64, boxSizing: 'border-box', padding: '8px 10px',
+      border: `1px solid ${node.online ? 'rgba(52,199,89,.35)' : 'var(--dsw-alias-border-l2)'}`,
+      borderRadius: 10,
+      background: node.depth === 0
+        ? 'color-mix(in srgb, var(--dsw-alias-brand-primary) 7%, var(--dsw-alias-bg-l1))'
+        : 'var(--dsw-alias-bg-l1)',
+      display: 'grid', gap: 4,
+      boxShadow: node.depth === 0 ? '0 0 0 1px color-mix(in srgb, var(--dsw-alias-brand-primary) 22%, transparent)' : 'none',
+    },
+  },
+    h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 } },
+      h('span', { style: { width: 20, height: 20, borderRadius: 6, display: 'grid', placeItems: 'center', color: '#fff', background: node.online ? '#34c38f' : '#94a3b8', fontSize: 9, fontWeight: 700, flex: '0 0 auto' } }, String(node.label || '?').slice(0, 1)),
+      h('b', { style: { fontSize: 11.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, node.label || node.id || '未命名'),
+      node.depth === 0 ? h(PanelChip, { tone: 'brand' }, '当前') : null,
+    ),
+    h('div', { style: { display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' } },
+      h(PanelChip, { tone: node.online ? 'on' : 'off' }, node.online ? '在线' : '离线'),
+      node.direct ? h(PanelChip, null, '直接下级') : null,
+      node.version ? h('span', { style: { ...S.meta, fontSize: 9 } }, `v${node.version}`) : null,
+      node.stale ? h(PanelChip, { tone: 'off' }, '超时') : null,
+      node.truncated ? h(PanelChip, { tone: 'off' }, '截断') : null,
+    ),
+  );
+  return h('div', { style: { ...PANEL.card, marginBottom: 0 } },
+    h('div', { style: PANEL.cardHead },
+      h('div', { style: { display: 'grid', gap: 1 } },
+        h('h3', { style: PANEL.cardTitle }, '节点拓扑'),
+        h('span', { style: { ...S.meta, fontSize: 10.5 } }, '只沿下级方向采集；当前 / 直接下级 / 更深层'),
+      ),
+      h('div', { style: { display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' } },
+        h(PanelChip, { tone: 'brand' }, `${stats.total ?? nodes.length} 节点`),
+        h(PanelChip, null, `${stats.depth ?? 0} 层`),
+        stats.online != null ? h(PanelChip, { tone: 'on' }, `${stats.online} 在线`) : null,
+      ),
+    ),
+    h('div', { style: { display: 'grid', gap: 0, overflowX: 'auto', padding: '8px 2px 4px' } },
+      levels.map((level, index) => h('div', { key: index, style: { display: 'grid', gap: 0 } },
+        h('div', { style: { display: 'flex', alignItems: 'stretch', justifyContent: 'center', gap: 10, flexWrap: 'wrap', padding: '4px 0' } },
+          level.map(card),
+        ),
+        index < levels.length - 1
+          ? h('div', { style: { display: 'flex', justifyContent: 'center', alignItems: 'center', height: 16 } },
+              h('div', { style: { width: 1, height: 16, background: 'var(--dsw-alias-border-l2)' } }),
+            )
+          : null,
+      )),
+    ),
+    h('div', { style: { ...S.meta, fontSize: 9.5, marginTop: 6 } },
+      `采集于 ${topology?.meta?.collectedAt ? new Date(topology.meta.collectedAt).toLocaleTimeString('zh-CN', { hour12: false }) : '-'} · 每 15 秒刷新`,
+    ),
+  );
+}
+
+function CowTopology({ state, topology, loading }) {
+  if (Array.isArray(topology?.nodes) && topology.nodes.length) {
+    return h(CowFullTopology, { topology, loading });
+  }
+  return h(CowDirectTopology, { state });
+}
+function CowDirectTopology({ state }) {
   const STORAGE_KEY = 'dsh-cow:topology:v3';
   const NODE_W = 236;
   const [positions, setPositions] = React.useState(() => {
@@ -489,63 +569,6 @@ function CowTopology({ state }) {
 
 // ── 完整下级拓扑 ────────────────────────────────────────────────
 
-function CowDownstreamTopology({ topology, loading = false }) {
-  const nodes = Array.isArray(topology?.nodes) ? topology.nodes : [];
-  const stats = topology?.stats ?? {};
-  const meta = topology?.meta ?? {};
-  if (!nodes.length) {
-    return h('div', { style: { ...PANEL.card, marginBottom: 0 } },
-      h('div', { style: PANEL.cardHead },
-        h('h3', { style: PANEL.cardTitle }, '完整拓扑'),
-        h(PanelChip, { tone: loading ? 'neutral' : 'off' }, loading ? '采集中' : '暂无数据'),
-      ),
-      h('div', { style: PANEL.empty }, loading ? '正在向下级采集…' : '没有可展示的下级拓扑'),
-    );
-  }
-  return h('div', { style: { ...PANEL.card, marginBottom: 0 } },
-    h('div', { style: PANEL.cardHead },
-      h('div', { style: { display: 'grid', gap: 1 } },
-        h('h3', { style: PANEL.cardTitle }, '完整拓扑'),
-        h('span', { style: { ...S.meta, fontSize: 10.5 } }, '只沿下级方向采集；不向上调查'),
-      ),
-      h('div', { style: { display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' } },
-        h(PanelChip, { tone: 'brand' }, `${stats.total ?? nodes.length} 节点`),
-        h(PanelChip, null, `${stats.depth ?? 0} 层`),
-        meta.truncated ? h(PanelChip, { tone: 'off' }, '已截断') : null,
-      ),
-    ),
-    h('div', { style: { display: 'grid', gap: 3 } },
-      nodes.map((node) => {
-        const indent = Math.max(0, Number(node.depth) || 0) * 16;
-        return h('div', {
-          key: node.id,
-          title: node.description || node.id,
-          style: {
-            display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap',
-            padding: '6px 8px', marginLeft: indent,
-            borderRadius: 8,
-            background: node.depth === 0 ? 'color-mix(in srgb, var(--dsw-alias-brand-primary) 8%, transparent)' : 'transparent',
-            borderLeft: node.depth ? '1px solid var(--dsw-alias-border-l2)' : 'none',
-          },
-        },
-          h('span', { style: { width: 6, height: 6, borderRadius: 99, background: node.online ? '#34c38f' : 'var(--dsw-alias-label-tertiary)', flex: '0 0 auto' } }),
-          h('span', { style: { fontSize: 12, fontWeight: node.depth === 0 ? 650 : 550, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, node.label || node.id || '未命名'),
-          h(PanelChip, { tone: node.online ? 'on' : 'off' }, node.online ? '在线' : '离线'),
-          node.depth === 0 ? h(PanelChip, { tone: 'brand' }, '当前') : null,
-          node.depth === 1 ? h(PanelChip, null, '直接下级') : null,
-          node.stale ? h(PanelChip, { tone: 'off' }, '采集超时') : null,
-          node.truncated ? h(PanelChip, { tone: 'off' }, '已截断') : null,
-          node.version ? h('span', { style: { ...S.meta, fontSize: 9.5 } }, `v${node.version}`) : null,
-          node.description ? h('span', { style: { ...S.meta, fontSize: 9.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: '1 1 120px' } }, node.description) : null,
-        );
-      }),
-    ),
-    h('div', { style: { ...S.meta, fontSize: 9.5, marginTop: 8 } },
-      `采集于 ${meta.collectedAt ? new Date(meta.collectedAt).toLocaleTimeString('zh-CN', { hour12: false }) : '-'} · 超时 ${meta.timeoutMs ?? '-'}ms · 每 15 秒刷新`,
-    ),
-  );
-}
-
 // ── COW 状态面板 ────────────────────────────────────────────────
 
 function CowActivityPanel() {
@@ -586,7 +609,7 @@ function CowActivityPanel() {
   const loadTopology = React.useCallback(async () => {
     setTopologyLoading(true);
     try {
-      const response = await fetch(api('topology') + '?depth=3', { credentials: 'same-origin' });
+      const response = await fetch(api('topology') + '?depth=5', { credentials: 'same-origin' });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload?.error?.message || `HTTP ${response.status}`);
       setTopology(payload);
@@ -845,8 +868,7 @@ function CowActivityPanel() {
     ),
     section === 'overview'
       ? h(React.Fragment, null,
-          h(CowTopology, { state }),
-          h(CowDownstreamTopology, { topology, loading: topologyLoading }),
+          h(CowTopology, { state, topology, loading: topologyLoading }),
           h('div', { style: PANEL.grid2 },
             h('div', { style: { ...PANEL.card, marginBottom: 0 } },
               h('div', { style: PANEL.cardHead }, h('h3', { style: PANEL.cardTitle }, '本机节点'), h(E2EChip, { enabled: encryptedCount > 0 })),
@@ -899,7 +921,7 @@ function CowActivityPanel() {
           children.length
             ? h('div', { style: { display: 'grid', gap: 10 } }, children.map((child) => nodeDetail(child, 'child')))
             : h('div', { style: PANEL.card }, h('div', { style: PANEL.empty }, '当前没有子 DSH')),
-          h(CowDownstreamTopology, { topology, loading: topologyLoading }),
+          h(CowFullTopology, { topology, loading: topologyLoading }),
         )
       : null,
     section === 'activity'
