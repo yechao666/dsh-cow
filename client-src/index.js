@@ -341,71 +341,96 @@ function CowFullTopology({ topology, loading = false }) {
       return next;
     });
   };
-  const row = (node, depth, isLast, ancestorLast = []) => {
+  const renderNode = (node) => {
     const children = Array.isArray(node.children) ? node.children : [];
     const hasChildren = children.length > 0;
     const isCollapsed = collapsed.has(node.id);
     const owner = String(node.owner || '').trim();
     const department = String(node.department || '').trim();
     const label = String(node.label || node.id || '未命名');
-    return h('div', { key: node.id || `${depth}-${label}` },
+    return h('li', { key: node.id || label, className: 'cow-tree-item' },
       h('div', {
+        className: 'cow-tree-row',
         title: node.description || node.id,
         style: {
-          position: 'relative', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap',
-          minHeight: 30, padding: `2px 5px 2px ${depth * 16 + 20}px`,
-          borderRadius: 6,
           background: node.depth === 0 ? 'color-mix(in srgb, var(--dsw-alias-brand-primary) 7%, transparent)' : 'transparent',
         },
       },
-        ...Array.from({ length: Math.max(0, depth - 1) }, (_, index) => (
-          ancestorLast[index]
-            ? null
-            : h('span', {
-                key: `v-${index}`,
-                style: { position: 'absolute', left: index * 16, top: 0, bottom: 0, borderLeft: '1px solid color-mix(in srgb, var(--dsw-alias-label-secondary) 38%, transparent)' },
-              })
-        )),
-        depth > 0 ? h('span', { style: { position: 'absolute', left: (depth - 1) * 16, top: 0, height: '50%', borderLeft: '1px solid color-mix(in srgb, var(--dsw-alias-label-secondary) 38%, transparent)' } }) : null,
-        depth > 0 ? h('span', { style: { position: 'absolute', left: (depth - 1) * 16, top: '50%', width: 36, borderTop: '1px solid color-mix(in srgb, var(--dsw-alias-label-secondary) 38%, transparent)' } }) : null,
-        depth > 0 && !isLast ? h('span', { style: { position: 'absolute', left: (depth - 1) * 16, top: '50%', bottom: 0, borderLeft: '1px solid color-mix(in srgb, var(--dsw-alias-label-secondary) 38%, transparent)' } }) : null,
         hasChildren
           ? h('button', {
               type: 'button',
+              className: 'cow-tree-toggle',
               'aria-label': isCollapsed ? '展开' : '收拢',
               'aria-expanded': !isCollapsed,
               onClick: (event) => { event.stopPropagation(); toggle(node.id); },
-              style: {
-                width: 17, height: 17, flex: '0 0 auto', padding: 0, cursor: 'pointer',
-                border: '1px solid var(--dsw-alias-border-l2)', borderRadius: 4,
-                background: 'var(--dsw-alias-bg-l2)', color: 'var(--dsw-alias-label-secondary)',
-                fontSize: 12, lineHeight: '15px', textAlign: 'center',
-              },
             }, isCollapsed ? '+' : '−')
-          : h('span', { style: { width: 17, flex: '0 0 auto' } }),
-        h('span', { style: { width: 6, height: 6, borderRadius: 99, background: node.online ? '#34c38f' : 'var(--dsw-alias-label-tertiary)', flex: '0 0 auto' } }),
+          : h('span', { className: 'cow-tree-toggle cow-tree-toggle-empty' }),
+        h('span', { className: 'cow-tree-dot', style: { background: node.online ? '#34c38f' : 'var(--dsw-alias-label-tertiary)' } }),
         department
-          ? h('span', { style: { ...PANEL.chip, fontSize: 9.5, padding: '0 6px', height: 18, color: 'var(--dsw-alias-label-secondary)' } }, department)
+          ? h('span', { className: 'cow-tree-dept' }, department)
           : null,
-        h('b', { style: { fontSize: 12, fontWeight: node.depth === 0 ? 700 : 600, color: node.depth === 0 ? 'var(--dsw-alias-brand-primary)' : 'inherit' } }, owner || label),
-        owner && label !== owner ? h('span', { style: { ...S.meta, fontSize: 10.5 } }, label) : null,
-        h(PanelChip, { tone: node.online ? 'on' : 'off' }, node.online ? '在线' : '离线'),
-        node.depth === 0 ? h(PanelChip, { tone: 'brand' }, '当前') : null,
-        depth === 1 ? h(PanelChip, null, '直接下级') : null,
-        node.encrypted ? h(E2EChip, { compact: true }) : null,
-        node.proxyEnabled
-          ? h(ProxyExitChip, { compact: true })
-          : node.proxyViaParent
-            ? h(ProxyChip, { compact: true })
-            : h('span', { style: { ...S.meta, fontSize: 9 } }, '未代理'),
-        node.version ? h('span', { style: { ...S.meta, fontSize: 9 } }, `v${node.version}`) : null,
-        node.stale ? h(PanelChip, { tone: 'off' }, '超时') : null,
-        node.truncated ? h(PanelChip, { tone: 'off' }, '截断') : null,
+        h('b', { className: 'cow-tree-owner' }, owner || label),
+        owner && label !== owner ? h('span', { className: 'cow-tree-label' }, label) : null,
+        h('span', { className: 'cow-tree-chips' },
+          h(PanelChip, { tone: node.online ? 'on' : 'off' }, node.online ? '在线' : '离线'),
+          node.depth === 0 ? h(PanelChip, { tone: 'brand' }, '当前') : null,
+          node.depth === 1 ? h(PanelChip, null, '直接下级') : null,
+          node.encrypted ? h(E2EChip, { compact: true }) : null,
+          node.proxyEnabled
+            ? h(ProxyExitChip, { compact: true })
+            : node.proxyViaParent
+              ? h(ProxyChip, { compact: true })
+              : h('span', { style: { ...S.meta, fontSize: 9 } }, '未代理'),
+          node.version ? h('span', { style: { ...S.meta, fontSize: 9 } }, `v${node.version}`) : null,
+          node.stale ? h(PanelChip, { tone: 'off' }, '超时') : null,
+          node.truncated ? h(PanelChip, { tone: 'off' }, '截断') : null,
+        ),
       ),
-      isCollapsed ? null : children.map((child, index) => row(child, depth + 1, index === children.length - 1, [...ancestorLast, !isLast])),
+      children.length && !isCollapsed
+        ? h('ul', null, children.map(renderNode))
+        : null,
     );
   };
   return h('div', { style: { ...PANEL.card, marginBottom: 0 } },
+    h('style', null, `
+      .cow-tree, .cow-tree ul { list-style: none; margin: 0; padding: 0; }
+      .cow-tree ul { margin-left: 18px; }
+      .cow-tree .cow-tree-item { position: relative; padding-left: 18px; }
+      .cow-tree > .cow-tree-item { padding-left: 0; }
+      .cow-tree .cow-tree-item::before {
+        content: ''; position: absolute; left: 0; top: 0; bottom: 0;
+        border-left: 1px solid color-mix(in srgb, var(--dsw-alias-label-secondary) 38%, transparent);
+      }
+      .cow-tree .cow-tree-item:last-child::before { bottom: auto; height: 15px; }
+      .cow-tree .cow-tree-item::after {
+        content: ''; position: absolute; left: 0; top: 15px; width: 12px;
+        border-top: 1px solid color-mix(in srgb, var(--dsw-alias-label-secondary) 38%, transparent);
+      }
+      .cow-tree > .cow-tree-item::before, .cow-tree > .cow-tree-item::after { display: none; }
+      .cow-tree-row {
+        display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+        min-height: 30px; padding: 2px 5px; border-radius: 6px; min-width: 0;
+      }
+      .cow-tree-toggle {
+        width: 17px; height: 17px; flex: 0 0 auto; padding: 0; cursor: pointer;
+        border: 1px solid var(--dsw-alias-border-l2); border-radius: 4px;
+        background: var(--dsw-alias-bg-l2); color: var(--dsw-alias-label-secondary);
+        font-size: 12px; line-height: 15px; text-align: center;
+      }
+      .cow-tree-toggle-empty { border-color: transparent; background: transparent; }
+      .cow-tree-dot { width: 6px; height: 6px; border-radius: 99px; flex: 0 0 auto; }
+      .cow-tree-dept {
+        flex: 0 0 auto; padding: 0 6px; height: 18px; line-height: 17px;
+        border: 1px solid var(--dsw-alias-border-l2); border-radius: 999px;
+        font-size: 9.5px; color: var(--dsw-alias-label-secondary); white-space: nowrap;
+      }
+      .cow-tree-owner { font-size: 12px; font-weight: 600; flex: 0 0 auto; }
+      .cow-tree-label {
+        font-size: 10.5px; color: var(--dsw-alias-label-secondary);
+        flex: 0 1 200px; min-width: 0; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      }
+      .cow-tree-chips { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; margin-left: 0; }
+    `),
     h('div', { style: PANEL.cardHead },
       h('div', { style: { display: 'grid', gap: 1 } },
         h('h3', { style: PANEL.cardTitle }, '节点拓扑'),
@@ -419,7 +444,7 @@ function CowFullTopology({ topology, loading = false }) {
         h('button', { type: 'button', style: { ...S.secondary, height: 24, padding: '0 7px', fontSize: 10.5 }, onClick: () => setCollapsed(new Set(parentIds)) }, '收拢全部'),
       ),
     ),
-    h('div', { style: { display: 'grid', gap: 0, overflowX: 'auto', padding: '4px 4px' } }, row(root, 0, true, [])),
+    h('ul', { className: 'cow-tree', style: { padding: '4px 2px', minWidth: 0 } }, renderNode(root)),
     h('div', { style: { ...S.meta, fontSize: 9.5, marginTop: 6 } },
       `采集于 ${topology?.meta?.collectedAt ? new Date(topology.meta.collectedAt).toLocaleTimeString('zh-CN', { hour12: false }) : '-'} · 每 15 秒刷新`,
     ),
