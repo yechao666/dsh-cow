@@ -423,6 +423,8 @@ export class Channel {
           uuid: this.instance.uuid ?? '',
           version: this.instance.version ?? '',
           description: this.instance.description ?? '',
+          department: String(this.resolveConfig?.().department ?? ''),
+          owner: String(this.resolveConfig?.().owner ?? ''),
           proxyEnabled: Boolean(this.resolveConfig?.().proxyEnabled),
           proxyViaParent: Boolean(this.resolveConfig?.().proxyViaParent),
         },
@@ -573,6 +575,8 @@ export class Channel {
               uuid: this.instance.uuid ?? '',
               version: this.instance.version ?? '',
               description: this.instance.description ?? '',
+              department: String(this.resolveConfig?.().department ?? ''),
+              owner: String(this.resolveConfig?.().owner ?? ''),
               proxyEnabled: Boolean(this.resolveConfig?.().proxyEnabled),
               proxyViaParent: Boolean(this.resolveConfig?.().proxyViaParent),
             },
@@ -705,6 +709,8 @@ export class Channel {
       displayName: this.instance.displayName,
       version: this.instance.version,
       role: this.instance.role,
+      department: String(this.resolveConfig?.().department ?? ''),
+      owner: String(this.resolveConfig?.().owner ?? ''),
     };
     if (limits.depth <= 0) return buildMap({ self, children: [], meta: { ...limits, collectedAt: new Date(this.now()).toISOString() } });
 
@@ -792,7 +798,11 @@ export class Channel {
       tree = await this.collectTopology(limits);
     } catch (error) {
       this.logger.warn?.(`[dsh-cow] 采集下级拓扑失败：${error?.message ?? error}`);
-      tree = buildMap({ self: selfNode(this.instance), children: [] });
+      tree = buildMap({ self: selfNode({
+        ...this.instance,
+        department: String(this.resolveConfig?.().department ?? ''),
+        owner: String(this.resolveConfig?.().owner ?? ''),
+      }), children: [] });
     }
     const payload = {
       children: tree.root?.children ?? [],

@@ -12,6 +12,8 @@ import { coDshDir, readJson, writeJsonAtomic } from './store.js';
 /** 设置页允许修改的字段（其余字段仍由 profile 装配配置决定）。 */
 export const EDITABLE_KEYS = [
   'displayName',
+  'department',
+  'owner',
   'capabilityNote',
   'declaredCapabilities',
   'allowedRoots',

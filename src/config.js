@@ -38,6 +38,16 @@ export const Config = z.object({
     .default('')
     .volatile()
     .description('本实例对外展示的名字，其它 DSH 登记后会看到（留空用主机名）'),
+  department: z
+    .string()
+    .default('')
+    .volatile()
+    .description('组织展示用：部门名称'),
+  owner: z
+    .string()
+    .default('')
+    .volatile()
+    .description('组织展示用：负责人姓名'),
 
   // ── 入站：别的 DSH 把消息派给我 ──────────────────────────────
   serverEnabled: z.boolean().default(true).volatile().description('接受其它 DSH 派来的消息'),
@@ -154,6 +164,8 @@ export function resolveConfig(input = {}) {
   return {
     enabled: Boolean(raw(input, 'enabled', true)),
     displayName: String(raw(input, 'displayName', '')).trim() || defaultDisplayName(),
+    department: String(raw(input, 'department', '')).trim(),
+    owner: String(raw(input, 'owner', '')).trim(),
     serverEnabled: true, // 子 DSH 定义上就接受主 DSH 的消息，不可关闭
     listenPort: Number.isFinite(port) && port >= 0 ? Math.round(port) : 59999,
     listenHost: String(raw(input, 'listenHost', '127.0.0.1')).trim() || '127.0.0.1',

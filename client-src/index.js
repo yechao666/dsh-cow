@@ -314,6 +314,17 @@ function CowActivityIcon({ size = 16 }) {
 function CowFullTopology({ topology, loading = false }) {
   const root = topology?.root;
   const stats = topology?.stats ?? {};
+  const [collapsed, setCollapsed] = React.useState(() => new Set());
+  const parentIds = React.useMemo(() => {
+    const ids = new Set();
+    const walk = (node) => {
+      const kids = Array.isArray(node?.children) ? node.children : [];
+      if (kids.length) ids.add(node.id);
+      kids.forEach(walk);
+    };
+    if (root) walk(root);
+    return ids;
+  }, [root]);
   if (!root) {
     return h('div', { style: { ...PANEL.card, marginBottom: 0 } },
       h('div', { style: PANEL.cardHead },
@@ -323,47 +334,81 @@ function CowFullTopology({ topology, loading = false }) {
       h('div', { style: PANEL.empty }, loading ? '正在向下级采集完整拓扑…' : '没有可展示的拓扑数据'),
     );
   }
+  const toggle = (id) => {
+    setCollapsed((value) => {
+      const next = new Set(value);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
   const row = (node, depth, isLast, prefix) => {
     const children = Array.isArray(node.children) ? node.children : [];
+    const hasChildren = children.length > 0;
+    const isCollapsed = collapsed.has(node.id);
     const branch = depth === 0 ? '' : `${prefix}${isLast ? '└─ ' : '├─ '}`;
     const nextPrefix = depth === 0 ? '' : `${prefix}${isLast ? '   ' : '│  '}`;
-    return h('div', { key: node.id || `${depth}-${node.label}` },
+    const owner = String(node.owner || '').trim();
+    const department = String(node.department || '').trim();
+    const label = String(node.label || node.id || '未命名');
+    return h('div', { key: node.id || `${depth}-${label}` },
       h('div', {
         title: node.description || node.id,
         style: {
-          display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap',
-          minHeight: 28, padding: '3px 6px',
-          marginLeft: 0,
+          display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap',
+          minHeight: 30, padding: '2px 5px',
           borderRadius: 6,
           background: node.depth === 0 ? 'color-mix(in srgb, var(--dsw-alias-brand-primary) 7%, transparent)' : 'transparent',
         },
       },
+        hasChildren
+          ? h('button', {
+              type: 'button',
+              'aria-label': isCollapsed ? '展开' : '收拢',
+              'aria-expanded': !isCollapsed,
+              onClick: (event) => { event.stopPropagation(); toggle(node.id); },
+              style: {
+                width: 17, height: 17, flex: '0 0 auto', padding: 0, cursor: 'pointer',
+                border: '1px solid var(--dsw-alias-border-l2)', borderRadius: 4,
+                background: 'var(--dsw-alias-bg-l2)', color: 'var(--dsw-alias-label-secondary)',
+                fontSize: 12, lineHeight: '15px', textAlign: 'center',
+              },
+            }, isCollapsed ? '+' : '−')
+          : h('span', { style: { width: 17, flex: '0 0 auto' } }),
         depth === 0 ? null : h('span', { style: { ...S.mono, color: 'var(--dsw-alias-label-tertiary)', whiteSpace: 'pre', fontSize: 10 } }, branch),
         h('span', { style: { width: 6, height: 6, borderRadius: 99, background: node.online ? '#34c38f' : 'var(--dsw-alias-label-tertiary)', flex: '0 0 auto' } }),
-        h('b', { style: { fontSize: 12, fontWeight: node.depth === 0 ? 700 : 550, color: node.depth === 0 ? 'var(--dsw-alias-brand-primary)' : 'inherit' } }, node.label || node.id || '未命名'),
+        department
+          ? h('span', { style: { ...PANEL.chip, fontSize: 9.5, padding: '0 6px', height: 18, color: 'var(--dsw-alias-label-secondary)' } }, department)
+          : null,
+        h('b', { style: { fontSize: 12, fontWeight: node.depth === 0 ? 700 : 600, color: node.depth === 0 ? 'var(--dsw-alias-brand-primary)' : 'inherit' } }, owner || label),
+        owner && label !== owner ? h('span', { style: { ...S.meta, fontSize: 10.5 } }, label) : null,
         h(PanelChip, { tone: node.online ? 'on' : 'off' }, node.online ? '在线' : '离线'),
         node.depth === 0 ? h(PanelChip, { tone: 'brand' }, '当前') : null,
         depth === 1 ? h(PanelChip, null, '直接下级') : null,
+        node.encrypted ? h(E2EChip, { compact: true }) : null,
+        node.proxyEnabled ? h(ProxyExitChip, { compact: true }) : null,
+        node.proxyViaParent ? h(ProxyChip, { compact: true }) : null,
         node.version ? h('span', { style: { ...S.meta, fontSize: 9 } }, `v${node.version}`) : null,
         node.stale ? h(PanelChip, { tone: 'off' }, '超时') : null,
         node.truncated ? h(PanelChip, { tone: 'off' }, '截断') : null,
       ),
-      ...children.map((child, index) => row(child, depth + 1, index === children.length - 1, nextPrefix)),
+      isCollapsed ? null : children.map((child, index) => row(child, depth + 1, index === children.length - 1, nextPrefix)),
     );
   };
   return h('div', { style: { ...PANEL.card, marginBottom: 0 } },
     h('div', { style: PANEL.cardHead },
       h('div', { style: { display: 'grid', gap: 1 } },
         h('h3', { style: PANEL.cardTitle }, '节点拓扑'),
-        h('span', { style: { ...S.meta, fontSize: 10.5 } }, '只沿下级方向采集；缩进表示上下级'),
+        h('span', { style: { ...S.meta, fontSize: 10.5 } }, '只沿下级方向采集；点箭头展开/收拢'),
       ),
-      h('div', { style: { display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' } },
+      h('div', { style: { display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center' } },
         h(PanelChip, { tone: 'brand' }, `${stats.total ?? 0} 节点`),
         h(PanelChip, null, `${stats.depth ?? 0} 层`),
         stats.online != null ? h(PanelChip, { tone: 'on' }, `${stats.online} 在线`) : null,
+        h('button', { type: 'button', style: { ...S.secondary, height: 24, padding: '0 7px', fontSize: 10.5 }, onClick: () => setCollapsed(new Set()) }, '展开全部'),
+        h('button', { type: 'button', style: { ...S.secondary, height: 24, padding: '0 7px', fontSize: 10.5 }, onClick: () => setCollapsed(new Set(parentIds)) }, '收拢全部'),
       ),
     ),
-    h('div', { style: { display: 'grid', gap: 0, overflowX: 'auto', padding: '4px 2px' } }, row(root, 0, true, '')),
+    h('div', { style: { display: 'grid', gap: 0, overflowX: 'auto', padding: '4px 4px' } }, row(root, 0, true, '')),
     h('div', { style: { ...S.meta, fontSize: 9.5, marginTop: 6 } },
       `采集于 ${topology?.meta?.collectedAt ? new Date(topology.meta.collectedAt).toLocaleTimeString('zh-CN', { hour12: false }) : '-'} · 每 15 秒刷新`,
     ),
