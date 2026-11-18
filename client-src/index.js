@@ -385,8 +385,11 @@ function CowFullTopology({ topology, loading = false }) {
         node.depth === 0 ? h(PanelChip, { tone: 'brand' }, '当前') : null,
         depth === 1 ? h(PanelChip, null, '直接下级') : null,
         node.encrypted ? h(E2EChip, { compact: true }) : null,
-        node.proxyEnabled ? h(ProxyExitChip, { compact: true }) : null,
-        node.proxyViaParent ? h(ProxyChip, { compact: true }) : null,
+        node.proxyEnabled
+          ? h(ProxyExitChip, { compact: true })
+          : node.proxyViaParent
+            ? h(ProxyChip, { compact: true })
+            : h('span', { style: { ...S.meta, fontSize: 9 } }, '未代理'),
         node.version ? h('span', { style: { ...S.meta, fontSize: 9 } }, `v${node.version}`) : null,
         node.stale ? h(PanelChip, { tone: 'off' }, '超时') : null,
         node.truncated ? h(PanelChip, { tone: 'off' }, '截断') : null,
