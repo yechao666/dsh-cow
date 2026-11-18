@@ -312,9 +312,9 @@ function CowActivityIcon({ size = 16 }) {
 // ── 拓扑图 ──────────────────────────────────────────────────────
 
 function CowFullTopology({ topology, loading = false }) {
-  const nodes = Array.isArray(topology?.nodes) ? topology.nodes : [];
+  const root = topology?.root;
   const stats = topology?.stats ?? {};
-  if (!nodes.length) {
+  if (!root) {
     return h('div', { style: { ...PANEL.card, marginBottom: 0 } },
       h('div', { style: PANEL.cardHead },
         h('h3', { style: PANEL.cardTitle }, '节点拓扑'),
@@ -323,62 +323,47 @@ function CowFullTopology({ topology, loading = false }) {
       h('div', { style: PANEL.empty }, loading ? '正在向下级采集完整拓扑…' : '没有可展示的拓扑数据'),
     );
   }
-  const levels = [];
-  for (const node of nodes) {
-    const depth = Math.max(0, Number(node.depth) || 0);
-    (levels[depth] ??= []).push(node);
-  }
-  const card = (node) => h('div', {
-    key: node.id,
-    title: node.description || node.id,
-    style: {
-      width: 208, minHeight: 64, boxSizing: 'border-box', padding: '8px 10px',
-      border: `1px solid ${node.online ? 'rgba(52,199,89,.35)' : 'var(--dsw-alias-border-l2)'}`,
-      borderRadius: 10,
-      background: node.depth === 0
-        ? 'color-mix(in srgb, var(--dsw-alias-brand-primary) 7%, var(--dsw-alias-bg-l1))'
-        : 'var(--dsw-alias-bg-l1)',
-      display: 'grid', gap: 4,
-      boxShadow: node.depth === 0 ? '0 0 0 1px color-mix(in srgb, var(--dsw-alias-brand-primary) 22%, transparent)' : 'none',
-    },
-  },
-    h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 } },
-      h('span', { style: { width: 20, height: 20, borderRadius: 6, display: 'grid', placeItems: 'center', color: '#fff', background: node.online ? '#34c38f' : '#94a3b8', fontSize: 9, fontWeight: 700, flex: '0 0 auto' } }, String(node.label || '?').slice(0, 1)),
-      h('b', { style: { fontSize: 11.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, node.label || node.id || '未命名'),
-      node.depth === 0 ? h(PanelChip, { tone: 'brand' }, '当前') : null,
-    ),
-    h('div', { style: { display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' } },
-      h(PanelChip, { tone: node.online ? 'on' : 'off' }, node.online ? '在线' : '离线'),
-      node.direct ? h(PanelChip, null, '直接下级') : null,
-      node.version ? h('span', { style: { ...S.meta, fontSize: 9 } }, `v${node.version}`) : null,
-      node.stale ? h(PanelChip, { tone: 'off' }, '超时') : null,
-      node.truncated ? h(PanelChip, { tone: 'off' }, '截断') : null,
-    ),
-  );
+  const row = (node, depth, isLast, prefix) => {
+    const children = Array.isArray(node.children) ? node.children : [];
+    const branch = depth === 0 ? '' : `${prefix}${isLast ? '└─ ' : '├─ '}`;
+    const nextPrefix = depth === 0 ? '' : `${prefix}${isLast ? '   ' : '│  '}`;
+    return h('div', { key: node.id || `${depth}-${node.label}` },
+      h('div', {
+        title: node.description || node.id,
+        style: {
+          display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap',
+          minHeight: 28, padding: '3px 6px',
+          marginLeft: 0,
+          borderRadius: 6,
+          background: node.depth === 0 ? 'color-mix(in srgb, var(--dsw-alias-brand-primary) 7%, transparent)' : 'transparent',
+        },
+      },
+        depth === 0 ? null : h('span', { style: { ...S.mono, color: 'var(--dsw-alias-label-tertiary)', whiteSpace: 'pre', fontSize: 10 } }, branch),
+        h('span', { style: { width: 6, height: 6, borderRadius: 99, background: node.online ? '#34c38f' : 'var(--dsw-alias-label-tertiary)', flex: '0 0 auto' } }),
+        h('b', { style: { fontSize: 12, fontWeight: node.depth === 0 ? 700 : 550, color: node.depth === 0 ? 'var(--dsw-alias-brand-primary)' : 'inherit' } }, node.label || node.id || '未命名'),
+        h(PanelChip, { tone: node.online ? 'on' : 'off' }, node.online ? '在线' : '离线'),
+        node.depth === 0 ? h(PanelChip, { tone: 'brand' }, '当前') : null,
+        depth === 1 ? h(PanelChip, null, '直接下级') : null,
+        node.version ? h('span', { style: { ...S.meta, fontSize: 9 } }, `v${node.version}`) : null,
+        node.stale ? h(PanelChip, { tone: 'off' }, '超时') : null,
+        node.truncated ? h(PanelChip, { tone: 'off' }, '截断') : null,
+      ),
+      ...children.map((child, index) => row(child, depth + 1, index === children.length - 1, nextPrefix)),
+    );
+  };
   return h('div', { style: { ...PANEL.card, marginBottom: 0 } },
     h('div', { style: PANEL.cardHead },
       h('div', { style: { display: 'grid', gap: 1 } },
         h('h3', { style: PANEL.cardTitle }, '节点拓扑'),
-        h('span', { style: { ...S.meta, fontSize: 10.5 } }, '只沿下级方向采集；当前 / 直接下级 / 更深层'),
+        h('span', { style: { ...S.meta, fontSize: 10.5 } }, '只沿下级方向采集；缩进表示上下级'),
       ),
       h('div', { style: { display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' } },
-        h(PanelChip, { tone: 'brand' }, `${stats.total ?? nodes.length} 节点`),
+        h(PanelChip, { tone: 'brand' }, `${stats.total ?? 0} 节点`),
         h(PanelChip, null, `${stats.depth ?? 0} 层`),
         stats.online != null ? h(PanelChip, { tone: 'on' }, `${stats.online} 在线`) : null,
       ),
     ),
-    h('div', { style: { display: 'grid', gap: 0, overflowX: 'auto', padding: '8px 2px 4px' } },
-      levels.map((level, index) => h('div', { key: index, style: { display: 'grid', gap: 0 } },
-        h('div', { style: { display: 'flex', alignItems: 'stretch', justifyContent: 'center', gap: 10, flexWrap: 'wrap', padding: '4px 0' } },
-          level.map(card),
-        ),
-        index < levels.length - 1
-          ? h('div', { style: { display: 'flex', justifyContent: 'center', alignItems: 'center', height: 16 } },
-              h('div', { style: { width: 1, height: 16, background: 'var(--dsw-alias-border-l2)' } }),
-            )
-          : null,
-      )),
-    ),
+    h('div', { style: { display: 'grid', gap: 0, overflowX: 'auto', padding: '4px 2px' } }, row(root, 0, true, '')),
     h('div', { style: { ...S.meta, fontSize: 9.5, marginTop: 6 } },
       `采集于 ${topology?.meta?.collectedAt ? new Date(topology.meta.collectedAt).toLocaleTimeString('zh-CN', { hour12: false }) : '-'} · 每 15 秒刷新`,
     ),
