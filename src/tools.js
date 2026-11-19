@@ -334,6 +334,7 @@ export function createToolDefinitions({ instance, channel, peers, files, doctor,
           connections: conns.length,
           connectedPeers: conns.map((item) => ({ peerId: item.peerId ?? '', peerName: item.peerName, direction: item.direction })),
           pendingAsks: router?.pending?.() ?? [],
+          deadLetters: channel.deadLetterStats?.() ?? { total: 0, expired: 0, overflow: 0 },
           diagnostics: {
             runningVersion: instance.version ?? '',
             installedVersion: installedVersion(),
@@ -387,6 +388,8 @@ export function createToolDefinitions({ instance, channel, peers, files, doctor,
           replyTo: { type: 'string', description: '回答哪条询问的 questionId' },
           options: { type: 'array', items: { type: 'string' }, description: '提问的可选回答' },
           timeoutSec: { type: 'number', description: 'ask 等待回答的秒数，默认 300' },
+          ttlSec: { type: 'number', description: 'dispatch 消息有效期（秒），可选；不传用节点默认 messageTtlMinutes；过期进死信，不再执行' },
+          idempotencyKey: { type: 'string', description: '可选幂等键；同一对端重复使用同一 key 的重试会被接收端丢弃' },
         },
         required: ['message'],
         additionalProperties: false,
@@ -448,6 +451,9 @@ export function createToolDefinitions({ instance, channel, peers, files, doctor,
         const info = typeof sessionInfoFor === 'function'
           ? sessionInfoFor(exec?.agent?.session)
           : { session: { id: sessionIdOf(exec), title: '' }, workspace: { id: '', name: '', path: '' } };
+        const ttlSec = Number(args?.ttlSec) || 0;
+        const expiresAt = ttlSec > 0 ? new Date(Date.now() + Math.min(604800, Math.max(1, ttlSec)) * 1000).toISOString() : '';
+        const idempotencyKey = String(args?.idempotencyKey ?? '').trim().slice(0, 160);
         const envelope = buildEnvelope({
           kind: 'dispatch',
           peerId: target.peerId || '',
@@ -456,6 +462,8 @@ export function createToolDefinitions({ instance, channel, peers, files, doctor,
           workspace: info.workspace,
           session: info.session,
           approvalMode: 'follow',
+          expiresAt,
+          idempotencyKey,
         });
         const sent = channel.send(target.peerId || target.label, { type: 'msg.dispatch', payload: envelope });
         const shortId = target.peerId ? `（${target.peerId}）` : '';
@@ -475,6 +483,9 @@ export function createToolDefinitions({ instance, channel, peers, files, doctor,
           peerName: target.label,
           kind: 'dispatch',
           status: sent.delivered ? 'sent' : 'queued',
+          expiresAt: sent.expiresAt || envelope.expiresAt || '',
+          idempotencyKey: sent.idempotencyKey || idempotencyKey,
+          deadLettered: sent.deadLettered === true,
           async: true,
           note: 'dispatch 已入队/送达；不要等待或轮询，对方完成后 complete 会自动注入当前会话。',
         };

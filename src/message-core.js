@@ -25,7 +25,7 @@ export function sessionKey({ peerId, peer, workspace, session }) {
 /** @deprecated 使用 sessionKey；保留导出避免旧调用点直接断裂。 */
 export const workspaceKey = sessionKey;
 
-export function buildEnvelope({ kind, peerId = '', peerName, peer, text, workspace, session, approvalMode = 'follow', replyTo = '', questionId = '', options = [] }) {
+export function buildEnvelope({ kind, peerId = '', peerName, peer, text, workspace, session, approvalMode = 'follow', replyTo = '', questionId = '', options = [], expiresAt = '', idempotencyKey = '' }) {
   if (!MESSAGE_KINDS.includes(kind)) throw new Error(`未知消息类型：${kind}`);
   const displayName = String(peerName ?? peer ?? '').trim();
   if (!peerId && !displayName) throw new Error('缺少 peerId（可选 peerName）');
@@ -45,6 +45,8 @@ export function buildEnvelope({ kind, peerId = '', peerName, peer, text, workspa
     workspace: { id: String(workspace?.id ?? ''), name: String(workspace?.name ?? ''), path: String(workspace?.path ?? '') },
     session: { id: String(session?.id ?? ''), title: String(session?.title ?? '') },
     approvalMode,
+    expiresAt: String(expiresAt ?? ''),
+    idempotencyKey: String(idempotencyKey ?? ''),
     createdAt: new Date().toISOString(),
   };
 }

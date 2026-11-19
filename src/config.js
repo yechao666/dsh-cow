@@ -64,6 +64,11 @@ export const Config = z.object({
     .description('远端消息派来的会话允许使用的工作目录根，换行分隔。留空自动使用用户主目录下的 .dsh/.dsh-cow-root（由代码按平台解析）'),
   maxFileMB: z.number().default(50).volatile().description('单个交换文件的上限（MB）'),
   maxConcurrentFiles: z.number().default(4).volatile().description('同时进行的文件传输上限'),
+  messageTtlMinutes: z
+    .number()
+    .default(1440)
+    .volatile()
+    .description('消息默认有效期（分钟，0 表示不过期；过期消息进入死信，不再执行）'),
   agentPreset: z
     .string()
     .default('')
@@ -177,6 +182,9 @@ export function resolveConfig(input = {}) {
     maxConcurrentFiles: Number.isFinite(Number(raw(input, 'maxConcurrentFiles', 4)))
       ? Math.min(16, Math.max(1, Math.round(Number(raw(input, 'maxConcurrentFiles', 4)))))
       : 4,
+    messageTtlMinutes: Number.isFinite(Number(raw(input, 'messageTtlMinutes', 1440)))
+      ? Math.min(10080, Math.max(0, Math.round(Number(raw(input, 'messageTtlMinutes', 1440)))))
+      : 1440,
     enrollString: String(raw(input, 'enrollString', '')).trim(),
     channelEnabled: true, // 长连接（含重连）是协议的一部分，不可关闭
     channelDial: ['auto', 'always', 'never'].includes(String(raw(input, 'channelDial', 'auto')))

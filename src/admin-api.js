@@ -138,7 +138,9 @@ export function createAdminHandlers(deps) {
         connected: peerList.filter((item) => item.connected).length,
         encrypted: peerList.filter((item) => item.encrypted).length,
         pendingAsks: pendingAsks.length,
+        deadLetters: deps.channel?.deadLetterStats?.() ?? { total: 0, expired: 0, overflow: 0 },
       },
+      deadLetters: deps.channel?.deadLetterStats?.() ?? { total: 0, expired: 0, overflow: 0 },
     };
   };
 
@@ -209,6 +211,21 @@ export function createAdminHandlers(deps) {
       };
       const topology = await deps.collectTopology?.(options);
       sendJson(res, 200, topology ?? { error: { code: 'topology_unavailable', message: '拓扑采集不可用' } });
+    }),
+
+    '/api/cow/dead-letters': wrap(async (req, res) => {
+      if (req.method === 'GET') {
+        const limit = Math.max(1, Math.min(200, Number(new URL(req.url ?? '/', 'http://cow.local').searchParams.get('limit')) || 100));
+        return sendJson(res, 200, {
+          items: deps.channel?.deadLetters?.(limit) ?? [],
+          stats: deps.channel?.deadLetterStats?.() ?? { total: 0, expired: 0, overflow: 0 },
+        });
+      }
+      if (req.method === 'DELETE') {
+        deps.channel?.clearDeadLetters?.();
+        return sendJson(res, 200, { cleared: true });
+      }
+      return sendJson(res, 405, { error: { code: 'method_not_allowed', message: '只支持 GET/DELETE' } });
     }),
 
     '/api/cow/activity': wrap(async (req, res) => {

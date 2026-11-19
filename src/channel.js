@@ -19,6 +19,7 @@ import { readJson, writeJsonAtomic } from './store.js';
 import { acceptUpgrade, connect as wsConnect } from './ws.js';
 import { deriveSessionKey, open as openSealed, seal } from './crypto.js';
 import { buildMap, childNode, resolveLimits, sanitizeSubtree, selfNode } from './topology.js';
+import { DeadLetterStore, deadLetterPath } from './dead-letter.js';
 
 const HEARTBEAT_MS = 20_000;
 const DEAD_MS = 65_000;
@@ -72,6 +73,10 @@ export class Channel {
     this.topoSeq = 0;
     /** 每个连接的最近拓扑请求时间戳，用来限速。 */
     this.topoHits = new WeakMap();
+    /** 已见过的幂等键（跨重连保留到进程退出）。 */
+    this.idemSeen = new Map();
+    /** 过期 / 队列溢出消息；不自动重投。 */
+    this.deadLetters = new DeadLetterStore({ file: home ? deadLetterPath(home) : '', logger: this.logger });
   }
 
   // ── 生命周期 ──────────────────────────────────────────────────
@@ -121,9 +126,17 @@ export class Channel {
     this.loaded = true;
     const outbox = readJson(this.#outboxFile(), null);
     if (outbox?.peers && typeof outbox.peers === 'object') {
+      const ttlMs = this.#ttlMs();
       for (const [label, box] of Object.entries(outbox.peers)) {
         if (!Array.isArray(box?.entries)) continue;
-        this.outbox.set(label, { nextSeq: Number(box.nextSeq) || box.entries.length + 1, entries: box.entries.slice(-MAX_OUTBOX) });
+        const entries = box.entries.slice(-MAX_OUTBOX).map((entry) => {
+          if (entry?.expiresAt || ttlMs <= 0) return entry;
+          const at = Date.parse(String(entry?.at ?? ''));
+          return { ...entry, expiresAt: Number.isFinite(at) ? new Date(at + ttlMs).toISOString() : '' };
+        });
+        const normalized = { nextSeq: Number(box.nextSeq) || entries.length + 1, entries };
+        this.outbox.set(label, normalized);
+        if (this.#pruneExpired(label, normalized)) this.#saveOutbox();
       }
     }
     this.inboxAck = readJson(this.#stateFile(), null)?.inboundAck ?? {};
@@ -248,13 +261,36 @@ export class Channel {
    * @param {string} target label 或 peerId
    * @param {{type: string, payload?: object}} event
    */
-  send(target, { type, payload = {} }) {
+  send(target, { type, payload = {}, expiresAt, idempotencyKey } = {}) {
     const label = this.#resolveLabel(target);
     if (!label) return { queued: false, delivered: false, reason: 'missing_peer' };
+    const now = this.now();
+    const ttlMs = this.#ttlMs();
+    const requestedExpiry = String(expiresAt ?? payload?.expiresAt ?? '').trim();
+    const expiry = requestedExpiry || (ttlMs > 0 ? new Date(now + ttlMs).toISOString() : '');
+    const idem = String(idempotencyKey ?? payload?.idempotencyKey ?? '').trim();
+    if (expiry && Number.isFinite(Date.parse(expiry)) && Date.parse(expiry) <= now) {
+      this.#deadLetter({
+        direction: 'outbound', reason: 'expired', peer: label,
+        peerId: this.peers?.get?.(label)?.peerId ?? '',
+        messageId: '', idempotencyKey: idem, type, expiresAt: expiry,
+        preview: String(payload?.text ?? '').slice(0, 500),
+      });
+      return { queued: false, delivered: false, reason: 'expired', expiresAt: expiry, idempotencyKey: idem, deadLettered: true };
+    }
     let box = this.outbox.get(label);
     if (!box) {
       box = { nextSeq: 1, entries: [] };
       this.outbox.set(label, box);
+    }
+    if (idem) {
+      const duplicate = box.entries.find((entry) => entry.idempotencyKey && entry.idempotencyKey === idem);
+      if (duplicate) {
+        return {
+          queued: true, delivered: false, deduped: true, seq: duplicate.seq, msgId: duplicate.msgId,
+          expiresAt: duplicate.expiresAt || '', idempotencyKey: idem,
+        };
+      }
     }
     const seq = box.nextSeq;
     box.nextSeq += 1;
@@ -262,21 +298,113 @@ export class Channel {
       seq,
       msgId: `${this.instance.peerId}:${seq}`,
       type,
-      at: new Date(this.now()).toISOString(),
+      at: new Date(now).toISOString(),
+      expiresAt: expiry,
+      idempotencyKey: idem,
       payload,
     };
     box.entries.push(entry);
-    if (box.entries.length > MAX_OUTBOX) box.entries.splice(0, box.entries.length - MAX_OUTBOX);
+    let dropped = 0;
+    while (box.entries.length > MAX_OUTBOX) {
+      const old = box.entries.shift();
+      if (!old) break;
+      dropped += 1;
+      this.#deadLetter({
+        direction: 'outbound', reason: 'queue_overflow', peer: label,
+        peerId: this.peers?.get?.(label)?.peerId ?? '', messageId: old.msgId,
+        idempotencyKey: old.idempotencyKey, type: old.type, expiresAt: old.expiresAt,
+        preview: String(old.payload?.text ?? '').slice(0, 500),
+      });
+    }
     this.#saveOutbox();
 
     const state = this.conns.get(label);
     const delivered = Boolean(state?.ready && this.#write(state.conn, this.#wireEvent(entry, state)));
-    return { queued: true, delivered, seq, msgId: entry.msgId };
+    return { queued: true, delivered, seq, msgId: entry.msgId, expiresAt: entry.expiresAt, idempotencyKey: entry.idempotencyKey, dropped };
+  }
+
+  // ── TTL / 死信 ────────────────────────────────────────────────
+
+  #seenIdem(label, key) {
+    if (!key) return false;
+    const id = `${label}\u0000${key}`;
+    const now = this.now();
+    const previous = this.idemSeen.get(id);
+    const ttlMs = this.#ttlMs() || 24 * 60 * 60_000;
+    if (previous && now - previous <= ttlMs) return true;
+    this.idemSeen.set(id, now);
+    if (this.idemSeen.size > 2000) {
+      for (const [entryId, at] of this.idemSeen) {
+        if (now - at > ttlMs) this.idemSeen.delete(entryId);
+        if (this.idemSeen.size <= 1000) break;
+      }
+    }
+    return false;
+  }
+
+  #ttlMs() {
+    let minutes = 1440;
+    try { minutes = Number(this.resolveConfig?.()?.messageTtlMinutes ?? 1440); } catch { /* 使用默认 */ }
+    return Number.isFinite(minutes) && minutes > 0 ? minutes * 60_000 : 0;
+  }
+
+  #expired(entry) {
+    const at = Date.parse(String(entry?.expiresAt ?? ''));
+    return Number.isFinite(at) && at <= this.now();
+  }
+
+  #deadLetter(entry) {
+    return this.deadLetters.add(entry);
+  }
+
+  #pruneExpired(label, box) {
+    if (!box?.entries?.length) return false;
+    const kept = [];
+    let changed = false;
+    for (const entry of box.entries) {
+      if (!this.#expired(entry)) {
+        kept.push(entry);
+        continue;
+      }
+      changed = true;
+      this.#deadLetter({
+        direction: 'outbound', reason: 'expired', peer: label,
+        peerId: this.peers?.get?.(label)?.peerId ?? '', messageId: entry.msgId,
+        idempotencyKey: entry.idempotencyKey, type: entry.type,
+        expiresAt: entry.expiresAt, preview: String(entry.payload?.text ?? '').slice(0, 500),
+      });
+    }
+    if (changed) box.entries = kept;
+    return changed;
+  }
+
+  #pruneAllExpired() {
+    let changed = false;
+    for (const [label, box] of this.outbox) {
+      if (this.#pruneExpired(label, box)) changed = true;
+    }
+    if (changed) this.#saveOutbox();
+  }
+
+  deadLetterStats() {
+    return this.deadLetters.stats();
+  }
+
+  deadLetters(limit = 100) {
+    return this.deadLetters.list(limit);
+  }
+
+  clearDeadLetters() {
+    this.deadLetters.clear();
   }
 
   /** 帧格式：外层 `type` 用于协议分发，业务类型放在 `event` 字段。 */
   #wireEvent(entry, state) {
-    const base = { type: 'event', seq: entry.seq, msgId: entry.msgId, at: entry.at };
+    const base = {
+      type: 'event', seq: entry.seq, msgId: entry.msgId, at: entry.at,
+      ...(entry.expiresAt ? { expiresAt: entry.expiresAt } : {}),
+      ...(entry.idempotencyKey ? { idempotencyKey: entry.idempotencyKey } : {}),
+    };
     if (state?.e2eKey) {
       return { ...base, enc: seal(state.e2eKey, { event: entry.type, payload: entry.payload ?? {} }) };
     }
@@ -653,6 +781,19 @@ export class Channel {
             return;
           }
         }
+        const expiry = String(frame.expiresAt ?? payload?.expiresAt ?? '').trim();
+        if (expiry && Number.isFinite(Date.parse(expiry)) && Date.parse(expiry) <= this.now()) {
+          this.#deadLetter({
+            direction: 'inbound', reason: 'expired', peer: label,
+            peerId: state.peerId, messageId: msgId,
+            idempotencyKey: String(frame.idempotencyKey ?? payload?.idempotencyKey ?? ''),
+            type: String(eventType ?? ''), expiresAt: expiry,
+            preview: String(payload?.text ?? '').slice(0, 500),
+          });
+          return;
+        }
+        const idem = String(frame.idempotencyKey ?? payload?.idempotencyKey ?? '').trim();
+        if (idem && this.#seenIdem(label, idem)) return;
         try {
           this.onEvent?.({
             from: label,
@@ -871,6 +1012,7 @@ export class Channel {
   #flush(label, state) {
     const box = this.outbox.get(label);
     if (!box) return;
+    if (this.#pruneExpired(label, box)) this.#saveOutbox();
     for (const entry of box.entries) {
       if (entry.seq <= state.outAckSeq) continue;
       if (!this.#write(state.conn, this.#wireEvent(entry, state))) break;
@@ -920,6 +1062,7 @@ export class Channel {
   }
 
   tick() {
+    this.#pruneAllExpired();
     const config = this.resolveConfig();
     if (!config.channelEnabled) return;
     const now = this.now();

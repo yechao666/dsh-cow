@@ -716,6 +716,7 @@ function CowActivityPanel() {
   const parentPeer = peers.find((peer) => peer.relation === 'parent') ?? null;
   const parent = state.parent ?? {};
   const stats = state.stats ?? {};
+  const deadLetters = stats.deadLetters ?? state.deadLetters ?? {};
   const proxy = state.proxy ?? {};
   const proxyLogs = Array.isArray(proxy.logs) ? proxy.logs : [];
   const proxyIsMember = instance.role === 'member';
@@ -872,6 +873,7 @@ function CowActivityPanel() {
         h(PanelChip, { tone: 'on' }, `${connectedCount} 连接`),
         h(PanelChip, { tone: 'brand' }, `${encryptedCount} 加密`),
         pending.length ? h(PanelChip, { tone: 'brand', title: '由被询问节点的 Agent 处理（可请示上级或让用户在本机界面回答）' }, `${pending.length} 询问中`) : null,
+        deadLetters.total ? h(PanelChip, { tone: 'off', title: '过期或队列溢出、不再执行的消息' }, `${deadLetters.total} 死信`) : null,
         h('button', { type: 'button', style: { ...S.secondary, height: 28, padding: '0 10px', fontSize: 11.5 }, onClick: () => void runDoctor() }, '诊断包'),
         h('button', { type: 'button', style: { ...S.secondary, height: 28, padding: '0 10px', fontSize: 11.5 }, onClick: () => { void load(); }, disabled: loading }, loading ? '刷新中…' : '刷新'),
       ),
@@ -1098,6 +1100,7 @@ function CoCowSettingsPage({ embedded = false } = {}) {
     listenPort: next?.config?.listenPort ?? 0,
     maxFileMB: next?.config?.maxFileMB ?? 50,
     maxConcurrentFiles: next?.config?.maxConcurrentFiles ?? 4,
+    messageTtlMinutes: next?.config?.messageTtlMinutes ?? 1440,
     agentPreset: next?.config?.agentPreset ?? '',
     proxyEnabled: Boolean(next?.config?.proxyEnabled),
     proxyAllowHosts: next?.config?.proxyAllowHosts ?? '',
@@ -1380,6 +1383,7 @@ function CoCowSettingsPage({ embedded = false } = {}) {
           h('div', { style: { gridColumn: '1 / -1' } }, field('能力说明', h('textarea', { style: { ...S.textarea, minHeight: 52 }, value: form.capabilityNote, onChange: (event) => update('capabilityNote', event.target.value) }))),
           field('文件上限 MB', h('input', { style: S.inputFlex, type: 'number', min: 1, max: 1024, value: form.maxFileMB, onChange: (event) => update('maxFileMB', event.target.value) })),
           field('并发传输', h('input', { style: S.inputFlex, type: 'number', min: 1, max: 16, value: form.maxConcurrentFiles, onChange: (event) => update('maxConcurrentFiles', event.target.value) })),
+          field('消息 TTL 分钟', h('input', { style: S.inputFlex, type: 'number', min: 0, max: 10080, value: form.messageTtlMinutes, placeholder: '1440；0 表示不过期', onChange: (event) => update('messageTtlMinutes', event.target.value) })),
         )
       : null,
     saveRow(!dirty, '保存节点设置'),

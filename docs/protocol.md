@@ -32,7 +32,7 @@ proof = sha256(nonce + ":" + hashJoinPassword(password, salt))
   "protocol": "cow/v1",
   "peerId": "cow_…",
   "displayName": "叶超的MacMini",
-  "node": { "uuid": "…", "version": "1.33.0", "description": "…" },
+  "node": { "uuid": "…", "version": "1.34.0", "description": "…" },
   "ackSeq": 0,
   "enc": 1,
   "proof": "…"
@@ -55,7 +55,7 @@ proof = sha256(nonce + ":" + hashJoinPassword(password, salt))
 |---|---|---|---|
 | `hello` / `welcome` | 双向 | `protocol, peerId, instanceId（旧别名）, displayName, node{uuid,version,description}, ackSeq, enc, proof` | 握手 |
 | `auth.challenge` | 接受方 → 拨号方 | `nonce, salt` | 挑战 |
-| `event` | 双向 | `seq, msgId, at, event, payload` | 业务事件 |
+| `event` | 双向 | `seq, msgId, at, expiresAt?, idempotencyKey?, event, payload` | 业务事件；过期帧只 ack，不执行 |
 | `topo.req` | 上级 → 直接下级 | `id, depth, timeoutMs, maxNodes`（加密时 `enc`） | 只向下采集子树；子端不能反向调查父端 |
 | `topo.res` | 直接下级 → 上级 | `id, children[], truncated`（加密时 `enc`） | 回传下级子树；超时/断线由请求方标记 |
 | `ack` | 双向 | `seq` | 累计确认 ≤ seq 已收到 |
@@ -207,7 +207,7 @@ key = HKDF-SHA256(base = passwordHash, salt = nonce, info = "cow/v1/e2e", 32)
   "peerName": "子 DSH-A",
   "package": {
     "name": "dsh-cow",
-    "version": "1.33.0",
+    "version": "1.34.0",
     "url": "http://main:60001/cow/v1/plugin/package",
     "sha256": "…"
   }
@@ -222,6 +222,17 @@ key = HKDF-SHA256(base = passwordHash, salt = nonce, info = "cow/v1/e2e", 32)
 要求子端 **>= 1.31.0**。插件包 URL 默认指向主端
 `/cow/v1/plugin/package`，**不带 token**：任何能访问主端端点的机器都可以下载。
 主端 `url` 参数可换成外部 http(s) 包，但必须同时传 `sha256` 和 `version`；`baseUrl` 可覆盖本机包的下载地址前缀（公网/局域网地址）。
+
+### 3.6 消息 TTL 与死信
+
+消息可以带 `expiresAt`（ISO 8601）和 `idempotencyKey`。发送方在入发件箱、重连补发和定时清理时都会检查：
+
+- 已过期：不发送 / 不执行，记入 `$DSH_HOME/cow/dead-letters.json`；
+- 接收方收到过期帧：只回 ack，不交给 Agent；
+- 发件箱超过 300 条被挤出的旧消息：记为 `queue_overflow`；
+- 同一对端的相同 `idempotencyKey` 只执行一次（进程内去重，重连后仍生效）。
+
+死信不是重试队列，不会自动重投。`GET /api/cow/dead-letters` 查看，`DELETE /api/cow/dead-letters` 清空。
 
 ## 4. 文件交换
 

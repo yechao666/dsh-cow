@@ -387,3 +387,65 @@ test('下级拓扑只沿下级方向采集，不向上调查', async () => {
     await a.close();
   }
 });
+
+
+test('过期消息直接进死信，不进入发件箱', () => {
+  const home = mkdtempSync(join(tmpdir(), 'cow-ttl-'));
+  const peers = new PeerRegistry({ file: join(home, 'peers.json') });
+  peers.upsert({ url: '', token: '', label: 'child', peerId: 'cow_child', relation: 'child' });
+  const channel = new Channel({
+    ctx: {},
+    resolveConfig: () => ({ channelEnabled: true, serverEnabled: true, messageTtlMinutes: 0 }),
+    peers,
+    instance: { peerId: 'cow_self', displayName: 'self' },
+    authorize: () => null,
+    logger: silent,
+    home,
+  });
+  const sent = channel.send('child', {
+    type: 'msg.dispatch',
+    payload: { text: 'old work' },
+    expiresAt: new Date(Date.now() - 1000).toISOString(),
+  },);
+  assert.equal(sent.queued, false);
+  assert.equal(sent.deadLettered, true);
+  assert.equal(channel.outbox.has('child'), false);
+  assert.equal(channel.deadLetterStats().expired, 1);
+});
+
+test('接收端丢弃过期帧并记死信，幂等键重复只执行一次', async () => {
+  const a = await startAcceptor();
+  const homeB = mkdtempSync(join(tmpdir(), 'cow-ttl-b-'));
+  const peersB = new PeerRegistry({ file: join(homeB, 'peers.json') });
+  peersB.upsert({ url: a.url, token: a.token, label: 'a-host', peerId: 'cods_aaaa', relation: 'parent' });
+  const received = [];
+  const b = new Channel({
+    ctx: {}, resolveConfig: () => ({ channelEnabled: true, serverEnabled: true, channelDial: 'always', messageTtlMinutes: 1440 }),
+    peers: peersB, instance: { peerId: 'cods_bbbb', displayName: 'B' },
+    authorize: () => null, onEvent: (item) => received.push(item), logger: silent, home: homeB,
+  });
+  try {
+    b.start();
+    await waitFor(() => a.channel.connectedCount() === 1);
+    await waitFor(() => b.connectedCount() === 1);
+    const state = a.channel.conns.get('b-host');
+    assert.ok(state?.conn);
+    // 模拟旧节点/直接帧：过期的 event 不应进入 onEvent。
+    state.conn.send(JSON.stringify({
+      type: 'event', seq: 9001, msgId: 'expired-frame-1', at: new Date().toISOString(),
+      expiresAt: new Date(Date.now() - 1000).toISOString(),
+      event: 'peer.message', payload: { message: 'old' },
+    }));
+    await waitFor(() => b.deadLetterStats().expired === 1);
+
+    const first = a.channel.send('b-host', { type: 'peer.message', payload: { message: 'idem', idempotencyKey: 'same-key' } });
+    const second = a.channel.send('b-host', { type: 'peer.message', payload: { message: 'idem', idempotencyKey: 'same-key' } });
+    assert.equal(second.deduped, true);
+    await waitFor(() => received.some((item) => item.event.payload?.message === 'idem'));
+    assert.equal(received.filter((item) => item.event.payload?.message === 'idem').length, 1);
+    assert.ok(first.msgId);
+  } finally {
+    b.stop();
+    await a.close();
+  }
+});

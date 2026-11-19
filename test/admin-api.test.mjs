@@ -31,6 +31,9 @@ function fakeDeps() {
     channel: {
       connections: () => [{ peer: '子 B', direction: 'in', e2e: true }],
       status: (label) => ({ state: 'connected', direction: 'in', e2e: label === '子 B', lastError: null, node: { version: '1.20.0', description: 'child' } }),
+      deadLetterStats: () => ({ total: 1, expired: 1, overflow: 0 }),
+      deadLetters: () => [{ id: 1, reason: 'expired', peer: '子 B', messageId: 'm1' }],
+      clearDeadLetters: () => {},
     },
     router: {
       pending: () => [{ questionId: 'q1', peer: '子 B', question: '要 A 还是 B？', options: ['A', 'B'], session: 's1', createdAt: '2026-01-01T00:00:00.000Z' }],
@@ -178,4 +181,20 @@ test('admin topology 返回下级拓扑并接受查询参数', async () => {
   assert.equal(res.status, 200);
   assert.deepEqual(received, { depth: 2, timeoutMs: 300, maxNodes: undefined });
   assert.equal(JSON.parse(res.body).meta.depth, 2);
+});
+
+
+test('admin dead-letters 返回死信与统计', async () => {
+  const deps = fakeDeps();
+  const handlers = createAdminHandlers(deps);
+  const res = {
+    status: 0,
+    writeHead(status) { this.status = status; },
+    end(body) { this.body = body; },
+  };
+  await handlers['/api/cow/dead-letters']({ method: 'GET', url: '/api/cow/dead-letters?limit=10' }, res);
+  assert.equal(res.status, 200);
+  const body = JSON.parse(res.body);
+  assert.equal(body.stats.total, 1);
+  assert.equal(body.items[0].reason, 'expired');
 });

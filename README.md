@@ -15,6 +15,7 @@ WebSocket 长连接做全双工 JSON 通讯。**只有消息，没有任务层**
   在 DSH 原生界面让用户输入；需要上级拍板时继续向上级 `cow_send(kind="ask")`，再逐级回报。
   COW 状态面板只显示「询问中」计数，不提供人工回答队列；
 - 每条消息都带 `workspace`（id/name/path）、`session`（id/title）与 `approvalMode`；
+- **消息 TTL / 死信**：默认有效期 1440 分钟（设置页可改，0 表示不过期）；`cow_send` 可传 `ttlSec`、`idempotencyKey`。过期消息不执行，进入 `$DSH_HOME/cow/dead-letters.json`；`GET/DELETE /api/cow/dead-letters` 可查询/清空。队列超过上限被挤出的消息也记死信。
   子端按 `peerId + workspace.id + session.id` 一一映射子会话：主 DSH 的每个会话都有独立子会话，
   不同会话的上下文不会在子端合并；complete/ask 按每条消息里的主会话 `session.id` 回到对应原会话；同名节点不会串线，改名也不影响在途会话；
 - 子 DSH 的 agent preset 可在设置页指定（`agentPreset`），会话会挂到对应工作区；
