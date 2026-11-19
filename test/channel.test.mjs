@@ -411,6 +411,7 @@ test('过期消息直接进死信，不进入发件箱', () => {
   assert.equal(sent.deadLettered, true);
   assert.equal(channel.outbox.has('child'), false);
   assert.equal(channel.deadLetterStats().expired, 1);
+  assert.equal(channel.deadLetters(10).length, 1);
 });
 
 test('接收端丢弃过期帧并记死信，幂等键重复只执行一次', async () => {

@@ -76,7 +76,7 @@ export class Channel {
     /** 已见过的幂等键（跨重连保留到进程退出）。 */
     this.idemSeen = new Map();
     /** 过期 / 队列溢出消息；不自动重投。 */
-    this.deadLetters = new DeadLetterStore({ file: home ? deadLetterPath(home) : '', logger: this.logger });
+    this.deadLetterStore = new DeadLetterStore({ file: home ? deadLetterPath(home) : '', logger: this.logger });
   }
 
   // ── 生命周期 ──────────────────────────────────────────────────
@@ -354,7 +354,7 @@ export class Channel {
   }
 
   #deadLetter(entry) {
-    return this.deadLetters.add(entry);
+    return this.deadLetterStore.add(entry);
   }
 
   #pruneExpired(label, box) {
@@ -387,15 +387,15 @@ export class Channel {
   }
 
   deadLetterStats() {
-    return this.deadLetters.stats();
+    return this.deadLetterStore.stats();
   }
 
   deadLetters(limit = 100) {
-    return this.deadLetters.list(limit);
+    return this.deadLetterStore.list(limit);
   }
 
   clearDeadLetters() {
-    this.deadLetters.clear();
+    this.deadLetterStore.clear();
   }
 
   /** 帧格式：外层 `type` 用于协议分发，业务类型放在 `event` 字段。 */

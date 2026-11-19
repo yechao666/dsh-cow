@@ -19,6 +19,7 @@ WebSocket 长连接做全双工 JSON 通讯。**只有消息，没有任务层**
   子端按 `peerId + workspace.id + session.id` 一一映射子会话：主 DSH 的每个会话都有独立子会话，
   不同会话的上下文不会在子端合并；complete/ask 按每条消息里的主会话 `session.id` 回到对应原会话；同名节点不会串线，改名也不影响在途会话；
 - 子 DSH 的 agent preset 可在设置页指定（`agentPreset`），会话会挂到对应工作区；
+- TTL 自测：`node scripts/ttl-5s.mjs` 启动两个真实 Channel 实例，先离线 6 秒，验证 5 秒 TTL 消息不执行、进死信，再用未过期消息验证送达，并验证幂等键只执行一次。
 - 文件交换支持单个文件、目录递归（`cow_send_file` 传目录）与目录拉取（`cow_pull_dir`），逐文件 sha256 校验；
 - 升级用 `cow_upgrade` 向直接下级 **只发一条 `msg.upgrade`**：主端暴露公开插件包下载地址，子端插件自动下载、校验 sha256/包内版本、移除旧包并安装，然后重连；不推文件、不建任务、不等待。要求子端 **>= 1.31.0**。
 - **子 DSH 可通过主 DSH 出网**：子端本地 `127.0.0.1` HTTP 代理经独立加密 WebSocket 转发到主端出口；默认只允许公网 80/443，禁止私网；主端/子端各自有开关。DSH 的 `fetch`（LLM、web_search、web_fetch、MCP）和继承代理环境变量的 curl/git/npm 都覆盖；
