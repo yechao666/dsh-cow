@@ -78,6 +78,20 @@ test('cow_send 默认派 dispatch，立即返回消息 ID，不等待', async ()
   assert.equal(sent[0].frame.payload.approvalMode, 'follow');
 });
 
+test('cow_send 支持 5 秒 TTL 与幂等键', async () => {
+  const { defs, sent } = deps();
+  const tool = find(defs, 'cow_send');
+  const before = Date.now();
+  const result = await tool.execute({
+    peerId: 'cow_child', message: '短活', ttlSec: 5, idempotencyKey: 'ttl-5-test',
+  }, { agent: { session: { id: 'session-1' } } });
+  const expiry = Date.parse(result.expiresAt);
+  assert.ok(expiry >= before + 4500 && expiry <= Date.now() + 5500, `expiry=${result.expiresAt}`);
+  assert.equal(result.idempotencyKey, 'ttl-5-test');
+  assert.equal(sent[0].frame.payload.expiresAt, result.expiresAt);
+  assert.equal(sent[0].frame.payload.idempotencyKey, 'ttl-5-test');
+});
+
 test('所有工具参数都不再用 peer，目标节点用 peerId/peerName', () => {
   const { defs } = deps({
     files: {
